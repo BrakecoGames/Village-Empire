@@ -127,6 +127,26 @@
     m.box(0.01, 0.2, 0.01, C.wood, { x: 0.58, y: 0.12, z: 0.15 }); m.box(0.01, 0.2, 0.01, C.wood, { x: 0.72, y: 0.12, z: 0.15 });
     m.roof(0.2, 0.08, 0.16, C.roofR, { x: 0.65, y: 0.32, z: 0.15, ry: PI / 2 });
   };
+  /* Stockyard: fenced, trampled yard; the goods piles themselves are drawn by VE.StockpileRender */
+  B.yard = function (m) {
+    foundation(m, 1.8, 1.8, C.stoneD);
+    m.box(1.76, 0.03, 1.76, 0xc6a574, { y: 0.04, j: 0.06 });
+    const post = (x, z, h) => m.box(0.045, h || 0.24, 0.045, C.woodD, { x: x, y: 0.05, z: z, j: 0.08 });
+    const rail = (x1, z1, x2, z2) => {
+      const len = Math.hypot(x2 - x1, z2 - z1), a = Math.atan2(x2 - x1, z2 - z1);
+      for (const y of [0.12, 0.22]) m.box(0.025, 0.03, len, C.wood, { x: (x1 + x2) / 2, y: y, z: (z1 + z2) / 2, ry: a, j: 0.08 });
+    };
+    const E = 0.86;
+    for (let s = -E; s <= E + 0.001; s += E / 3) { post(s, -E); post(-E, s); post(E, s); }
+    rail(-E, -E, E, -E); rail(-E, -E, -E, E); rail(E, -E, E, E);
+    // front fence with a gate opening at the door (x = +0.5)
+    for (const x of [-E, -E * 2 / 3, -E / 3, 0, 0.24, 0.76, E]) post(x, E);
+    rail(-E, E, 0.24, E); rail(0.76, E, E, E);
+    post(0.24, E, 0.34); post(0.76, E, 0.34);
+    m.box(0.6, 0.04, 0.05, C.woodD, { x: 0.5, y: 0.36, z: E, j: 0.05 });          // gate beam
+    m.box(0.3, 0.12, 0.02, C.woodL, { x: 0.5, y: 0.42, z: E + 0.01 });             // sign board
+    m.box(0.2, 0.025, 0.006, C.woodD, { x: 0.5, y: 0.465, z: E + 0.022, j: 0 });
+  };
   B.house = function (m, lvl, ex) {
     foundation(m, 0.82, 0.74);
     house(m, { w: 0.6, d: 0.46, h: 0.38, roof: lvl >= 3 ? C.roofR : C.thatch, rh: 0.36 });
@@ -591,7 +611,20 @@
     const handle = (len) => m.box(0.014, len, 0.014, 0xb08050, { y: -0.03, j: 0.05 });
     if (kind === 'axe') { handle(0.18); m.box(0.055, 0.045, 0.012, 0x9aa0a6, { x: 0.025, y: 0.12 }); }
     else if (kind === 'hammer') { handle(0.15); m.box(0.06, 0.035, 0.035, 0x6a6e74, { y: 0.11 }); }
-    else if (kind === 'pick') { handle(0.18); m.box(0.12, 0.02, 0.02, 0x7a7e84, { y: 0.135, rz: 0.15 }); }
+    else if (kind === 'pick') {
+      // Curved pickaxe head in the swing plane (y/z): an arch of steel segments with pointed tips
+      handle(0.18);
+      const R = 0.085, cy = 0.152 - R, A = 1.05, segs = 6, steel = 0x7a7e84;
+      for (let s = 0; s < segs; s++) {
+        const th = -A + (s + 0.5) * (2 * A / segs), w = 0.022 - Math.abs(th) * 0.006;
+        m.add(new THREE.BoxGeometry(w, w, R * (2 * A / segs) * 1.12), steel, { y: cy + R * Math.cos(th), z: R * Math.sin(th), rx: th, j: 0.03 });
+      }
+      for (const sgn of [1, -1]) {                                   // sharp tips continuing the curve
+        const tip = new THREE.ConeGeometry(0.011, 0.045, 5); tip.translate(0, 0.0225, 0);
+        m.add(tip, 0x9aa0a6, { y: cy + R * Math.cos(A), z: sgn * R * Math.sin(A), rx: sgn * (Math.PI / 2 + A), j: 0 });
+      }
+      m.box(0.03, 0.03, 0.03, 0x5a5e64, { y: 0.135, j: 0 });      // collar where the head meets the handle
+    }
     else if (kind === 'spade') { handle(0.18); m.box(0.05, 0.06, 0.008, 0x8a8f96, { y: -0.06 }); }
     else if (kind === 'scythe') { handle(0.22); m.box(0.13, 0.02, 0.008, 0xb8bec4, { x: 0.06, y: 0.18, rz: -0.25 }); }
     else if (kind === 'sickle') { handle(0.08); m.box(0.07, 0.015, 0.008, 0xb8bec4, { x: 0.03, y: 0.07, rz: 0.6 }); }

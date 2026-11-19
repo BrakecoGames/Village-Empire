@@ -120,6 +120,20 @@ Vergelijking: `tests/screenshots/visual/vergelijking-poppetjes.png`. Opnieuw mak
 
 **Prestaties:** 8 extra instanced meshes. De kleine onderdelen (handen, haar, snor, baard, veer) doen niet mee aan de schaduwberekening. In de software-renderer is de frametijd ongeveer 7–11% hoger (desktop 290 → 322 ms, mobiel 146 → 157 ms). Op een echte GPU wordt dit verwaarloosbaar verwacht, maar dat is nog niet gemeten op een telefoon.
 
+## Ronde 3: verbeterpunten van Remco
+
+| Punt | Oplossing | Bestanden | Test (`tests/ronde3.spec.js`) |
+|---|---|---|---|
+| Voorraad zichtbaar op stapels | Nieuwe vaste **Stockyard** naast het dorpshuis (omheind, met poort en bord). Per grondstof een vaste stapel: houtpiramide, kruislings gestapelde planken, hopen steen en zakken, manden en vaten. De stapels groeien en krimpen mee met de voorraad. De yard is ook opslagpunt, dus dragers brengen er goederen heen. Hij kan niet gesloopt worden. Bestaande saves krijgen hem automatisch. | config.js, models.js `B.yard`, fx.js `StockpileRender`, sim.js `placeYard` | opslagplaats met stapels |
+| Niet door stenen lopen | Rotsblokken tellen als obstakel in het padzoeken. Een steenhouwer kiest alleen stenen met een vrije zijde en staat aan die kant. | world.js `walkable`, sim.js (quarry) | dorpelingen lopen niet door stenen |
+| Draaien met ingedrukt scrollwiel | Middelste muisknop ingedrukt: links/rechts slepen draait, omhoog/omlaag kantelt (20°–82°), net als Cake-Factory. Ook PageUp/PageDown kantelen. Geen auto-scroll van de browser. | ui.js `CameraCtl.tilt`, `bindInput` | middelste muisknop (alleen desktop) |
+| Pikhouweel 90° verkeerd | Kop ligt nu in de zwaairichting, als gebogen boog van stalen segmenten met scherpe punten. | models.js `toolGeo('pick')` | pikhouweel |
+| Kaart ontdekken | Onontdekt land ligt onder een drijvende wolkenlaag. Je eigen grondgebied (+2,5 tegels) en alles binnen 4,5 tegels van een lopende dorpeling wordt ontdekt. Dit wordt opgeslagen. Oude saves beginnen met alleen het eigen gebied ontdekt. | world.js `reveal`, `buildFog`, sim.js | kaart ontdekken; oude save |
+
+- **Prestaties (software-renderer):** desktop 322 → 369 ms per frame (+15%), mobiel 157 → 167 ms (+6%). Dat komt vooral door de transparante wolkenlaag. Nog niet gemeten op een echte telefoon.
+- **Ontwerpkeuze:** dorpelingen lopen alleen binnen of vlak langs je grenzen, dus verder ontdekken gaat vooral door je grondgebied uit te breiden met wachttorens. Een aparte verkenner die je zelf ergens heen stuurt bestaat (nog) niet.
+- **iCloud:** tijdens deze ronde heeft iCloud Drive een testbestand hernoemd naar `ronde3.spec 2.js` (synchronisatieconflict). Dat is hersteld. Advies: de projectmap buiten iCloud zetten.
+
 ## Beperkingen van de automatische tests
 - **Internet nodig** voor Three.js en de fonts (CDN). Offline faalt het laden. Oplossing voor later: three.min.js en de fonts lokaal meeleveren.
 - WebGL draait headless via SwiftShader (software). Dat is betrouwbaar maar trager, en kleuren en schaduwen kunnen iets afwijken van een echte GPU. De screenshots zijn dus bedoeld voor beoordeling, niet als pixel-exacte referentie.

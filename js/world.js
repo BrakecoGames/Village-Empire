@@ -16,7 +16,82 @@
       this.owned = new Uint8Array(N * N); this.door = new Uint8Array(N * N);
       this.tree = new Array(N * N).fill(null); this.rock = new Array(N * N).fill(null); this.field = new Array(N * N).fill(null);
       this.decoT = new Array(N * N).fill(null); this.decoF = new Array(N * N).fill(null);
+      this.explored = new Float32Array(N * N); // 0 = hidden under the clouds, 1 = discovered
+      this.fogDirty = true;
       this.start = { i: 30, j: 30 };
+    }
+
+    /* ---------------- exploration (fog of war) ---------------- */
+    reveal(x, z, r) {
+      const E = this.explored, soft = 2.2;
+      for (let j = Math.max(0, Math.floor(z - r)); j <= Math.min(N - 1, Math.ceil(z + r)); j++)
+        for (let i = Math.max(0, Math.floor(x - r)); i <= Math.min(N - 1, Math.ceil(x + r)); i++) {
+          const d = Math.hypot(i + 0.5 - x, j + 0.5 - z); if (d > r) continue;
+          const v = d < r - soft ? 1 : 1 - VE.smooth(r - soft, r, d), k = j * N + i;
+          if (v > E[k] + 0.01) { E[k] = v; this.fogDirty = true; }
+        }
+    }
+    isExplored(k) { return this.explored[k] > 0.5; }
+    buildFog() {
+      const pos = new Float32Array(V1 * V1 * 3), idx = new Uint32Array(N * N * 6);
+      for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
+        const v = z * V1 + x;
+        pos[v * 3] = x; pos[v * 3 + 1] = Math.max(this.H[v], 0) + 1.7; pos[v * 3 + 2] = z;
+      }
+      let o = 0;
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+        const a = j * V1 + i, b = a + 1, c = a + V1, d = c + 1;
+        idx[o++] = a; idx[o++] = c; idx[o++] = d; idx[o++] = a; idx[o++] = d; idx[o++] = b;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('fogA', new THREE.BufferAttribute(new Float32Array(V1 * V1).fill(1), 1));
+      g.setIndex(new THREE.BufferAttribute(idx, 1));
+      const m = new THREE.ShaderMaterial({
+        uniforms: { uTime: VE.uTime },
+        transparent: true, depthWrite: false,
+        vertexShader: [
+          'attribute float fogA; varying float vA; varying vec2 vP;',
+          'void main() { vA = fogA; vec4 wp = modelMatrix * vec4(position, 1.0); vP = wp.xz; gl_Position = projectionMatrix * viewMatrix * wp; }'
+        ].join('\n'),
+        fragmentShader: [
+          'uniform float uTime; varying float vA; varying vec2 vP;',
+          'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+          'float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
+          '  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }',
+          'void main() {',
+          '  vec2 q = vP * 0.16 + vec2(uTime * 0.035, uTime * 0.018);',
+          '  float n = noise(q) * 0.6 + noise(q * 2.4 - vec2(uTime * 0.025, 0.0)) * 0.4;',
+          '  vec3 col = mix(vec3(0.74, 0.80, 0.87), vec3(0.97, 0.97, 0.99), smoothstep(0.25, 0.8, n));',
+          '  float edge = vA * (1.0 - vA) * 4.0;',                       // wispy, drifting border
+          '  float a = smoothstep(0.06, 0.72, vA + (n - 0.5) * 0.55 * edge);',
+          '  gl_FragColor = vec4(col, a);',
+          '}'
+        ].join('\n')
+      });
+      this.fog = new THREE.Mesh(g, m);
+      this.fog.renderOrder = 10; // after water and other transparent things, so nothing shows through
+      this.fog.frustumCulled = false;
+      this.fog.name = 'fog';
+      this.root.add(this.fog);
+      this.fogDirty = true;
+    }
+    updateFog() {
+      if (!this.fogDirty || !this.fog) return;
+      this.fogDirty = false;
+      const E = this.explored, fa = this.fog.geometry.attributes.fogA;
+      for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
+        let s = 0;
+        for (let dz = -1; dz <= 0; dz++) for (let dx = -1; dx <= 0; dx++) { const i = x + dx, j = z + dz; if (this.inb(i, j)) s += E[j * N + i]; }
+        fa.array[z * V1 + x] = 1 - s / 4;
+      }
+      fa.needsUpdate = true;
+    }
+    serializeFog() { let s = ''; for (let k = 0; k < N * N; k++) s += Math.round(this.explored[k] * 9); return s; }
+    loadFog(s) {
+      if (typeof s !== 'string' || s.length !== N * N) return;
+      for (let k = 0; k < N * N; k++) this.explored[k] = (s.charCodeAt(k) - 48) / 9;
+      this.fogDirty = true;
     }
     inb(i, j) { return i >= 0 && j >= 0 && i < N && j < N; }
     vh(x, z) { return this.H[z * V1 + x]; }
@@ -33,7 +108,8 @@
       for (let z = j; z <= j + s; z++) for (let x = i; x <= i + s; x++) { const h = this.vh(x, z); if (h < mn) mn = h; if (h > mx) mx = h; }
       return mx - mn;
     }
-    walkable(k) { return this.type[k] !== 1 && this.bld[k] === 0; }
+    // boulders block the way (a mason may still path *to* his own boulder: the pathfinder allows the target tile)
+    walkable(k) { return this.type[k] !== 1 && this.bld[k] === 0 && !this.rock[k]; }
     isWater(k) { return this.type[k] === 1; }
 
     generate() {
@@ -102,6 +178,7 @@
       this.root.add(this.terrain);
       this.buildSkirt();
       this.buildWater();
+      this.buildFog();
       this.recolor();
       // roads
       this.roadMat = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });

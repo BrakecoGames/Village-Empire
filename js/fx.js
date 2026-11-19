@@ -133,6 +133,67 @@
   }
   VE.SettlerRender = SettlerRender;
 
+  /* ---------------- Stockpiles in the stockyard ---------------- */
+  // Item positions per pile (item units, y = item centre), filled in order as the stock grows.
+  const PILE_S = 1.7;
+  function heap(r, h) {           // round goods: 7 on the ground, 3 on top, 1 crowning
+    const out = [{ x: 0, y: h, z: 0 }];
+    for (let a = 0; a < 6; a++) out.push({ x: Math.cos(a * 1.047) * r * 1.95, y: h, z: Math.sin(a * 1.047) * r * 1.95, ry: a });
+    for (let a = 0; a < 3; a++) out.push({ x: Math.cos(a * 2.094 + 0.5) * r * 1.05, y: h * 2.6, z: Math.sin(a * 2.094 + 0.5) * r * 1.05, ry: a * 2 });
+    out.push({ x: 0, y: h * 4.1, z: 0, ry: 1 });
+    return out;
+  }
+  function grid(sp, h, layers) {   // baskets and barrels: 2×2 per layer
+    const out = [];
+    for (let l = 0; l < layers; l++) for (let q = 0; q < 4; q++) out.push({ x: ((q & 1) - 0.5) * sp, y: h + l * h * 2.6, z: ((q >> 1) - 0.5) * sp, ry: q });
+    return out;
+  }
+  const LAYOUT = {
+    log: (() => { const o = []; for (let r = 0; r < 4; r++) for (let c = 0; c < 4 - r; c++) o.push({ x: 0, y: 0.035 + r * 0.061, z: (c - (3 - r) / 2) * 0.072 }); return o; })(),
+    plank: (() => { const o = []; for (let l = 0; l < 6; l++) for (let c = 0; c < 2; c++) o.push(l % 2 ? { x: (c - 0.5) * 0.09, y: 0.02 + l * 0.042, z: 0, ry: Math.PI / 2 } : { x: 0, y: 0.02 + l * 0.042, z: (c - 0.5) * 0.09 }); return o; })(),
+    stone: heap(0.055, 0.045), grain: heap(0.06, 0.066), flour: heap(0.06, 0.066),
+    bread: heap(0.058, 0.038), fish: heap(0.05, 0.034),
+    grape: grid(0.13, 0.03, 2), wine: grid(0.11, 0.04, 2)
+  };
+  // a fixed spot for every good inside the 2×2 yard (yard-local x/z)
+  const SLOT = { log: [-0.55, -0.55], stone: [0, -0.55], plank: [0.55, -0.55], grain: [-0.55, 0], flour: [0, 0], bread: [0.55, 0], fish: [-0.55, 0.5], grape: [0, 0.5], wine: [0.55, 0.5] };
+  // 1 item per unit for small stocks, then the pile grows more slowly until it is full
+  const visCount = (s, cap) => s <= 0 ? 0 : Math.min(cap, s <= 6 ? Math.ceil(s) : 6 + Math.ceil((s - 6) / 4));
+
+  class StockpileRender {
+    constructor(root) {
+      const mat = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 5, specular: 0x111111 });
+      this.meshes = {};
+      for (const r of VE.RES_ORDER) {
+        const n = LAYOUT[r].length * 2;
+        const m = new THREE.InstancedMesh(VE.itemGeo(r), mat, n);
+        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3); // see VE-001
+        m.count = 0; m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false;
+        root.add(m); this.meshes[r] = m;
+      }
+      this.sig = '';
+    }
+    update(game) {
+      const yards = game.buildings.filter(b => b.alive && b.built && b.type === 'yard').slice(0, 2);
+      const counts = VE.RES_ORDER.map(r => visCount(game.stock[r] || 0, LAYOUT[r].length));
+      const sig = yards.map(b => b.id + ':' + b.y.toFixed(2)).join(',') + '|' + counts.join(',');
+      if (sig === this.sig) return;
+      this.sig = sig;
+      VE.RES_ORDER.forEach((r, ri) => {
+        const mesh = this.meshes[r], lay = LAYOUT[r], sl = SLOT[r];
+        let n = 0;
+        for (const b of yards) for (let q = 0; q < counts[ri]; q++) {
+          const p = lay[q], jit = ((q * 37 + ri * 11) % 7 - 3) * 0.012;  // a little untidiness
+          _q.setFromAxisAngle(UP, (p.ry || 0) + jit);
+          _m.compose(_p.set(b.cx + sl[0] + p.x * PILE_S, b.y + 0.07 + p.y * PILE_S, b.cz + sl[1] + p.z * PILE_S), _q, _s.set(PILE_S, PILE_S, PILE_S));
+          mesh.setMatrixAt(n++, _m);
+        }
+        mesh.count = n; mesh.instanceMatrix.needsUpdate = true;
+      });
+    }
+  }
+  VE.StockpileRender = StockpileRender;
+
   /* ---------------- particles ---------------- */
   class Puffs {
     constructor(root, color, cap, opacity, detail) {

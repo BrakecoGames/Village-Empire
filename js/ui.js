@@ -28,7 +28,7 @@
       this.yaw += (this.tyaw - this.yaw) * Math.min(1, dt * 7);
       this.tx = VE.clamp(this.tx, 1, N - 1); this.tz = VE.clamp(this.tz, 1, N - 1);
       if (w) this.ty += (Math.max(0.3, w.heightAt(this.tx, this.tz)) - this.ty) * Math.min(1, dt * 4);
-      const p = this.pitch + (this.dist - 17) * 0.004, cp = Math.cos(p), sp = Math.sin(p);
+      const p = VE.clamp(this.pitch + (this.dist - 17) * 0.004, 0.35, 1.43), cp = Math.cos(p), sp = Math.sin(p);
       this.camera.position.set(this.tx + Math.sin(this.yaw) * cp * this.dist, this.ty + sp * this.dist, this.tz + Math.cos(this.yaw) * cp * this.dist);
       this.camera.lookAt(this.tx, this.ty, this.tz);
     }
@@ -40,6 +40,8 @@
     }
     zoom(f) { this.tdist = VE.clamp(this.tdist * f, 6.5, 42); }
     rotate(a) { this.tyaw += a; }
+    /* tilt up/down (radians, positive = more top-down), 20°–82° like the other Brakeco games */
+    tilt(a) { this.pitch = VE.clamp(this.pitch + a, 0.42, 1.36); }
     focus(x, z) { this.tx = x; this.tz = z; }
   }
   VE.CameraCtl = CameraCtl;
@@ -108,8 +110,12 @@
     bindInput() {
       const el = this.view.renderer.domElement;
       el.addEventListener('contextmenu', e => e.preventDefault());
+      // middle mouse: no browser auto-scroll / paste, it orbits the camera instead
+      el.addEventListener('auxclick', e => { if (e.button === 1) e.preventDefault(); });
+      el.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
       el.addEventListener('pointerdown', e => {
         if (!VE.playing) return;
+        if (e.button === 1) e.preventDefault();
         el.setPointerCapture(e.pointerId);
         this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, b: e.button, type: e.pointerType });
         this.moved = 0;
@@ -144,6 +150,7 @@
           // touch: drag paints roads when started on a road-able tile
           this.painting = true; this.paintAt(p.sx, p.sy, true); this.paintAt(e.clientX, e.clientY); return;
         }
+        if (p.b === 1) { this.view.cam.rotate(-dx * 0.008); this.view.cam.tilt(dy * 0.006); return; } // middle drag: orbit + tilt
         if (p.b === 2) { this.view.cam.rotate(-dx * 0.006); return; }
         if (Math.hypot(p.x - p.sx, p.y - p.sy) > 6) this.view.cam.pan(dx, dy);
         if (e.pointerType === 'mouse') this.hover(e.clientX, e.clientY);
@@ -170,6 +177,8 @@
         else if (k === 'e') c.rotate(Math.PI / 4);
         else if (k === '+' || k === '=') c.zoom(0.85);
         else if (k === '-') c.zoom(1.18);
+        else if (k === 'pageup') { c.tilt(0.15); e.preventDefault(); }
+        else if (k === 'pagedown') { c.tilt(-0.15); e.preventDefault(); }
         else if (k === 'r') this.setTool(this.tool === 'road' ? null : 'road');
         else if (k === 'x') this.setTool(this.tool === 'demolish' ? null : 'demolish');
         else if (k === ' ') { this.cycleSpeed(); e.preventDefault(); }
@@ -215,7 +224,7 @@
       if (this.tool === 'road' || this.tool === 'demolish') {
         this.tileMark.visible = true;
         this.tileMark.position.set(p.i + 0.5, w.tileH(p.i, p.j) + 0.08, p.j + 0.5);
-        const ok = this.tool === 'road' ? g.canRoad(p.j * N + p.i) : (!!p.b && p.b.type !== 'hq') || (w.road[p.j * N + p.i] && !w.door[p.j * N + p.i]);
+        const ok = this.tool === 'road' ? g.canRoad(p.j * N + p.i) : (!!p.b && !p.b.def.fixed) || (w.road[p.j * N + p.i] && !w.door[p.j * N + p.i]);
         this.tileMark.material.color.setHex(ok ? (this.tool === 'road' ? 0xffe7a8 : 0xff6a5a) : 0x9a9a9a);
         return;
       }
@@ -251,7 +260,7 @@
         return;
       }
       if (this.tool === 'demolish') {
-        if (p.b && p.b.type !== 'hq') this.confirmDemolish(p.b);
+        if (p.b && !p.b.def.fixed) this.confirmDemolish(p.b);
         else if (p.i >= 0 && w.road[p.j * N + p.i]) { if (g.removeRoad(p.i, p.j)) { VE.audio.play('demolish', p.i, p.j); g.world.rebuildRoads(); } }
         return;
       }
@@ -473,7 +482,7 @@
           else { const c = VE.levelCost(d, b.level + 1); h += '<button class="btn good" data-act="upgrade" ' + (g.canAfford(c) ? '' : 'disabled') + '>⭐ Upgrade ' + costHtml(c, g) + '</button>'; }
         }
       }
-      if (b.type !== 'hq') h += '<button class="btn bad" data-act="demolish">Demolish</button>';
+      if (!d.fixed) h += '<button class="btn bad" data-act="demolish">Demolish</button>';
       h += '</div>';
       const ae = document.activeElement;
       if (!force && ae && ae.tagName === 'SELECT' && el.contains(ae)) return;

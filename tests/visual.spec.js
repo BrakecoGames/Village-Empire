@@ -13,6 +13,8 @@ const VIEWS = [
   { name: 'a-dorp-dichtbij', dist: 11, yaw: Math.PI / 4, dx: 0, dz: 1 },
   { name: 'b-dorp-midden', dist: 19, yaw: Math.PI / 4 + 0.6, dx: 0, dz: 1 },
   { name: 'c-overzicht', dist: 40, yaw: Math.PI / 4, dx: 0, dz: 0 },
+  // de opslagplaats met stapels
+  { name: 'g-opslagplaats', dist: 7.5, yaw: Math.PI / 4, yard: true },
   // zo dicht mogelijk bij een groepje dorpelingen (dichtste zoom van de game)
   { name: 'd-poppetjes', dist: 6.5, yaw: Math.PI / 4 + 0.3, follow: true },
 ];
@@ -59,6 +61,8 @@ test('@visual vaste camerabeelden', async ({ page }, info) => {
         for (const s of g.settlers) { if (s.hidden) continue; const n = g.settlers.filter(o => !o.hidden && Math.hypot(o.x - s.x, o.z - s.z) < 1.5).length; if (n > bn) { bn = n; best = s; } }
         c.tx = best.x; c.tz = best.z; window.__focus = best;
         window.VE.game.speed = 0; // bevriezen zodat iedereen in beeld blijft
+      } else if (v.yard) {
+        const y = g.buildings.find(b => b.type === 'yard'); c.tx = y.cx; c.tz = y.cz;
       } else { c.tx = hq.cx + v.dx; c.tz = hq.cz + v.dz; }
       c.tdist = c.dist = v.dist; c.tyaw = c.yaw = v.yaw;
     }, v);
@@ -108,16 +112,17 @@ test('@visual poppetjes line-up', async ({ page }, info) => {
     // vrije plek zoeken: geen bomen/rotsen/gebouwen in een strook rond de line-up en ervoor (richting camera)
     const yaw = Math.PI / 4, w = g.world, N = VE.N;
     let tx = hq.cx + 2.2, tz = hq.cz + 2.2;
-    const free = (x, z) => { for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) { const i = Math.floor(x + dx), j = Math.floor(z + dz); if (!w.inb(i, j)) return false; const k = j * N + i; if (w.tree[k] || w.rock[k] || w.bld[k] || w.type[k] !== 0) return false; } return true; };
+    const free = (x, z) => { for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) { const i = Math.floor(x + dx), j = Math.floor(z + dz); if (!w.inb(i, j)) return false; const k = j * N + i; if (w.tree[k] || w.rock[k] || w.bld[k] || w.type[k] !== 0 || w.explored[k] < 0.99) return false; } return true; };
     search: for (let r = 2; r < 14; r++) for (let a = 0; a < 16; a++) { const x = hq.cx + Math.cos(a / 16 * 6.283) * r, z = hq.cz + Math.sin(a / 16 * 6.283) * r; if (free(x, z)) { tx = x; tz = z; break search; } }
     c.tx = tx; c.tz = tz; c.tdist = c.dist = 3.2; c.tyaw = c.yaw = yaw; c.pitch = 0.62;
     const px = Math.cos(yaw), pz = -Math.sin(yaw);
     const poses = [
+      { mode: 'work', role: 'mason', tool: 'pick', act: 'pick', ap: 0.12 },
       { mode: 'idle' },
       { mode: 'idle', moving: true, wp: 1.3 },
       { mode: 'idle', moving: true, wp: 4.2, carry: 'log' },
       { mode: 'work', role: 'woodcutter', tool: 'axe', act: 'chop', ap: 0.4 },
-      { mode: 'build', tool: 'hammer', act: 'hammer', ap: 0.2 },
+      { mode: 'work', role: 'mason', tool: 'pick', act: 'pick', ap: 0.3 },
       { mode: 'idle', moving: true, wp: 2.4, carry: 'plank' },
     ];
     g.settlers.forEach((s, i) => {
@@ -131,6 +136,11 @@ test('@visual poppetjes line-up', async ({ page }, info) => {
   await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
   fs.mkdirSync(OUT, { recursive: true });
   await page.screenshot({ path: path.join(OUT, `${info.project.name}-f-line-up.png`) });
+  // zijaanzicht: gereedschap en draaghouding van opzij
+  await page.evaluate(() => { for (const s of window.VE.game.settlers) s.rot += Math.PI / 2; });
+  await page.waitForTimeout(2500);
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.screenshot({ path: path.join(OUT, `${info.project.name}-f-line-up-zijkant.png`) });
   const unknown = checkErrors(errors, info);
   if (unknown.length) throw new Error(unknown.join('\n'));
 });

@@ -113,6 +113,7 @@
       if (save) this.load(save, rand);
       else this.newVillage(rand);
       this.updateTerritory(true);
+      if (!this.buildings.some(b => b.type === 'yard')) this.placeYard(); // new village, or a save from before stockyards
       w.rebuildRoads();
       this.nature.update(0, 1);
     }
@@ -125,6 +126,19 @@
       Object.assign(this.stock, { log: 6, stone: 14, plank: 28, bread: 8, fish: 4 });
       this.gold = 40;
       for (let n = 0; n < 10; n++) this.spawnSettler();
+    }
+
+    /* Stockyard next to the Village Hall, without blocking the space in front of the hall's door */
+    placeYard() {
+      const hq = this.hq; if (!hq) return null;
+      let best = null, bd = 1e9;
+      for (let j = hq.j - 7; j <= hq.j + 7; j++) for (let i = hq.i - 7; i <= hq.i + 7; i++) {
+        if (i + 1 >= hq.i - 1 && i <= hq.i + 2 && j + 1 >= hq.j + 2 && j <= hq.j + 4) continue; // keep the hall's front free
+        if (!this.canPlace('yard', i, j, true).ok) continue;
+        const d = (i + 1 - hq.cx) ** 2 + (j + 1 - hq.cz) ** 2;
+        if (d < bd) { bd = d; best = [i, j]; }
+      }
+      return best ? this.placeBuilding('yard', best[0], best[1], true) : null;
     }
 
     /* ---------- helpers ---------- */
@@ -164,9 +178,9 @@
     }
 
     /* ---------- placement ---------- */
-    canPlace(type, i, j) {
+    canPlace(type, i, j, force) {
       const def = DEFS[type], w = this.world, size = def.size || 1;
-      if (!this.unlocked(type)) return { ok: false, why: 'Not unlocked yet' };
+      if (!force && !this.unlocked(type)) return { ok: false, why: 'Not unlocked yet' };
       for (let dj = 0; dj < size; dj++) for (let di = 0; di < size; di++) {
         const a = i + di, b = j + dj;
         if (!w.inb(a, b)) return { ok: false, why: 'Outside the map' };
@@ -269,6 +283,7 @@
       const c = [];
       for (const b of this.buildings) if (b.alive && b.built && b.def.territory) c.push({ x: b.cx, z: b.cz, r: b.def.territory + (b.level - 1) * 1.5 });
       this.world.setTerritory(c);
+      for (const t of c) this.world.reveal(t.x, t.z, t.r + 2.5);   // your own land (and a little beyond) is known
       if (!initial) emit('territory', {});
     }
     upgrade(b) {
@@ -285,7 +300,7 @@
       return true;
     }
     demolish(b) {
-      if (!b || b.type === 'hq' || !b.alive) return;
+      if (!b || b.def.fixed || !b.alive) return;
       const w = this.world;
       b.alive = false;
       this.root.remove(b.group);
@@ -677,12 +692,25 @@
           let best = null, bd = 1e9;
           for (const r of this.nature.rocks) {
             if (r.dead || r.reserved) continue;
+            // boulders are solid: only pick one with a free tile beside it (inner boulders of a cluster come later)
+            const ri = r.k % N, rj = (r.k / N) | 0;
+            let open = false;
+            for (const dd of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = ri + dd[0], c = rj + dd[1]; if (w.inb(a, c) && w.walkable(c * N + a)) { open = true; break; } }
+            if (!open) continue;
             const dd = (r.x - b.cx) ** 2 + (r.z - b.cz) ** 2;
             if (dd < d.radius * d.radius && dd < bd) { bd = dd; best = r; }
           }
           if (!best) { b.status = 'No stone in range'; s.wt = 3; return; }
           const r = best; r.reserved = true; s.resv = r; b.status = 'Cutting stone';
-          const sp = this.standPoint(b, r.x, r.z, 0.36);
+          // stand at the edge of the boulder, on its open side nearest to the quarry
+          let sp = this.standPoint(b, r.x, r.z, 0.36), sd = 1e9;
+          { const ri = r.k % N, rj = (r.k / N) | 0;
+            for (const dd of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+              const a = ri + dd[0], c = rj + dd[1];
+              if (!w.inb(a, c) || !w.walkable(c * N + a)) continue;
+              const q = (a + 0.5 - b.dx) ** 2 + (c + 0.5 - b.dz) ** 2;
+              if (q < sd) { sd = q; sp = [ri + 0.5 + dd[0] * 0.46, rj + 0.5 + dd[1] * 0.46]; }
+            } }
           const ok = this.goAct(s, b, r.k, sp[0], sp[1], [r.x, r.z], 'pick', d.time / gm, () => {
             s.resv = null; r.reserved = false;
             if (r.dead) { this.goHome(s, b, null); return; }
@@ -846,6 +874,13 @@
       }
       for (const b of this.buildings) this.updateBuilding(b, dt);
       this.nature.update(dt, this.growMult());
+      // exploration: wherever settlers walk, the clouds lift
+      this.fogT = (this.fogT || 0) - dt;
+      if (this.fogT <= 0) {
+        this.fogT = 0.4;
+        for (const s of this.settlers) if (!s.hidden) w.reveal(s.x, s.z, 4.5);
+      }
+      w.updateFog();
       this.dispT -= dt;
       if (this.dispT <= 0) { this.dispT = 0.25; this.dispatch(); }
       // newcomers
@@ -921,7 +956,7 @@
           id: b.id, t: b.type, i: b.i, j: b.j, l: b.level, b: b.built ? 1 : 0, u: b.used,
           d: b.built ? {} : b.delivered, inp: b.input, out: b.output, sell: b.sell, keep: b.keep
         })),
-        roads: roads, nature: this.nature.serialize(), cam: cam || null, saved: Date.now()
+        roads: roads, nature: this.nature.serialize(), fog: w.serializeFog(), cam: cam || null, saved: Date.now()
       };
     }
     load(sv, rand) {
@@ -931,6 +966,7 @@
       Object.assign(this.stats, sv.stats || {});
       Object.assign(this.upg, sv.upg || {});
       this.speed = sv.speed || 1;
+      if (sv.fog) w.loadFog(sv.fog); // older saves: only the land around your borders starts discovered
       const idmap = {};
       for (const bs of sv.buildings) {
         if (!DEFS[bs.t]) continue;

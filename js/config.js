@@ -24,8 +24,10 @@
   };
 
   VE.DEFS = {
-    hq: { name: 'Village Hall', icon: '🏰', size: 2, storage: true, housing: 12, territory: 9, buildable: false,
+    hq: { name: 'Village Hall', icon: '🏰', size: 2, storage: true, housing: 12, territory: 9, buildable: false, fixed: true,
       desc: 'Heart of your village. Stores all goods and shelters your first settlers.' },
+    yard: { name: 'Stockyard', icon: '🪵', size: 2, storage: true, buildable: false, fixed: true,
+      desc: 'Every log, stone and sack your village owns is piled up here. Carriers drop goods off at the yard, builders fetch them from it.' },
     house: { name: 'Cottage', icon: '🏡', cat: 'basic', rank: 0, cost: { plank: 4, stone: 2 }, housing: 5, levelHousing: 3,
       desc: 'A cosy home for 5 settlers. New settlers arrive faster when there is bread or fish in storage.' },
     woodcutter: { name: 'Woodcutter', icon: '🪓', cat: 'basic', rank: 0, cost: { plank: 3 }, worker: 'woodcutter', gather: 'tree', radius: 6, out: 'log', time: 3.2, tool: 'axe',

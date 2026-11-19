@@ -66,6 +66,7 @@
     g.init(save);
     g.sr = new VE.SettlerRender(g.root);
     g.fx = new VE.FX(g.root, g);
+    g.piles = new VE.StockpileRender(g.root);
     g.started = !!save;
     const hq = g.hq;
     if (save && save.cam) { view.cam.tx = save.cam.x; view.cam.tz = save.cam.z; view.cam.tdist = view.cam.dist = save.cam.d || 17; view.cam.tyaw = view.cam.yaw = save.cam.yaw || Math.PI / 4; }
@@ -128,6 +129,7 @@
       for (let i = 0; i < steps; i++) g.update(dt);
       g.fx.update(dt, VE.uTime.value);
       g.sr.render(g.settlers);
+      g.piles.update(g);
     }
     if (VE.playing) {
       ui.update(dt);
