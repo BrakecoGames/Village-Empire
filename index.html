@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<!-- Village Empire — © 2026 Brakeco Games. All rights reserved. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Village Empire</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" class="hidden">
+  <div id="topbar">
+    <div id="rankBox">
+      <div class="crest">🏰</div>
+      <div><div id="rankName">Hamlet</div><div class="popline"><span id="popIco"></span><span id="pop">0/0</span></div></div>
+    </div>
+    <div id="resBar"></div>
+    <div id="goldBox"><span id="goldIco"></span><b id="gold">0</b></div>
+  </div>
+  <div id="sideBtns">
+    <button id="btnQuests" class="round" title="Village Charter">📜<span id="qBadge" class="badge hidden"></span></button>
+    <button id="btnUpgrades" class="round" title="Upgrades">🔨</button>
+    <button id="btnTrade" class="round" title="Trade">⚖️</button>
+    <button id="btnSound" class="round" title="Sound">🔊</button>
+    <button id="btnMenu" class="round" title="Menu">☰</button>
+  </div>
+  <div id="questPanel" class="panel"></div>
+  <div id="infoPanel" class="panel hidden"></div>
+  <div id="toolHint" class="hidden"><span id="toolHintText"></span><button id="toolCancel">✕</button></div>
+  <div id="buildBar" class="panel">
+    <div id="toolRow">
+      <button class="tool on" data-tool="select">👆<small>Select</small></button>
+      <button class="tool" data-tool="road">🛤️<small>Road</small></button>
+      <button class="tool" data-tool="demolish">🧨<small>Remove</small></button>
+      <button class="tool" data-tool="speed" id="speedBtn">⏩<small>1×</small></button>
+      <div id="tabs"></div>
+    </div>
+    <div id="cards"></div>
+  </div>
+  <div id="toasts"></div>
+</div>
+<div id="floaters"></div>
+<div id="modal" class="hidden"><div id="modalBox" class="panel"></div></div>
+
+<div id="startScreen">
+  <div class="vignette"></div>
+  <div class="title-wrap">
+    <div class="banner">
+      <div class="crown">👑</div>
+      <h1>Village<br><span>Empire</span></h1>
+      <div class="tag">Raise a cosy medieval village · grow it into an empire</div>
+    </div>
+    <div id="loadingText">Loading…</div>
+    <div id="menuBtns" class="hidden">
+      <button id="btnContinue" class="big hidden">Continue</button>
+      <button id="btnNew" class="big alt">Found your Village</button>
+    </div>
+    <div id="confirmNew" class="panel hidden">
+      <p>Start over? Your current village will be lost.</p>
+      <div class="mbtns"><button id="cnNo" class="btn">Cancel</button><button id="cnYes" class="btn bad">Start fresh</button></div>
+    </div>
+  </div>
+  <div class="copyright">© 2026 Brakeco Games</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/util.js"></script>
+<script src="js/config.js"></script>
+<script src="js/models.js"></script>
+<script src="js/world.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

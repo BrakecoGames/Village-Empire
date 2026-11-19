@@ -1,0 +1,210 @@
+/* Village Empire — © 2026 Brakeco Games. All rights reserved. */
+'use strict';
+(function (VE) {
+  const $ = id => document.getElementById(id);
+  const SAVE_KEY = 'village_empire_save_v1', SET_KEY = 'village_empire_settings';
+
+  /* ---------------- CrazyGames SDK wrapper (safe when unavailable) ---------------- */
+  VE.sdk = {
+    sdk: null,
+    init() {
+      return new Promise(resolve => {
+        let done = false;
+        const finish = () => { if (!done) { done = true; resolve(); } };
+        setTimeout(finish, 2500);
+        try {
+          const s = document.createElement('script');
+          s.src = 'https://sdk.crazygames.com/crazygames-sdk-v3.js';
+          s.onload = () => {
+            try {
+              if (window.CrazyGames && window.CrazyGames.SDK) {
+                window.CrazyGames.SDK.init().then(() => { this.sdk = window.CrazyGames.SDK; finish(); }).catch(finish);
+              } else finish();
+            } catch (e) { finish(); }
+          };
+          s.onerror = finish;
+          document.head.appendChild(s);
+        } catch (e) { finish(); }
+      });
+    },
+    call(fn) { try { if (this.sdk && this.sdk.environment !== 'disabled') fn(this.sdk); } catch (e) { /* ignore */ } },
+    loadingStart() { this.call(s => s.game.loadingStart()); },
+    loadingStop() { this.call(s => s.game.loadingStop()); },
+    gameplayStart() { this.call(s => s.game.gameplayStart()); },
+    gameplayStop() { this.call(s => s.game.gameplayStop()); },
+    happy() { this.call(s => s.game.happytime()); },
+    get(k) {
+      let v = null;
+      try { if (this.sdk && this.sdk.data) v = this.sdk.data.getItem(k); } catch (e) { v = null; }
+      if (v == null) { try { v = window.localStorage.getItem(k); } catch (e) { v = null; } }
+      return v;
+    },
+    set(k, v) {
+      try { if (this.sdk && this.sdk.data) this.sdk.data.setItem(k, v); } catch (e) { /* ignore */ }
+      try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ }
+    },
+    del(k) {
+      try { if (this.sdk && this.sdk.data) this.sdk.data.removeItem(k); } catch (e) { /* ignore */ }
+      try { window.localStorage.removeItem(k); } catch (e) { /* ignore */ }
+    }
+  };
+
+  let renderer, scene, camera, sun, hemi, view, ui, last = 0, saveT = 20;
+  VE.playing = false;
+
+  function readSave() { try { const s = VE.sdk.get(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  VE.save = function () {
+    if (!VE.game || !VE.game.started) return;
+    try { VE.sdk.set(SAVE_KEY, JSON.stringify(VE.game.serialize({ x: view.cam.tx, z: view.cam.tz, d: view.cam.tdist, yaw: view.cam.tyaw }))); } catch (e) { console.warn('save failed', e); }
+  };
+  VE.saveSettings = function () { try { VE.sdk.set(SET_KEY, JSON.stringify({ sfx: VE.audio.sfxOn, music: VE.audio.musicOn })); } catch (e) { /* ignore */ } };
+
+  function createGame(save) {
+    if (VE.game) VE.game.dispose();
+    const g = new VE.Game(scene);
+    VE.game = g;
+    g.init(save);
+    g.sr = new VE.SettlerRender(g.root);
+    g.fx = new VE.FX(g.root, g);
+    g.started = !!save;
+    const hq = g.hq;
+    if (save && save.cam) { view.cam.tx = save.cam.x; view.cam.tz = save.cam.z; view.cam.tdist = view.cam.dist = save.cam.d || 17; view.cam.tyaw = view.cam.yaw = save.cam.yaw || Math.PI / 4; }
+    else { view.cam.tx = hq.cx; view.cam.tz = hq.cz + 1; view.cam.tdist = view.cam.dist = 19; }
+    view.cam.ty = Math.max(0.3, g.world.heightAt(view.cam.tx, view.cam.tz));
+    if (ui) { ui.select(null); ui.setTool(null); }
+    return g;
+  }
+
+  function startPlaying() {
+    VE.audio.init();
+    const g = VE.game;
+    const fresh = !g.started;
+    g.started = true;
+    VE.playing = true;
+    view.cam.orbit = false;
+    $('startScreen').classList.add('hidden');
+    $('hud').classList.remove('hidden');
+    $('speedBtn').innerHTML = '⏩<small>' + g.speed + '×</small>';
+    ui.syncSoundBtn();
+    ui.refreshHud(true);
+    VE.sdk.gameplayStart();
+    if (fresh) {
+      view.cam.focus(g.hq.cx, g.hq.cz + 1); view.cam.tdist = 16;
+      setTimeout(() => ui.toast('👑 Welcome, my lord! This valley is yours to settle.'), 400);
+      setTimeout(() => ui.toast('📜 Follow the Village Charter to grow your hamlet.'), 3200);
+      setTimeout(() => ui.toast('🪓 Start with a Woodcutter close to the trees.'), 6000);
+      VE.save();
+    }
+  }
+  VE.toMenu = function () {
+    VE.save();
+    VE.playing = false;
+    VE.sdk.gameplayStop();
+    view.cam.orbit = true;
+    $('hud').classList.add('hidden');
+    $('startScreen').classList.remove('hidden');
+    $('btnContinue').classList.remove('hidden');
+    $('btnNew').textContent = 'New Village';
+  };
+  VE.newGame = function () {
+    VE.sdk.del(SAVE_KEY);
+    createGame(null);
+    startPlaying();
+  };
+
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000 || 0.016)); last = now;
+    VE.uTime.value += dt;
+    const g = VE.game, c = view.cam;
+    if (g) {
+      const steps = VE.playing ? g.speed : 1;
+      for (let i = 0; i < steps; i++) g.update(dt);
+      g.fx.update(dt, VE.uTime.value);
+      g.sr.render(g.settlers);
+    }
+    if (VE.playing) {
+      ui.update(dt);
+      saveT -= dt; if (saveT <= 0) { saveT = 20; VE.save(); }
+    }
+    c.update(dt);
+    // sun & shadows follow the view
+    const d = Math.max(11, c.dist * 1.05);
+    sun.position.set(c.tx - 14, c.ty + 26, c.tz + 10);
+    sun.target.position.set(c.tx, c.ty, c.tz);
+    const sc = sun.shadow.camera;
+    if (sc.right !== d) { sc.left = -d; sc.right = d; sc.top = d; sc.bottom = -d; sc.updateProjectionMatrix(); }
+    VE.audio.lx = c.tx; VE.audio.lz = c.tz; VE.audio.ld = c.dist;
+    renderer.render(scene, camera);
+  }
+
+  async function boot() {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, VE.isMobile ? 1.5 : 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setClearColor(0x000000, 0);
+    $('game').appendChild(renderer.domElement);
+    scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0xcde3e6, 55, 120);
+    camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.3, 300);
+    hemi = new THREE.HemisphereLight(0xfff3dc, 0x5d7040, 0.56);
+    scene.add(hemi);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.1));
+    sun = new THREE.DirectionalLight(0xffe3b8, 0.8);
+    sun.castShadow = true;
+    const ms = VE.isMobile ? 1024 : 2048;
+    sun.shadow.mapSize.set(ms, ms);
+    sun.shadow.camera.near = 1; sun.shadow.camera.far = 90;
+    sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02;
+    scene.add(sun); scene.add(sun.target);
+    view = { renderer: renderer, scene: scene, camera: camera, cam: new VE.CameraCtl(camera) };
+    VE.view = view;
+    resize();
+    window.addEventListener('resize', resize);
+
+    $('loadingText').textContent = 'Preparing the valley…';
+    await VE.sdk.init();
+    VE.sdk.loadingStart();
+    try { const st = JSON.parse(VE.sdk.get(SET_KEY) || 'null'); if (st) { VE.audio.sfxOn = st.sfx !== false; VE.audio.musicOn = st.music !== false; } } catch (e) { /* ignore */ }
+
+    ui = new VE.UI(view);
+    VE.ui = ui;
+    ui.buildResBar();
+    const save = readSave();
+    try { createGame(save); }
+    catch (e) { console.error('Save could not be loaded, starting fresh', e); createGame(null); }
+    view.cam.orbit = true;
+    if (VE.game.started) { $('btnContinue').classList.remove('hidden'); $('btnNew').textContent = 'New Village'; }
+    else { $('btnContinue').classList.add('hidden'); $('btnNew').textContent = 'Found your Village'; }
+    $('loadingText').classList.add('hidden');
+    $('menuBtns').classList.remove('hidden');
+    VE.sdk.loadingStop();
+
+    $('btnContinue').addEventListener('click', () => { VE.audio.init(); VE.audio.play('open'); startPlaying(); });
+    $('btnNew').addEventListener('click', () => {
+      VE.audio.init();
+      if (VE.game.started) { $('confirmNew').classList.remove('hidden'); return; }
+      startPlaying();
+    });
+    $('cnYes').addEventListener('click', () => { $('confirmNew').classList.add('hidden'); VE.newGame(); });
+    $('cnNo').addEventListener('click', () => $('confirmNew').classList.add('hidden'));
+    document.addEventListener('visibilitychange', () => { if (document.hidden && VE.playing) VE.save(); });
+    window.addEventListener('beforeunload', () => { if (VE.playing) VE.save(); });
+    // first interaction unlocks audio
+    const unlock = () => { VE.audio.init(); window.removeEventListener('pointerdown', unlock); };
+    window.addEventListener('pointerdown', unlock);
+    requestAnimationFrame(t => { last = t; frame(t); });
+  }
+
+  window.addEventListener('load', () => {
+    if (!window.THREE) { document.getElementById('loadingText').textContent = 'Could not load the 3D engine. Please check your connection and reload.'; return; }
+    boot().catch(e => { console.error(e); document.getElementById('loadingText').textContent = 'Something went wrong while starting: ' + e.message; });
+  });
+})(window.VE);
