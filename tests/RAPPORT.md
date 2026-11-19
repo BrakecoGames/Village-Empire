@@ -32,13 +32,19 @@ Playwright start zelf een lokale server op `http://127.0.0.1:4173`. Screenshots 
 
 ## Gevonden fouten
 
-### VE-001: render-crash bij elk frame (ernstig)
+### VE-001: render-crash bij elk frame (ernstig): ✅ OPGELOST
+**Fix:** `js/fx.js` geeft `head`, tools en items een witte `instanceColor` met volledige capaciteit. Wit × vertexkleur = ongewijzigd uiterlijk. Let op: `setColorAt` was hier niet bruikbaar, omdat r128 de buffer dimensioneert op de huidige `count` (0). Dat gaf zwarte planken.
+**Resultaat:** geen JS-fouten meer (ook in `STRICT`-modus). Kolonisten, gedragen goederen, het meer links op de kaart, rook en vlinders zijn nu zichtbaar. Punt 7 hieronder (wazige vlek) was het meer dat niet gerenderd werd.
+
+<details><summary>Oorspronkelijke analyse</summary>
+
 `TypeError: Cannot read properties of null (reading 'isInterleavedBufferAttribute')` uit `renderer.render` (main.js:144), vanaf het eerste frame, elk frame opnieuw.
 
 - **Oorzaak:** in `js/fx.js:12-21` delen `torso`, `head`, `hat`, `legL`, `legR`, de tools en de items **één** `MeshPhongMaterial`. Torso, hat en benen krijgen `setColorAt` (en dus `instanceColor`), maar `head` en de tools/items niet. Three.js r128 compileert de shader met instance-kleur en crasht daarna op de `InstancedMesh` zonder `instanceColor`.
 - **Gevolg:** de rest van de renderlijst wordt dat frame overgeslagen. In de screenshots zijn de 10 kolonisten **nergens zichtbaar**, ook niet bij de bouwplaats.
 - **Mogelijke fix (nog niet doorgevoerd, het is een graphics-wijziging):** geef `head`/tools/items ook `setColorAt` (bijvoorbeeld wit), of geef ze een eigen materiaal.
-- Staat in `tests/known-issues.js`. Verwijder die regel na de fix, dan bewaakt de test het weer streng.
+
+</details>
 
 ### VE-002: klikken in de bouwbalk kunnen verloren gaan (middel)
 `refreshHud` (ui.js:591-592) vervangt `#tabs` en `#cards` via `innerHTML` zodra de voorraad verandert. Kolonisten leveren continu, dus een klik kan vallen tussen pointerdown en pointerup op een element dat ondertussen vervangen is. De klik komt dan niet aan. Op mobiel (langzamere tik) gebeurde dit in de tests reproduceerbaar. De tests proberen nu opnieuw; voor spelers voelt dit als een knop die niet reageert.
@@ -58,14 +64,14 @@ In het venster "Village Upgrades" staat "Become a Village to unlock…", maar de
 6. De bouwkaarten lopen rechts uit beeld (Sawmill niet zichtbaar). Dat is te scrollen, maar zonder hint.
 
 **Desktop (1920×1080)**
-7. Een grote, wazige geel-bruine vlek linksboven (helling of terrein met mist) ziet eruit als een renderfout. Controleren na de VE-001-fix.
+7. ~~Een grote, wazige geel-bruine vlek linksboven~~: opgelost door VE-001 (het was een niet-gerenderd meer).
 8. Het Village Charter-paneel is erg hoog en bedekt een flink deel van de wereld. Standaard inklappen zou helpen.
 9. De bouwbalk heeft veel lege ruimte rechts van de 5 kaarten.
 10. Het Cinzel Decorative-lettertype maakt van "WOODCUTTER" iets als "W∞DCUTTER" (ligatuur "oo") in het infopaneel.
 11. Tabs zijn 28 px hoog: prima met een muis, maar klein op tablets.
 
 **Algemeen**
-12. Er zijn geen kolonisten zichtbaar (zie VE-001). Het dorp oogt daardoor leeg.
+12. ~~Er zijn geen kolonisten zichtbaar~~: opgelost door VE-001.
 
 ## Beperkingen van de automatische tests
 - **Internet nodig** voor Three.js en de fonts (CDN). Offline faalt het laden. Oplossing voor later: three.min.js en de fonts lokaal meeleveren.

@@ -29,6 +29,12 @@
       for (const r of VE.RES_ORDER) {
         const m = new THREE.InstancedMesh(VE.itemGeo(r), mat, 120); m.count = 0; m.frustumCulled = false; m.castShadow = true; root.add(m); this.items[r] = m;
       }
+      // All meshes share `mat`; three.js r128 needs every one of them to have instanceColor
+      // once any has it, otherwise rendering crashes. White keeps the vertex colours unchanged.
+      // (setColorAt would size the buffer by the current `count`, which is 0 here, so build it at full capacity.)
+      for (const m of [this.head, ...Object.values(this.tools), ...Object.values(this.items)]) {
+        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3).fill(1), 3);
+      }
       this.roleCol = {};
       for (const r in VE.ROLES) this.roleCol[r] = [new THREE.Color(VE.ROLES[r][0]), new THREE.Color(VE.ROLES[r][1])];
     }
