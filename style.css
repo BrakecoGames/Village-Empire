@@ -110,6 +110,7 @@ select { font-family: inherit; font-weight: 800; border-radius: 8px; border: 2px
 .btn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 var(--wood2); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.good { background: linear-gradient(180deg, #a6d86a, #6fae3a); color: #fff; text-shadow: 0 1px 0 #3a6a1a; border-color: #3f6f22; box-shadow: 0 3px 0 #2f5a18; }
+.btn.good:disabled { background: linear-gradient(180deg, #e2dccf, #c9c0ae); color: #7a6e5c; text-shadow: none; border-color: #a39882; box-shadow: 0 3px 0 #8f846f; opacity: .85; filter: grayscale(.9); }
 .btn.bad { background: linear-gradient(180deg, #e98a6a, #c0543a); color: #fff; text-shadow: 0 1px 0 #6a2a16; border-color: #7a2f1a; box-shadow: 0 3px 0 #5a2010; }
 .btn.small { padding: 4px 10px; font-size: 12.5px; }
 .btn.good .cost, .btn.bad .cost { background: rgba(255, 255, 255, .85); color: var(--ink); text-shadow: none; }

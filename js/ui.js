@@ -535,7 +535,12 @@
         const lvl = g.upg[u.id], max = u.cost.length, c = u.cost[lvl];
         h += '<div class="urow"><div class="u-icon">' + u.icon + '</div><div class="u-txt"><b>' + u.name + '</b><div class="dots">' + '●'.repeat(lvl) + '<i>' + '●'.repeat(max - lvl) + '</i></div><small>' + u.desc + '</small></div>';
         if (lvl >= max) h += '<button class="btn" disabled>Max</button>';
-        else h += '<button class="btn good" data-act="buyUpg" data-arg="' + u.id + '" ' + (g.rank >= 1 && g.gold >= c ? '' : 'disabled') + '>' + VE.icon('gold', 15) + c + '</button>';
+        else {
+          const locked = g.rank < 1, ok = !locked && g.gold >= c;
+          const why = locked ? 'Unlocks at rank ' + VE.RANKS[1].name : ok ? '' : 'Needs ' + c + ' gold';
+          h += '<button class="btn good" data-act="buyUpg" data-arg="' + u.id + '"' + (ok ? '' : ' disabled') + (why ? ' title="' + esc(why) + '"' : '') + '>' +
+            (locked ? '🔒 ' : '') + VE.icon('gold', 15) + c + '</button>';
+        }
         h += '</div>';
       }
       h += '</div><div class="mbtns"><button class="btn" data-act="closeModal">Close</button></div>';

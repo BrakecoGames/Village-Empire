@@ -54,7 +54,11 @@ Oorspronkelijke analyse:
 `refreshHud` (ui.js:591-592) vervangt `#tabs` en `#cards` via `innerHTML` zodra de voorraad verandert. Kolonisten leveren continu, dus een klik kan vallen tussen pointerdown en pointerup op een element dat ondertussen vervangen is. De klik komt dan niet aan. Op mobiel (langzamere tik) gebeurde dit in de tests reproduceerbaar. De tests proberen nu opnieuw; voor spelers voelt dit als een knop die niet reageert.
 **Suggestie:** alleen kosten en klassen bijwerken in plaats van de HTML opnieuw op te bouwen.
 
-### VE-003: upgrade-knoppen zien er actief uit terwijl ze vergrendeld zijn (laag)
+### VE-003: upgrade-knoppen zien er actief uit terwijl ze vergrendeld zijn (laag): ✅ OPGELOST
+**Fix:** uitgeschakelde groene knoppen (`.btn.good:disabled` in style.css) zijn nu grijs in plaats van half-transparant groen. Bij vergrendeling door de rang tonen ze 🔒 en een tooltip "Unlocks at rank Village". Bij te weinig goud is de tooltip "Needs N gold". Een betaalbare, ontgrendelde upgrade blijft groen.
+**Regressietest:** "VE-003: vergrendelde upgrade-knoppen…" (screenshot `08-upgrades-vergrendeld.png`).
+
+Oorspronkelijke analyse:
 In het venster "Village Upgrades" staat "Become a Village to unlock…", maar de prijsknoppen zijn groen en zien er klikbaar uit, ook als je het goud niet hebt (60 tegen 40).
 
 ## Visuele verbeterpunten
@@ -65,6 +69,7 @@ In het venster "Village Upgrades" staat "Become a Village to unlock…", maar de
 3. Toolknoppen (Select/Road/Remove/Speed) zijn alleen iconen, zonder label, en 43×37 px (onder de 44 px-richtlijn).
 4. Het "Village Charter"-paneel raakt de grondstoffenbalk net.
 5. Het upgrade-venster bedekt de zijknoppen half, waardoor die er afgesneden uitzien.
+6b. Meldingen (toasts) verschijnen achter het Village Charter-paneel en zijn daardoor slecht leesbaar (zichtbaar in `08-upgrades-vergrendeld.png`, mobiel).
 6. De bouwkaarten lopen rechts uit beeld (Sawmill niet zichtbaar). Dat is te scrollen, maar zonder hint.
 
 **Desktop (1920×1080)**

@@ -137,6 +137,37 @@ test.describe('Village Empire', () => {
     expect(unknown, 'JS-fouten/console-errors:\n' + unknown.join('\n')).toEqual([]);
   });
 
+  test('VE-003: vergrendelde upgrade-knoppen zien er niet actief uit', async ({ page }, info) => {
+    const errors = trackErrors(page);
+    await openGame(page);
+    await startNewVillage(page);
+    await page.locator('#btnUpgrades').click();
+    const btns = page.locator('#modalBox button[data-act="buyUpg"]');
+    await expect(btns.first()).toBeVisible();
+    const n = await btns.count();
+    expect(n).toBeGreaterThan(0);
+    for (let i = 0; i < n; i++) {
+      const b = btns.nth(i);
+      await expect(b).toBeDisabled();
+      await expect(b).toContainText('🔒');
+      await expect(b).toHaveAttribute('title', /Unlocks at rank/);
+      // niet meer groen: groenkanaal van de achtergrond mag niet duidelijk domineren
+      const bg = await b.evaluate(el => getComputedStyle(el).backgroundImage);
+      expect(bg).not.toContain('166, 216, 106');
+    }
+    await shot(page, info.project.name, '08-upgrades-vergrendeld');
+
+    // Met rang 1 en genoeg goud is de goedkoopste upgrade wél actief en groen
+    await page.evaluate(() => { const g = window.VE.game; g.rank = 1; g.gold = 1000; window.VE.ui.openUpgrades(); });
+    const first = page.locator('#modalBox button[data-act="buyUpg"]').first();
+    await expect(first).toBeEnabled();
+    await expect(first).not.toContainText('🔒');
+    expect(await first.evaluate(el => getComputedStyle(el).backgroundImage)).toContain('166, 216, 106');
+
+    const unknown = checkErrors(errors, info);
+    expect(unknown, 'JS-fouten/console-errors:\n' + unknown.join('\n')).toEqual([]);
+  });
+
   test('visuele audit van de HUD', async ({ page }, info) => {
     await openGame(page);
     await startNewVillage(page);
