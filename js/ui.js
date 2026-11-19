@@ -309,6 +309,23 @@
           (un ? '<div class="c-cost">' + costHtml(cost, g) + '</div>' : '<div class="c-lock">🔒 ' + VE.RANKS[d.rank].name + '</div>') + '</button>';
       }
       $('cards').innerHTML = cards;
+      this.lastSig.barStruct = g.rank + '|' + this.cat;
+    }
+    updateBuildBar() {
+      const g = this.game;
+      document.querySelectorAll('#cards .card').forEach(c => {
+        const k = c.dataset.b, d = VE.DEFS[k];
+        c.classList.toggle('on', this.tool === k);
+        if (c.classList.contains('locked')) return;
+        const cost = Object.assign({}, d.cost || {}); if (d.gold) cost.gold = d.gold;
+        const spans = c.querySelectorAll('.c-cost .cost');
+        let n = 0;
+        for (const r in cost) {
+          const have = r === 'gold' ? g.gold : g.avail(r);
+          if (spans[n]) spans[n].classList.toggle('short', have < cost[r]);
+          n++;
+        }
+      });
     }
     bindHud() {
       $('tabs').addEventListener('click', e => { const t = e.target.closest('.tab'); if (!t) return; this.cat = t.dataset.cat; VE.audio.play('click'); this.renderBuildBar(); });
@@ -589,7 +606,13 @@
       $('pop').textContent = g.settlers.length + '/' + g.popCap();
       $('rankName').textContent = VE.RANKS[g.rank].name;
       const sig = g.rank + '|' + Math.floor(g.gold / 5) + '|' + VE.RES_ORDER.map(r => Math.min(99, g.avail(r))).join(',') + '|' + this.cat + '|' + this.tool;
-      if (force || sig !== this.lastSig.bar) { this.lastSig.bar = sig; this.renderBuildBar(); }
+      if (force || sig !== this.lastSig.bar) {
+        this.lastSig.bar = sig;
+        // Only rebuild the DOM when the card set changes; otherwise update in place so a
+        // click that is in progress (pointerdown → pointerup) is not lost on a replaced element.
+        if (this.lastSig.barStruct !== g.rank + '|' + this.cat || !$('cards').firstChild) this.renderBuildBar();
+        else this.updateBuildBar();
+      }
       this.renderQuests(force);
       if (this.sel) this.renderInfo(force);
     }

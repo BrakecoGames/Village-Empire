@@ -46,7 +46,11 @@ Playwright start zelf een lokale server op `http://127.0.0.1:4173`. Screenshots 
 
 </details>
 
-### VE-002: klikken in de bouwbalk kunnen verloren gaan (middel)
+### VE-002: klikken in de bouwbalk kunnen verloren gaan (middel): ✅ OPGELOST
+**Fix:** `refreshHud` bouwt `#cards` alleen nog opnieuw op als de rang of de categorie verandert. Bij voorraadwijzigingen werkt de nieuwe `updateBuildBar()` (ui.js) de rode "tekort"-markering en de geselecteerde kaart bij op de bestaande knoppen. Het uiterlijk is ongewijzigd.
+**Regressietest:** "VE-002: klik in bouwbalk…" drukt een kaart in, wijzigt de voorraad en laat dan los. Zonder de fix faalt de test, met de fix slaagt hij (desktop en mobiel).
+
+Oorspronkelijke analyse:
 `refreshHud` (ui.js:591-592) vervangt `#tabs` en `#cards` via `innerHTML` zodra de voorraad verandert. Kolonisten leveren continu, dus een klik kan vallen tussen pointerdown en pointerup op een element dat ondertussen vervangen is. De klik komt dan niet aan. Op mobiel (langzamere tik) gebeurde dit in de tests reproduceerbaar. De tests proberen nu opnieuw; voor spelers voelt dit als een knop die niet reageert.
 **Suggestie:** alleen kosten en klassen bijwerken in plaats van de HTML opnieuw op te bouwen.
 

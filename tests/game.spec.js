@@ -106,6 +106,37 @@ test.describe('Village Empire', () => {
     expect(unknown, 'JS-fouten/console-errors:\n' + unknown.join('\n')).toEqual([]);
   });
 
+  test('VE-002: klik in bouwbalk gaat niet verloren als de voorraad verandert', async ({ page }, info) => {
+    const errors = trackErrors(page);
+    await openGame(page);
+    await startNewVillage(page);
+    await expect(page.locator('#cards .card[data-b="woodcutter"]')).toBeVisible();
+
+    // DOM-knoop moet behouden blijven bij een voorraadwijziging, en 'short' moet meebewegen
+    const card = await page.$('#cards .card[data-b="woodcutter"]');
+    await page.evaluate(() => { const g = window.VE.game; g._plank = g.stock.plank; g.stock.plank = 0; window.VE.ui.refreshHud(); });
+    expect(await card.evaluate(el => el.isConnected)).toBe(true);
+    expect(await card.evaluate(el => el.querySelector('.cost').classList.contains('short'))).toBe(true);
+    await page.evaluate(() => { const g = window.VE.game; g.stock.plank = g._plank; window.VE.ui.refreshHud(); });
+    expect(await card.evaluate(el => el.querySelector('.cost').classList.contains('short'))).toBe(false);
+
+    // Klik met een voorraadwijziging tussen indrukken en loslaten
+    const box = await card.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.evaluate(() => { const g = window.VE.game; g.stock.plank -= 1; window.VE.ui.refreshHud(); });
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.VE.ui.tool)).toBe('woodcutter');
+    await expect(page.locator('#cards .card[data-b="woodcutter"]')).toHaveClass(/\bon\b/);
+
+    // Van tab wisselen bouwt de kaarten wel opnieuw op
+    await page.locator('#tabs .tab[data-cat="food"]').click();
+    expect(await card.evaluate(el => el.isConnected)).toBe(false);
+
+    const unknown = checkErrors(errors, info);
+    expect(unknown, 'JS-fouten/console-errors:\n' + unknown.join('\n')).toEqual([]);
+  });
+
   test('visuele audit van de HUD', async ({ page }, info) => {
     await openGame(page);
     await startNewVillage(page);
