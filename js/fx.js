@@ -3,6 +3,12 @@
 (function (VE) {
   const _m = new THREE.Matrix4(), _l = new THREE.Matrix4(), _o = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
   const UP = new THREE.Vector3(0, 1, 0);
+  const _a = new THREE.Matrix4(), _r = new THREE.Matrix4(), _v = new THREE.Vector3();
+  // settler variety (multiplied with the white / skin vertex colours)
+  const HAIR = [0x6b4423, 0x2e2018, 0xd9a441, 0xb8582a, 0xb3aea6].map(c => new THREE.Color(c));
+  const SKIN = [0xffffff, 0xf2dfcc, 0xd9b49a, 0xb8896a].map(c => new THREE.Color(c));
+  const PANTS = [0x5a4030, 0x4a566c, 0x6e5c3a, 0x44503a].map(c => new THREE.Color(c));
+  const TOOL_ACTS = new Set(['chop', 'pick', 'hammer', 'harvest', 'dig', 'fish']);
 
   /* ---------------- Settlers (fully instanced) ---------------- */
   class SettlerRender {
@@ -10,31 +16,27 @@
       cap = cap || 170; this.cap = cap;
       const g = VE.settlerGeo();
       const mat = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 5, specular: 0x111111 });
-      this.torso = new THREE.InstancedMesh(g.torso, mat, cap);
-      this.head = new THREE.InstancedMesh(g.head, mat, cap);
-      this.hat = new THREE.InstancedMesh(g.hat, mat, cap);
-      this.legL = new THREE.InstancedMesh(g.leg, mat, cap);
-      this.legR = new THREE.InstancedMesh(g.leg, mat, cap);
-      for (let i = 0; i < cap; i++) {
-        this.torso.setColorAt(i, _c.setHex(0xb07a45)); this.hat.setColorAt(i, _c.setHex(0xd9b45c));
-        this.legL.setColorAt(i, _c.setHex(0x5a4030)); this.legR.setColorAt(i, _c.setHex(0x5a4030));
-      }
-      this.parts = [this.torso, this.head, this.hat, this.legL, this.legR];
-      for (const p of this.parts) { p.count = 0; p.castShadow = true; p.frustumCulled = false; root.add(p); }
+      // All meshes share `mat`; three.js r128 needs every one of them to have instanceColor once any
+      // has it, otherwise rendering crashes (VE-001). Build the buffer at full capacity (white = unchanged);
+      // setColorAt would size it by the current `count`, which is 0 here.
+      const mk = (geo, n, shadow) => {
+        const m = new THREE.InstancedMesh(geo, mat, n);
+        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3);
+        m.count = 0; m.castShadow = shadow; m.frustumCulled = false; root.add(m);
+        return m;
+      };
+      // tiny parts (hands, hair, face extras) skip the shadow pass: invisible in the shadow, saves draw calls
+      this.torso = mk(g.torso, cap, true); this.head = mk(g.head, cap, true); this.hat = mk(g.hat, cap, true);
+      this.hair = mk(g.hair, cap, false);
+      this.legL = mk(g.leg, cap, true); this.legR = mk(g.leg, cap, true);
+      this.armL = mk(g.arm, cap, true); this.armR = mk(g.arm, cap, true);
+      this.handL = mk(g.hand, cap, false); this.handR = mk(g.hand, cap, false);
+      this.parts = [this.torso, this.head, this.hair, this.hat, this.legL, this.legR, this.armL, this.armR, this.handL, this.handR];
+      this.mustache = mk(g.mustache, cap, false); this.beard = mk(g.beard, cap, false); this.feather = mk(g.feather, cap, false);
       this.tools = {};
-      for (const t of ['axe', 'hammer', 'pick', 'spade', 'scythe', 'sickle', 'rod']) {
-        const m = new THREE.InstancedMesh(VE.toolGeo(t), mat, 80); m.count = 0; m.frustumCulled = false; m.castShadow = true; root.add(m); this.tools[t] = m;
-      }
+      for (const t of ['axe', 'hammer', 'pick', 'spade', 'scythe', 'sickle', 'rod']) this.tools[t] = mk(VE.toolGeo(t), 80, true);
       this.items = {};
-      for (const r of VE.RES_ORDER) {
-        const m = new THREE.InstancedMesh(VE.itemGeo(r), mat, 120); m.count = 0; m.frustumCulled = false; m.castShadow = true; root.add(m); this.items[r] = m;
-      }
-      // All meshes share `mat`; three.js r128 needs every one of them to have instanceColor
-      // once any has it, otherwise rendering crashes. White keeps the vertex colours unchanged.
-      // (setColorAt would size the buffer by the current `count`, which is 0 here, so build it at full capacity.)
-      for (const m of [this.head, ...Object.values(this.tools), ...Object.values(this.items)]) {
-        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3).fill(1), 3);
-      }
+      for (const r of VE.RES_ORDER) this.items[r] = mk(VE.itemGeo(r), 120, true);
       this.roleCol = {};
       for (const r in VE.ROLES) this.roleCol[r] = [new THREE.Color(VE.ROLES[r][0]), new THREE.Color(VE.ROLES[r][1])];
     }
@@ -51,10 +53,16 @@
       if (s.moving) return -0.4 + Math.sin(s.wp) * 0.08;
       return -0.15;
     }
+    /* body-local matrix for an arm hanging from the shoulder at side x, swung by `a` (X) and splayed by `z` (Z) */
+    armMatrix(x, a, z) {
+      _a.makeRotationX(a); _r.makeRotationZ(z); _a.premultiply(_r);
+      _a.setPosition(x, VE.SETTLER_SHOULDER.y, 0);
+      return _a;
+    }
     render(settlers) {
-      let n = 0;
+      let n = 0, nm = 0, nb = 0, nf = 0;
       const tc = {}, ic = {};
-      const S = 1.28;
+      const S = 1.28, T = VE.uTime.value, SX = VE.SETTLER_SHOULDER.x, HIP = VE.SETTLER_HIP;
       for (const s of settlers) {
         if (s.hidden || n >= this.cap) continue;
         let bob = s.moving ? Math.abs(Math.sin(s.wp)) * 0.02 : 0;
@@ -64,31 +72,61 @@
         if (s.act === 'sow') lean = 0.35;
         if (lean) { const q2 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), lean); _q.multiply(q2); }
         _m.compose(_p.set(s.x, s.y + bob, s.z), _q, _s.set(S, S, S));
-        this.torso.setMatrixAt(n, _m); this.head.setMatrixAt(n, _m); this.hat.setMatrixAt(n, _m);
+        // stable per-settler looks: hair, skin tone, trousers, mustache/beard/feather
+        const h = Math.imul(s.id + 1, 2654435761) >>> 0;
+        const hair = HAIR[h % HAIR.length], skin = SKIN[(h >>> 6) % SKIN.length], pants = PANTS[(h >>> 3) % PANTS.length];
         const role = s.mode === 'build' ? 'builder' : (s.mode === 'work' || s.mode === 'goWork') ? s.role : 'carrier';
         const rc = this.roleCol[role] || this.roleCol.carrier;
-        this.torso.setColorAt(n, rc[0]); this.hat.setColorAt(n, rc[1]);
+        for (const p of [this.torso, this.head, this.hair, this.hat]) p.setMatrixAt(n, _m);
+        this.torso.setColorAt(n, rc[0]); this.hat.setColorAt(n, rc[1]); this.hair.setColorAt(n, hair); this.head.setColorAt(n, skin);
+        this.armL.setColorAt(n, rc[0]); this.armR.setColorAt(n, rc[0]); this.handL.setColorAt(n, skin); this.handR.setColorAt(n, skin);
+        this.legL.setColorAt(n, pants); this.legR.setColorAt(n, pants);
+        if ((h >>> 9) % 3 === 0) { this.mustache.setMatrixAt(nm, _m); this.mustache.setColorAt(nm++, hair); }
+        if ((h >>> 11) % 5 === 0) { this.beard.setMatrixAt(nb, _m); this.beard.setColorAt(nb++, hair); }
+        if ((h >>> 13) % 4 === 0) this.feather.setMatrixAt(nf++, _m);
+        // legs
         const sw = s.moving ? Math.sin(s.wp) * 0.75 : 0;
-        _l.makeRotationX(sw); _l.setPosition(0.024, 0.095, 0); _o.multiplyMatrices(_m, _l); this.legL.setMatrixAt(n, _o);
-        _l.makeRotationX(-sw); _l.setPosition(-0.024, 0.095, 0); _o.multiplyMatrices(_m, _l); this.legR.setMatrixAt(n, _o);
+        _l.makeRotationX(sw); _l.setPosition(HIP.x, HIP.y, 0); _o.multiplyMatrices(_m, _l); this.legL.setMatrixAt(n, _o);
+        _l.makeRotationX(-sw); _l.setPosition(-HIP.x, HIP.y, 0); _o.multiplyMatrices(_m, _l); this.legR.setMatrixAt(n, _o);
+        // arms: R = +x side (tool hand), L = -x side
+        let aR, aL, zR = 0.12, zL = -0.12;
+        if (s.carry) { aR = aL = -0.95; zR = 0.04; zL = -0.04; }              // hug the load in front of the belly
+        else if (s.moving) { aR = -sw * 0.8; aL = sw * 0.8; }                  // swing opposite to the legs
+        else {
+          const br = Math.sin(T * 1.6 + s.id) * 0.04; aR = -br; aL = br;      // breathing
+          if (!s.act && !s.tool && s.mode === 'idle' && Math.sin(T * 0.55 + s.id * 1.7) > 0.6) {
+            aL = -2.75 + Math.sin(T * 11 + s.id) * 0.28; zL = -0.5;            // a cheerful wave
+          }
+        }
+        let ta = 0;
+        if (s.tool) {
+          ta = this.toolAngle(s);
+          aR = TOOL_ACTS.has(s.act) ? VE.clamp(-1.2 + 0.45 * ta, -2.2, 0) : (s.moving ? -0.3 - sw * 0.2 : -0.25);
+          zR = 0.06;
+        }
+        const mr = this.armMatrix(SX, aR, zR);
         if (s.tool && this.tools[s.tool]) {
           const tm = this.tools[s.tool]; tc[s.tool] = tc[s.tool] || 0;
           if (tc[s.tool] < 80) {
-            _l.makeRotationX(this.toolAngle(s)); _l.setPosition(0.072, 0.11, 0.015); _o.multiplyMatrices(_m, _l);
+            _v.set(0, -0.087, 0).applyMatrix4(mr);                              // tool sits in the right hand
+            _l.makeRotationX(ta); _l.setPosition(_v.x, _v.y, _v.z + 0.012); _o.multiplyMatrices(_m, _l);
             tm.setMatrixAt(tc[s.tool]++, _o);
           }
         }
+        _o.multiplyMatrices(_m, mr); this.armR.setMatrixAt(n, _o); this.handR.setMatrixAt(n, _o);
+        _o.multiplyMatrices(_m, this.armMatrix(-SX, aL, zL)); this.armL.setMatrixAt(n, _o); this.handL.setMatrixAt(n, _o);
         if (s.carry && this.items[s.carry]) {
           const im = this.items[s.carry]; ic[s.carry] = ic[s.carry] || 0;
           if (ic[s.carry] < 120) {
-            _l.makeRotationY(0.3); _l.setPosition(0, 0.375 + (s.moving ? Math.sin(s.wp * 2) * 0.004 : 0), 0); _o.multiplyMatrices(_m, _l);
+            _l.makeRotationY(0.08); _l.setPosition(0, 0.15 + (s.moving ? Math.sin(s.wp * 2) * 0.004 : 0), 0.092); _o.multiplyMatrices(_m, _l);
             im.setMatrixAt(ic[s.carry]++, _o);
           }
         }
         n++;
       }
-      for (const p of this.parts) { p.count = n; p.instanceMatrix.needsUpdate = true; }
-      this.torso.instanceColor.needsUpdate = true; this.hat.instanceColor.needsUpdate = true;
+      for (const p of this.parts) { p.count = n; p.instanceMatrix.needsUpdate = true; p.instanceColor.needsUpdate = true; }
+      this.mustache.count = nm; this.beard.count = nb; this.feather.count = nf;
+      for (const p of [this.mustache, this.beard, this.feather]) { p.instanceMatrix.needsUpdate = true; p.instanceColor.needsUpdate = true; }
       for (const t in this.tools) { this.tools[t].count = tc[t] || 0; this.tools[t].instanceMatrix.needsUpdate = true; }
       for (const r in this.items) { this.items[r].count = ic[r] || 0; this.items[r].instanceMatrix.needsUpdate = true; }
     }

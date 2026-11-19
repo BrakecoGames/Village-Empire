@@ -98,6 +98,28 @@ Vergelijking: `tests/screenshots/visual/vergelijking-voor-na.png`. Opnieuw maken
 - **Prestaties:** frametijd in de software-renderer gelijk of iets beter (desktop 270 → 240 ms, mobiel 162 → 155 ms; alleen relatief bruikbaar).
 - **Geprobeerd en verworpen:** filmische tone mapping (ACES) maakte het beeld grauw en vlak en vocht tegen de handgekozen kleuren van de game.
 
+## Graphics ronde 2: de dorpelingen
+
+Vergelijking: `tests/screenshots/visual/vergelijking-poppetjes.png`. Opnieuw maken: `npm run shots`. Dat maakt ook de line-up met zes opgestelde dorpelingen in verschillende houdingen.
+
+**Model** (`js/models.js`, `VE.settlerGeo`):
+- **Gezicht:** groter, met een grote ronde neus, ogen met een glinstering, opgetrokken (vrolijke) wenkbrauwen, blosjes, oren en een glimlach met opkrullende mondhoeken.
+- **Haar:** apart onderdeel, per dorpeling een andere kleur: bruin, zwart, blond, rood of grijs.
+- **Extra's per dorpeling:** snor (circa 1 op 3), baard (circa 1 op 5), rode veer op de hoed (circa 1 op 4).
+- **Lijf:** rond buikje, riem met glanzende gesp, kraag en schouders.
+- **Armen en handen:** losse armen met mouw en manchet, wanthanden met duim.
+- **Benen:** broek in wisselende kleuren en stevige schoenen met zool.
+- **Hoed:** kleinere rand zodat het gezicht zichtbaar blijft, plus een hoedenband.
+- **Huidtint:** vier tinten.
+
+**Animatie** (`js/fx.js`, `SettlerRender.render`):
+- Lopen: armen zwaaien tegengesteld aan de benen.
+- Dragen: lading in beide armen voor de buik, in plaats van zwevend boven het hoofd.
+- Werken: de rechterarm zwaait mee met bijl, hamer of houweel, en het gereedschap zit echt in de hand.
+- Stilstaan: lichte ademhaling, en af en toe zwaait een dorpeling vrolijk.
+
+**Prestaties:** 8 extra instanced meshes. De kleine onderdelen (handen, haar, snor, baard, veer) doen niet mee aan de schaduwberekening. In de software-renderer is de frametijd ongeveer 7–11% hoger (desktop 290 → 322 ms, mobiel 146 → 157 ms). Op een echte GPU wordt dit verwaarloosbaar verwacht, maar dat is nog niet gemeten op een telefoon.
+
 ## Beperkingen van de automatische tests
 - **Internet nodig** voor Three.js en de fonts (CDN). Offline faalt het laden. Oplossing voor later: three.min.js en de fonts lokaal meeleveren.
 - WebGL draait headless via SwiftShader (software). Dat is betrouwbaar maar trager, en kleuren en schaduwen kunnen iets afwijken van een echte GPU. De screenshots zijn dus bedoeld voor beoordeling, niet als pixel-exacte referentie.

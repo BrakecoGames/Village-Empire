@@ -522,21 +522,69 @@
   };
 
   /* ---------- settlers ---------- */
+  /* Settler parts. Body-local units (scaled ×1.28 when drawn); +z is the face.
+     White parts are tinted per settler through instance colours (role, hair, pants, skin).
+     Limbs are modelled hanging down from their pivot (hip / shoulder) so they can swing. */
+  VE.SETTLER_SHOULDER = { x: 0.064, y: 0.198 };
+  VE.SETTLER_HIP = { x: 0.024, y: 0.095 };
   VE.settlerGeo = function () {
     const torso = new VE.Model(21), head = new VE.Model(22), hat = new VE.Model(23), leg = new VE.Model(24);
-    torso.cyl(0.042, 0.064, 0.13, 7, 0xffffff, { y: 0.085, j: 0.05 });
-    torso.cyl(0.066, 0.066, 0.015, 7, 0x777777, { y: 0.12, j: 0 });
-    torso.box(0.024, 0.1, 0.026, 0xeeeeee, { x: 0.058, y: 0.11, rz: 0.12 });
-    torso.box(0.024, 0.1, 0.026, 0xeeeeee, { x: -0.058, y: 0.11, rz: -0.12 });
-    torso.ball(0.014, 0xf1c9a0, { x: 0.066, y: 0.105 }); torso.ball(0.014, 0xf1c9a0, { x: -0.066, y: 0.105 });
-    head.add(new THREE.SphereGeometry(0.046, 8, 6), 0xf1c9a0, { y: 0.255, j: 0.03 });
-    head.box(0.012, 0.012, 0.012, 0xe0a882, { y: 0.25, z: 0.045 });
-    head.add(new THREE.SphereGeometry(0.048, 8, 4, 0, PI * 2, 0, PI / 2.2), 0x6b4423, { y: 0.262, z: -0.006, j: 0.05 });
-    hat.cyl(0.068, 0.068, 0.012, 8, 0xffffff, { y: 0.288 });
-    hat.cyl(0.036, 0.042, 0.045, 8, 0xeeeeee, { y: 0.295 });
-    leg.box(0.03, 0.095, 0.034, 0xffffff, { y: -0.095, j: 0.05 });
-    leg.box(0.034, 0.02, 0.048, 0x3a2a1a, { y: -0.1, z: 0.008, j: 0 });
-    return { torso: torso.build(), head: head.build(), hat: hat.build(), leg: leg.build() };
+    const hair = new VE.Model(25), arm = new VE.Model(26), hand = new VE.Model(27);
+    const mustache = new VE.Model(28), beard = new VE.Model(29), feather = new VE.Model(31);
+    const SKIN = 0xf1c9a0;
+    // body: tunic, round belly, belt with a shiny buckle, collar and shoulders
+    torso.cyl(0.044, 0.062, 0.125, 8, 0xffffff, { y: 0.088, j: 0.04 });
+    torso.ball(0.05, 0xffffff, { y: 0.135, z: 0.014, sy: 0.95, sz: 0.88, j: 0.03 }, 1);
+    torso.cyl(0.067, 0.067, 0.016, 8, 0x5a4028, { y: 0.11, j: 0 });
+    torso.box(0.024, 0.02, 0.01, 0xffe9a0, { y: 0.108, z: 0.066, j: 0 });
+    torso.cyl(0.03, 0.047, 0.014, 8, 0xf4f0e8, { y: 0.2, j: 0 });
+    torso.ball(0.022, 0xffffff, { x: 0.056, y: 0.198 }, 1); torso.ball(0.022, 0xffffff, { x: -0.056, y: 0.198 }, 1);
+    // head: big friendly face
+    head.add(new THREE.SphereGeometry(0.05, 10, 8), SKIN, { y: 0.262, j: 0.02 });
+    head.ball(0.012, SKIN, { x: 0.05, y: 0.262, sz: 0.7 }, 1); head.ball(0.012, SKIN, { x: -0.05, y: 0.262, sz: 0.7 }, 1);
+    head.ball(0.014, 0xe48f6c, { y: 0.255, z: 0.051 }, 1);                                   // big round nose
+    head.box(0.009, 0.015, 0.006, 0x24160e, { x: 0.019, y: 0.263, z: 0.045, j: 0 });          // eyes
+    head.box(0.009, 0.015, 0.006, 0x24160e, { x: -0.019, y: 0.263, z: 0.045, j: 0 });
+    head.box(0.004, 0.004, 0.003, 0xffffff, { x: 0.021, y: 0.271, z: 0.0485, j: 0 });         // eye sparkle
+    head.box(0.004, 0.004, 0.003, 0xffffff, { x: -0.017, y: 0.271, z: 0.0485, j: 0 });
+    head.box(0.017, 0.005, 0.005, 0x4a3020, { x: 0.02, y: 0.285, z: 0.041, rz: 0.12, j: 0 });  // raised, cheerful eyebrows
+    head.box(0.017, 0.005, 0.005, 0x4a3020, { x: -0.02, y: 0.285, z: 0.041, rz: -0.12, j: 0 });
+    head.ball(0.009, 0xf2958a, { x: 0.031, y: 0.247, z: 0.039, sz: 0.5 }, 1);                // rosy cheeks
+    head.ball(0.009, 0xf2958a, { x: -0.031, y: 0.247, z: 0.039, sz: 0.5 }, 1);
+    head.box(0.018, 0.005, 0.005, 0x8a3226, { y: 0.234, z: 0.046, j: 0 });                    // smile with
+    head.box(0.006, 0.005, 0.005, 0x8a3226, { x: 0.011, y: 0.237, z: 0.0445, rz: 0.6, j: 0 });  // upturned corners
+    head.box(0.006, 0.005, 0.005, 0x8a3226, { x: -0.011, y: 0.237, z: 0.0445, rz: -0.6, j: 0 });
+    // hair (tinted per settler): back of the head and side tufts peeking out under the hat
+    hair.add(new THREE.SphereGeometry(0.054, 10, 5, 0, PI * 2, 0, PI / 2.2), 0xffffff, { y: 0.27, z: -0.01, j: 0.04 });
+    hair.box(0.014, 0.03, 0.034, 0xffffff, { x: 0.047, y: 0.244, z: -0.012 });
+    hair.box(0.014, 0.03, 0.034, 0xffffff, { x: -0.047, y: 0.244, z: -0.012 });
+    hair.box(0.07, 0.034, 0.02, 0xffffff, { y: 0.236, z: -0.04 });
+    // hat (role colour): smaller brim so the face shows, dark band
+    hat.cyl(0.06, 0.06, 0.01, 10, 0xffffff, { y: 0.302 });
+    hat.cyl(0.035, 0.042, 0.046, 10, 0xeeeeee, { y: 0.306 });
+    hat.cyl(0.0435, 0.0435, 0.01, 10, 0x6a4a30, { y: 0.308, j: 0 });
+    // optional extras
+    mustache.ball(0.015, 0xffffff, { x: 0.014, y: 0.245, z: 0.05, sx: 1.5, sy: 0.55, sz: 0.7, rz: 0.35 }, 1);
+    mustache.ball(0.015, 0xffffff, { x: -0.014, y: 0.245, z: 0.05, sx: 1.5, sy: 0.55, sz: 0.7, rz: -0.35 }, 1);
+    mustache.ball(0.006, 0xffffff, { x: 0.035, y: 0.252, z: 0.044 }, 1); mustache.ball(0.006, 0xffffff, { x: -0.035, y: 0.252, z: 0.044 }, 1);
+    beard.ball(0.04, 0xffffff, { y: 0.226, z: 0.024, sy: 1.05, sz: 0.68 }, 1);
+    beard.ball(0.022, 0xffffff, { y: 0.196, z: 0.03, sy: 1.2, sz: 0.6 }, 1);
+    feather.box(0.007, 0.075, 0.02, 0xe2483a, { x: 0.042, y: 0.31, z: -0.012, rz: -0.45 });
+    feather.box(0.003, 0.05, 0.003, 0xf6e7c8, { x: 0.044, y: 0.31, z: -0.004, rz: -0.45 });
+    // leg (pivot at hip): trousers and a chunky shoe
+    leg.box(0.034, 0.072, 0.036, 0xffffff, { y: -0.076, j: 0.04 });
+    leg.box(0.039, 0.022, 0.058, 0x3a2a1a, { y: -0.098, z: 0.011, j: 0 });
+    leg.box(0.04, 0.008, 0.06, 0x2a1d12, { y: -0.099, z: 0.011, j: 0 });
+    // arm (pivot at shoulder): sleeve with a cuff
+    arm.box(0.027, 0.07, 0.029, 0xffffff, { y: -0.07, j: 0.04 });
+    arm.box(0.031, 0.012, 0.033, 0xf4f0e8, { y: -0.074, j: 0 });
+    // hand (same pivot as the arm): mitten with a thumb, tinted by skin tone
+    hand.ball(0.018, SKIN, { y: -0.087 }, 1);
+    hand.ball(0.008, SKIN, { y: -0.08, z: 0.014 }, 1);
+    return {
+      torso: torso.build(), head: head.build(), hat: hat.build(), leg: leg.build(), hair: hair.build(),
+      arm: arm.build(), hand: hand.build(), mustache: mustache.build(), beard: beard.build(), feather: feather.build()
+    };
   };
   VE.toolGeo = function (kind) {
     const m = new VE.Model(30);
