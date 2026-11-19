@@ -8,7 +8,8 @@
     "test:desktop": "playwright test --project=desktop",
     "test:mobile": "playwright test --project=mobile",
     "serve": "http-server . -p 4173 -a 127.0.0.1 -c-1",
-    "report": "playwright show-report"
+    "report": "playwright show-report",
+    "shots": "set VISUAL=1&& playwright test tests/visual.spec.js"
   },
   "keywords": [],
   "author": "",

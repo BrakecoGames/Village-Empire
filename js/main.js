@@ -152,12 +152,17 @@
     renderer.setClearColor(0x000000, 0);
     $('game').appendChild(renderer.domElement);
     scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0xcde3e6, 55, 120);
+    scene.fog = new THREE.Fog(0xcfe0e2, 50, 115);
     camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.3, 300);
-    hemi = new THREE.HemisphereLight(0xfff3dc, 0x5d7040, 0.56);
+    // Warm sky light, earthy bounce light from the ground
+    hemi = new THREE.HemisphereLight(0xfff1dc, 0x5f6b3e, 0.5);
     scene.add(hemi);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.1));
-    sun = new THREE.DirectionalLight(0xffe3b8, 0.8);
+    scene.add(new THREE.AmbientLight(0xdfe8ff, 0.06));
+    // Cool fill light from the opposite side: lifts shadows and gives objects shape (no shadow cost)
+    const fill = new THREE.DirectionalLight(0xbcd2ff, 0.2);
+    fill.position.set(30, 18, -20);
+    scene.add(fill);
+    sun = new THREE.DirectionalLight(0xffe0b4, 0.74);
     sun.castShadow = true;
     const ms = VE.isMobile ? 1024 : 2048;
     sun.shadow.mapSize.set(ms, ms);

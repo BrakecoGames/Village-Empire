@@ -8,6 +8,8 @@ const PORT = 4173;
 
 module.exports = defineConfig({
   testDir: './tests',
+  // visual.spec.js maakt alleen vergelijkingsbeelden; draai die met `npm run shots`
+  testIgnore: process.env.VISUAL ? [] : ['**/visual.spec.js'],
   outputDir: './test-results',
   timeout: 90_000,
   expect: { timeout: 15_000 },

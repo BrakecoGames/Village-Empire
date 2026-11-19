@@ -172,7 +172,17 @@
     }
     buildWater() {
       const g = new THREE.PlaneGeometry(N, N, N, N);
-      const m = new THREE.MeshPhongMaterial({ color: 0x3f93c9, specular: 0xd8f0ff, shininess: 70, flatShading: true, transparent: true, opacity: 0.84 });
+      // Depth-tinted water: turquoise in the shallows, deep blue further out
+      const wp = g.attributes.position, wc = new Float32Array(wp.count * 3);
+      const shallow = new THREE.Color(0x3a98b0), deep = new THREE.Color(0x1a4f8a), wcol = new THREE.Color();
+      for (let v = 0; v < wp.count; v++) {
+        const x = Math.round(wp.getX(v) + N / 2), z = Math.round(N / 2 - wp.getY(v));
+        const d = -this.vh(VE.clamp(x, 0, N), VE.clamp(z, 0, N));
+        wcol.copy(shallow).lerp(deep, VE.smooth(0.0, 0.9, d));
+        wc[v * 3] = wcol.r; wc[v * 3 + 1] = wcol.g; wc[v * 3 + 2] = wcol.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(wc, 3));
+      const m = new THREE.MeshPhongMaterial({ color: 0xffffff, vertexColors: true, specular: 0x3a5468, shininess: 24, flatShading: true, transparent: true, opacity: 0.9 });
       m.onBeforeCompile = function (sh) {
         sh.uniforms.uTime = VE.uTime;
         sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
@@ -199,8 +209,9 @@
     }
     recolor() {
       const ca = this.terrain.geometry.attributes.color;
-      const g1 = new THREE.Color(0x76b43e), g2 = new THREE.Color(0xa4cc52), g3 = new THREE.Color(0x4e8f32), sand = new THREE.Color(0xe6d29a),
-        bed = new THREE.Color(0x7c6c4c), rock = new THREE.Color(0x9e988c), rock2 = new THREE.Color(0x857f74), snow = new THREE.Color(0xf6f6f2), dirt = new THREE.Color(0xb39368), dim = new THREE.Color(0x707a68);
+      // Softer, more natural meadow greens (was a neon lime that clipped in sunlight)
+      const g1 = new THREE.Color(0x6aa53c), g2 = new THREE.Color(0x96c050), g3 = new THREE.Color(0x4a8732), sand = new THREE.Color(0xe2cf98),
+        bed = new THREE.Color(0x7c6c4c), rock = new THREE.Color(0x9e988c), rock2 = new THREE.Color(0x857f74), snow = new THREE.Color(0xf6f6f2), dirt = new THREE.Color(0xb39368), dim = new THREE.Color(0x6f7d74);
       const c = new THREE.Color(), t = new THREE.Color();
       for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
         const v = z * V1 + x, h = this.H[v], gn = this.gnoise[v];
@@ -213,7 +224,7 @@
         if (h < 0.34) c.lerp(sand, VE.smooth(0.34, 0.14, h));
         if (h < 0.0) c.lerp(bed, VE.smooth(0.0, -0.35, h));
         if (this.vertexNear(x, z, this.bld)) c.lerp(dirt, 0.55);
-        if (!this.vertexOwned(x, z)) { c.lerp(dim, 0.3); c.multiplyScalar(0.72); }
+        if (!this.vertexOwned(x, z)) { c.lerp(dim, 0.28); c.multiplyScalar(0.78); }
         ca.setXYZ(v, c.r, c.g, c.b);
       }
       ca.needsUpdate = true;

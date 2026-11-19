@@ -80,6 +80,8 @@
       this.rangeRing.rotation.x = -Math.PI / 2; this.rangeRing.visible = false; this.rangeRing.renderOrder = 5; scene.add(this.rangeRing);
       this.selRing = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.58, 40), new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.9, depthTest: false, side: THREE.DoubleSide }));
       this.selRing.rotation.x = -Math.PI / 2; this.selRing.visible = false; this.selRing.renderOrder = 6; scene.add(this.selRing);
+      // UI markers keep their exact colours, unaffected by the scene's tone mapping
+      for (const m of [this.ghostMat, this.tileMark.material, this.rangeRing.material, this.selRing.material]) m.toneMapped = false;
     }
     setGhost(type) {
       if (!type || type === 'road' || type === 'demolish') { this.ghost.visible = false; return; }

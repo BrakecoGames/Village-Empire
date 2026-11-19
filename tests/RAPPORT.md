@@ -82,6 +82,22 @@ In het venster "Village Upgrades" staat "Become a Village to unlock…", maar de
 **Algemeen**
 12. ~~Er zijn geen kolonisten zichtbaar~~: opgelost door VE-001.
 
+## Graphics-verfijning (ronde 1)
+
+Vergelijking: `tests/screenshots/visual/vergelijking-voor-na.png`. Opnieuw maken: `npm run shots`. Dat gebruikt een vaste wereld (seed) en vaste camerastanden. Zet `SHOTS_DIR` voor een eigen submap.
+
+| Onderdeel | Wijziging | Bestand |
+|---|---|---|
+| Gras | Minder neon/limoen. Rustiger, natuurlijker groen dat niet meer "uitbrandt" in de zon | world.js `recolor` |
+| Licht | Iets zachter zonlicht en hemellicht, plus een koel invullicht van de andere kant (geeft vorm, kost geen schaduwberekening) | main.js `boot` |
+| Water | Kleur naar diepte: turquoise in de ondiepte, diepblauw verder weg. Minder schittering, zodat het meer niet meer wit/ijzig oogt | world.js `buildWater` |
+| Gebied buiten de grenzen | Minder modderig olijf, de grens blijft goed zichtbaar | world.js `recolor` |
+| Diepte | Zachte vignet en warme lichtval bovenin (CSS-laag die klikken doorlaat) | style.css `#game::after` |
+| Bouwhulp | Groen/rood plaatsingsvoorbeeld en ringen houden hun exacte kleur | ui.js `makeHelpers` |
+
+- **Prestaties:** frametijd in de software-renderer gelijk of iets beter (desktop 270 → 240 ms, mobiel 162 → 155 ms; alleen relatief bruikbaar).
+- **Geprobeerd en verworpen:** filmische tone mapping (ACES) maakte het beeld grauw en vlak en vocht tegen de handgekozen kleuren van de game.
+
 ## Beperkingen van de automatische tests
 - **Internet nodig** voor Three.js en de fonts (CDN). Offline faalt het laden. Oplossing voor later: three.min.js en de fonts lokaal meeleveren.
 - WebGL draait headless via SwiftShader (software). Dat is betrouwbaar maar trager, en kleuren en schaduwen kunnen iets afwijken van een echte GPU. De screenshots zijn dus bedoeld voor beoordeling, niet als pixel-exacte referentie.
