@@ -15,7 +15,7 @@
     constructor(root, cap) {
       cap = cap || 170; this.cap = cap;
       const g = VE.settlerGeo();
-      const mat = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 5, specular: 0x111111 });
+      const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5, specular: 0x111111 });
       // All meshes share `mat`; three.js r128 needs every one of them to have instanceColor once any
       // has it, otherwise rendering crashes (VE-001). Build the buffer at full capacity (white = unchanged);
       // setColorAt would size it by the current `count`, which is 0 here.
@@ -162,7 +162,7 @@
 
   class StockpileRender {
     constructor(root) {
-      const mat = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 5, specular: 0x111111 });
+      const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5, specular: 0x111111 });
       this.meshes = {};
       for (const r of VE.RES_ORDER) {
         const n = LAYOUT[r].length * 2;
@@ -197,7 +197,7 @@
   /* ---------------- particles ---------------- */
   class Puffs {
     constructor(root, color, cap, opacity, detail) {
-      this.mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, detail === undefined ? 1 : detail),
+      this.mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, detail === undefined ? 2 : detail),
         new THREE.MeshLambertMaterial({ color: color, transparent: true, opacity: opacity, depthWrite: false }), cap);
       this.mesh.count = 0; this.mesh.frustumCulled = false; this.cap = cap; this.list = [];
       root.add(this.mesh);
@@ -226,8 +226,8 @@
   class FX {
     constructor(root, game) {
       this.root = root; this.game = game;
-      this.smoke = new Puffs(root, 0xf3f1ec, 260, 0.6, 1);
-      this.dust = new Puffs(root, 0xcdb88e, 160, 0.7, 0);
+      this.smoke = new Puffs(root, 0xf3f1ec, 260, 0.6, 2);
+      this.dust = new Puffs(root, 0xcdb88e, 160, 0.7, 1);
       this.leaves = new Puffs(root, 0x5aa83a, 120, 1.0, 0);
       this.splash = new Puffs(root, 0xe8f6ff, 80, 0.85, 0);
       const bus = VE.bus;
@@ -242,7 +242,7 @@
     }
     makeBirds() {
       const g = VE.birdGeo();
-      const mat = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true });
+      const mat = new THREE.MeshPhongMaterial({ vertexColors: true });
       const n = 14;
       this.birdBody = new THREE.InstancedMesh(g.body, mat, n);
       this.birdWing = new THREE.InstancedMesh(g.wing, mat, n * 2);
@@ -259,7 +259,7 @@
     }
     makeClouds() {
       this.clouds = [];
-      const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x9a9a9a, transparent: true, opacity: 0.9, flatShading: true });
+      const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x9a9a9a, transparent: true, opacity: 0.9 });
       const N = VE.N;
       for (let c = 0; c < 8; c++) {
         const m = new VE.Model(60 + c);

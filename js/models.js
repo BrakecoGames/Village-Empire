@@ -455,6 +455,7 @@
   /* ---------- nature ---------- */
   VE.treeGeo = function (type) {
     const t = new VE.Model(type * 7 + 1), c = new VE.Model(type * 7 + 2);
+    c.icoMin = 1; t.segMin = 10; // hundreds of trees: one subdivision less than other round parts keeps them cheap, smooth shading does the rest
     if (type === 0) { // oak
       t.cyl(0.045, 0.07, 0.42, 6, 0x6b4a2b);
       t.box(0.025, 0.12, 0.025, 0x6b4a2b, { x: 0.05, y: 0.28, rz: -0.7 });

@@ -111,7 +111,7 @@
       this.arriveT = 4; this.dispT = 0; this.roadsDirty = false; this.roadT = 0; this.wearT = 5;
       this.speed = 1;
       this.mats = {
-        building: new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 6, specular: 0x161616 })
+        building: new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 6, specular: 0x161616 })
       };
       this.scaffolds = {};
       if (save) this.load(save, rand);

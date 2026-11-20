@@ -63,13 +63,47 @@ window.VE = window.VE || {};
 
   const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _m = new THREE.Matrix4();
 
+  /* ---------- rounder primitives ----------
+     Round parts were modelled with few segments (6–10). Rebuild them with many more, so they read as
+     smooth. Only untouched primitives are upgraded: if a geometry was translated/rotated before add(),
+     its first vertex no longer matches a fresh one and it is left alone. Square pyramids (≤4 sides),
+     3-sided spikes and rocks (dodecahedra) stay deliberately angular. */
+  const segsFor = (n, frac, min) => Math.max(8, Math.round(Math.max(min, n * 2) * Math.max(frac, 0.25)));
+  function rounder(geo, icoMin, segMin) {
+    const p = geo.parameters, T = geo.type;
+    if (!p) return null;
+    let ng = null;
+    if (T === 'CylinderGeometry' && p.radialSegments >= 5)
+      ng = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, segsFor(p.radialSegments, p.thetaLength / (Math.PI * 2), segMin), p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength);
+    else if (T === 'ConeGeometry' && p.radialSegments >= 5)
+      ng = new THREE.ConeGeometry(p.radius, p.height, segsFor(p.radialSegments, p.thetaLength / (Math.PI * 2), segMin), p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength);
+    else if (T === 'SphereGeometry')
+      ng = new THREE.SphereGeometry(p.radius, Math.max(22, p.widthSegments * 2), Math.max(14, p.heightSegments * 2), p.phiStart, p.phiLength, p.thetaStart, p.thetaLength);
+    else if (T === 'IcosahedronGeometry' && p.detail < icoMin)
+      ng = new THREE.IcosahedronGeometry(p.radius, icoMin);
+    if (!ng) return null;
+    // untouched? compare against a fresh copy with the original parameters
+    const ref = new geo.constructor(...Object.values(p));
+    const a = geo.attributes.position.array, b = ref.attributes.position.array;
+    let same = a.length === b.length;
+    for (let i = 0; same && i < Math.min(9, a.length); i++) same = Math.abs(a[i] - b[i]) < 1e-6;
+    ref.dispose();
+    if (!same) { ng.dispose(); return null; }
+    return ng;
+  }
+  const ROUND = new Set(['CylinderGeometry', 'ConeGeometry', 'SphereGeometry', 'IcosahedronGeometry']);
+
   /* Builds one merged, vertex-coloured geometry out of many primitives. */
   VE.Model = class {
-    constructor(seed) { this.parts = []; this.r = VE.rng(seed || 7); }
+    constructor(seed) { this.parts = []; this.r = VE.rng(seed || 7); this.icoMin = 2; this.segMin = 18; }
     add(geo, color, o) {
       o = o || {};
+      const up = rounder(geo, this.icoMin, this.segMin);
+      if (up) { geo.dispose(); geo = up; }
+      const round = ROUND.has(geo.type);
       const g = geo.index ? geo.toNonIndexed() : geo.clone();
       geo.dispose();
+      if (!g.attributes.normal) g.computeVertexNormals();
       _e.set(o.rx || 0, o.ry || 0, o.rz || 0);
       _q.setFromEuler(_e);
       const s = o.s !== undefined ? o.s : 1;
@@ -78,7 +112,9 @@ window.VE = window.VE || {};
       _m.compose(_p, _q, _s);
       g.applyMatrix4(_m);
       if (o.ox || o.oy || o.oz) g.translate(o.ox || 0, o.oy || 0, o.oz || 0);
-      this.parts.push({ g: g, c: new THREE.Color(color), j: o.j !== undefined ? o.j : 0.06 });
+      // per-triangle colour jitter would show every little facet on a smooth round part: keep it subtle there
+      const j = o.j !== undefined ? o.j : 0.06;
+      this.parts.push({ g: g, c: new THREE.Color(color), j: round ? j * 0.2 : j });
       return this;
     }
     /* box with its base on y */
@@ -121,7 +157,7 @@ window.VE = window.VE || {};
 
   /* Phong material whose vertices sway in the wind (trees, crops, grass). */
   VE.swayMat = function (opts, amp, base, key) {
-    const m = new THREE.MeshPhongMaterial(Object.assign({ flatShading: true, shininess: 4, specular: 0x111111 }, opts));
+    const m = new THREE.MeshPhongMaterial(Object.assign({ shininess: 4, specular: 0x111111 }, opts));
     m.onBeforeCompile = function (sh) {
       sh.uniforms.uTime = VE.uTime;
       sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',

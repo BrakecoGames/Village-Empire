@@ -153,6 +153,25 @@ Wegen kun je niet meer bouwen. Paden ontstaan waar dorpelingen veel heen en weer
   - Los opnieuw gedraaid slaagden die tests, en de volgende volledige run was helemaal groen.
   - Waarschijnlijk is dit instabiliteit van de software-renderer bij lange runs.
 
+## Ronde 5: ronde vormen echt rond
+
+- **Meer segmenten, centraal geregeld:** alles wat via `VE.Model` wordt opgebouwd (gebouwen, dorpelingen, bomen, gereedschap, voorraad) krijgt automatisch meer segmenten (util.js `rounder`).
+  - Cilinders en kegels: 2× zoveel segmenten, minimaal 18.
+  - Bollen: 2× zoveel, minimaal 22×14.
+  - Icosaëders: onderverdeling 2.
+- **Alleen onbewerkte vormen:** een vorm die vóór het toevoegen al verschoven of gedraaid is, blijft ongemoeid. Dat wordt gecontroleerd door de vorm te vergelijken met een verse kopie.
+- **Bewust hoekig gebleven:** vierkante piramidedaken (≤4 zijden), driezijdige punten, rotsen en stenen (dodecaëders), en het water.
+- **Gladde belichting:** 'flat shading' staat uit voor gebouwen, dorpelingen, bomen, voorraad, vogels, wolken en grenspalen. Rechte vlakken (kisten, muren, daken) blijven scherp, omdat hun normalen per vlak al goed zijn. De kleurvariatie per driehoek is op ronde delen veel kleiner gemaakt, anders zag je de facetten alsnog.
+- **Rook en stof:** rookwolkjes onderverdeling 2, stof 1.
+- **Prestaties:** er waren zo'n 1.200 bomen op de kaart, en die bepalen bijna alle kosten.
+  - Daarom hebben boomkruinen onderverdeling 1, wat met gladde belichting al rond oogt, en stammen minimaal 10 segmenten.
+  - Getekende driehoeken: ongeveer 425k → ongeveer 1M.
+  - Software-renderer: desktop ongeveer 330 → ongeveer 410 ms per frame, mobiel ongeveer 165 → ongeveer 255 ms. De metingen schommelen ±10%.
+  - Op een echte GPU wordt 1M driehoeken als prima verwacht. Op oudere telefoons kan het merkbaar zijn; dat is niet gemeten op een echt toestel.
+- **Vergelijking:** `tests/screenshots/visual/vergelijking-rond.png` (mappen `voor-rond` en `na-rond`).
+- **Strikte testrun:** 29 geslaagd, 1 overgeslagen.
+- **iCloud:** tijdens deze ronde hernoemde iCloud `RAPPORT.md` naar `RAPPORT 2.md`. De inhoud was identiek en de naam is hersteld.
+
 ## Beperkingen van de automatische tests
 - **Internet nodig** voor Three.js en de fonts (CDN). Offline faalt het laden. Oplossing voor later: three.min.js en de fonts lokaal meeleveren.
 - WebGL draait headless via SwiftShader (software). Dat is betrouwbaar maar trager, en kleuren en schaduwen kunnen iets afwijken van een echte GPU. De screenshots zijn dus bedoeld voor beoordeling, niet als pixel-exacte referentie.

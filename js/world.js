@@ -187,7 +187,7 @@
       this.roadMesh.receiveShadow = true;
       this.root.add(this.roadMesh);
       // border posts
-      this.border = new THREE.InstancedMesh(VE.borderGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 5 }), 900);
+      this.border = new THREE.InstancedMesh(VE.borderGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5 }), 900);
       this.border.count = 0; this.border.castShadow = true; this.border.frustumCulled = false;
       this.root.add(this.border);
     }
@@ -473,7 +473,7 @@
       this.w = world; this.root = root;
       const cap = 1500;
       this.cap = cap;
-      const trunkMat = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 3 });
+      const trunkMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 3 });
       this.types = [0, 1, 2].map(t => {
         const g = VE.treeGeo(t);
         const trunk = new THREE.InstancedMesh(g.trunk, trunkMat, cap);
@@ -493,7 +493,7 @@
       this.soil = new THREE.InstancedMesh(VE.soilGeo(), new THREE.MeshLambertMaterial({ vertexColors: true }), fc);
       this.wheat = new THREE.InstancedMesh(VE.wheatGeo(), VE.swayMat({ vertexColors: true }, 0.35, 0.05, 'wheat'), fc);
       this.vines = new THREE.InstancedMesh(VE.vineGeo(), VE.swayMat({ vertexColors: true }, 0.06, 0.15, 'vine'), fc);
-      this.grapes = new THREE.InstancedMesh(VE.grapeGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 30 }), fc);
+      this.grapes = new THREE.InstancedMesh(VE.grapeGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30 }), fc);
       for (let i = 0; i < fc; i++) this.wheat.setColorAt(i, _c.setHex(0x7fbf3f));
       for (const m of [this.soil, this.wheat, this.vines, this.grapes]) { m.count = 0; m.receiveShadow = true; m.frustumCulled = false; root.add(m); }
       this.wheat.castShadow = this.vines.castShadow = true;
