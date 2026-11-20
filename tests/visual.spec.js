@@ -43,8 +43,8 @@ test('@visual vaste camerabeelden', async ({ page }, info) => {
       if (Math.max(Math.abs(i - hq.i), Math.abs(j - hq.j)) !== r) continue;
       if (g.canPlace(want[0], i, j).ok) { g.placeBuilding(want.shift(), i, j, true); spots.push([i, j]); }
     }
-    // wegen naar de deuren
-    for (const b of g.buildings) for (let n = 1; n <= 2; n++) g.addRoad(b.doorI, b.doorJ + n);
+    // ingesleten paadjes voor de deuren (vroeger: aangelegde wegen)
+    for (const b of g.buildings) for (let n = 1; n <= 2; n++) { const i = b.doorI, j = b.doorJ + n; if (g.world.inb(i, j)) for (let t = 0; t < VE.PATH.PATH_ON; t++) g.tread(j * VE.N + i); }
     g.world.rebuildRoads();
     VE.ui.toast = () => {}; // geen meldingen in beeld
     document.getElementById('hud').style.visibility = 'hidden';
@@ -90,6 +90,41 @@ test('@visual vaste camerabeelden', async ({ page }, info) => {
     requestAnimationFrame(f);
   }));
   fs.writeFileSync(path.join(OUT, `${info.project.name}-frametijd.txt`), ms.toFixed(1) + ' ms/frame\n');
+  const unknown = checkErrors(errors, info);
+  if (unknown.length) throw new Error(unknown.join('\n'));
+});
+
+// Ingesleten paden na een kwartier spelen (zonder tekenen gesimuleerd)
+test('@visual paden na een tijdje spelen', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  const errors = trackErrors(page);
+  await page.addInitScript(() => {
+    let s = 1;
+    window.__seedRng = v => { s = v; };
+    Math.random = () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  });
+  await openGame(page);
+  await page.evaluate(() => { window.__seedRng(1234567); window.VE.newGame(); document.getElementById('hud').style.visibility = 'hidden'; window.VE.ui.toast = () => {}; });
+  await page.waitForFunction(() => window.VE.playing === true);
+  const n = await page.evaluate(() => {
+    const VE = window.VE, g = VE.game, hq = g.hq, w = g.world;
+    const want = ['woodcutter', 'house', 'sawmill', 'quarry', 'forester', 'house'];
+    for (let r = 3; r < 10 && want.length; r++) for (let j = hq.j - r; j <= hq.j + r && want.length; j++) for (let i = hq.i - r; i <= hq.i + r && want.length; i++) {
+      if (Math.max(Math.abs(i - hq.i), Math.abs(j - hq.j)) !== r) continue;
+      if ((i + j) % 3 === 0 && g.canPlace(want[0], i, j, true).ok) g.placeBuilding(want.shift(), i, j, true);
+    }
+    g.stock.log += 20; g.stock.plank += 20; g.stock.stone += 10;
+    g.speed = 0;
+    for (let t = 0; t < 900; t += 0.1) g.update(0.1);
+    w.rebuildRoads();
+    const c = VE.view.cam; c.tx = hq.cx; c.tz = hq.cz + 1; c.tdist = c.dist = 17; c.tyaw = c.yaw = Math.PI / 4 + 0.3;
+    let a = 0; for (let k = 0; k < VE.N * VE.N; k++) if (w.road[k]) a++; return a;
+  });
+  await page.waitForTimeout(2500);
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  fs.mkdirSync(OUT, { recursive: true });
+  await page.screenshot({ path: path.join(OUT, `${info.project.name}-h-paden.png`) });
+  fs.writeFileSync(path.join(OUT, `${info.project.name}-paden.txt`), n + ' pad/spoor-tegels\n');
   const unknown = checkErrors(errors, info);
   if (unknown.length) throw new Error(unknown.join('\n'));
 });

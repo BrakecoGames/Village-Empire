@@ -134,6 +134,25 @@ Vergelijking: `tests/screenshots/visual/vergelijking-poppetjes.png`. Opnieuw mak
 - **Ontwerpkeuze:** dorpelingen lopen alleen binnen of vlak langs je grenzen, dus verder ontdekken gaat vooral door je grondgebied uit te breiden met wachttorens. Een aparte verkenner die je zelf ergens heen stuurt bestaat (nog) niet.
 - **iCloud:** tijdens deze ronde heeft iCloud Drive een testbestand hernoemd naar `ronde3.spec 2.js` (synchronisatieconflict). Dat is hersteld. Advies: de projectmap buiten iCloud zetten.
 
+## Ronde 4: paden slijten vanzelf in
+
+Wegen kun je niet meer bouwen. Paden ontstaan waar dorpelingen veel heen en weer lopen (sim.js `tread`, `wearDecay`; world.js `wear`, `rebuildRoads`).
+
+- **Slijtage:** elke keer dat een dorpeling een tegel betreedt telt dat mee. Rondslenteren telt maar voor een kwart, zodat alleen echte looproutes inslijten.
+  - Bij 5 betredingen: een smal, half begroeid **spoor** (25% sneller lopen).
+  - Bij 14: een breed zandpad (60% sneller).
+- **Zelfversterkend:** het padzoeken kiest liever bestaande sporen en paden, dus routes bundelen zich tot een paar duidelijke paden.
+- **Dichtgroeien:** zonder verkeer neemt de slijtage langzaam af (halveert in ongeveer 4 minuten). Een pad wordt dan weer een spoor en daarna weer gras.
+- **Waar niet:** niet op water, gebouwen, bomen, stenen of akkers. Ingangen van gebouwen zijn altijd pad.
+- **Bouwen op een pad mag:** het pad verdwijnt dan onder het gebouw.
+- **Interface:** de Road-knop en de sneltoets R zijn weg. De opdracht "Lay 8 road tiles" is nu "Let settlers wear in 8 path tiles", en de uitleg in "How to play" is aangepast.
+- **Opslaan:** per tegel wordt de slijtage bewaard. Zelf aangelegde wegen uit oude saves blijven volwaardige paden.
+- **Tests:** `tests/paden.spec.js` (4 tests × 2) en een visuele opname `h-paden`: een dorp na een kwartier spelen, gesimuleerd zonder tekenen.
+- **Volledige strikte run:** 29 geslaagd, 1 overgeslagen.
+  - In één eerdere run crashte de headless browser twee keer ("Target page closed").
+  - Los opnieuw gedraaid slaagden die tests, en de volgende volledige run was helemaal groen.
+  - Waarschijnlijk is dit instabiliteit van de software-renderer bij lange runs.
+
 ## Beperkingen van de automatische tests
 - **Internet nodig** voor Three.js en de fonts (CDN). Offline faalt het laden. Oplossing voor later: three.min.js en de fonts lokaal meeleveren.
 - WebGL draait headless via SwiftShader (software). Dat is betrouwbaar maar trager, en kleuren en schaduwen kunnen iets afwijken van een echte GPU. De screenshots zijn dus bedoeld voor beoordeling, niet als pixel-exacte referentie.

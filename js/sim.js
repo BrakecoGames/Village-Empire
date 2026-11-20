@@ -4,6 +4,9 @@
   const N = VE.N, DEFS = VE.DEFS;
   const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
   const MAX_POP = 160;
+  // footpath wear (one point per settler step onto a tile): a trail appears, becomes a path, and fades again when unused
+  const TRAIL_ON = 5, PATH_ON = 14, PATH_OFF = 8, TRAIL_OFF = 2, PATH_MAX = 40;
+  VE.PATH = { TRAIL_ON: TRAIL_ON, PATH_ON: PATH_ON, PATH_MAX: PATH_MAX };
 
   VE.bus = {
     h: {},
@@ -20,7 +23,8 @@
       this.g = new Float32Array(n); this.from = new Int32Array(n); this.seen = new Uint32Array(n); this.closed = new Uint32Array(n);
       this.stamp = 0; this.hk = []; this.hf = [];
     }
-    cost(k) { const w = this.w; if (w.road[k]) return 0.55; return w.type[k] === 2 ? 1.5 : 1.0; }
+    // worn paths are cheaper, so settlers keep using (and deepening) the routes that already exist
+    cost(k) { const w = this.w, r = w.road[k]; if (r === 2) return 0.6; if (r === 1) return 0.8; return w.type[k] === 2 ? 1.5 : 1.0; }
     push(k, f) {
       const hk = this.hk, hf = this.hf; let i = hk.length; hk.push(k); hf.push(f);
       while (i > 0) { const p = (i - 1) >> 1; if (hf[p] <= f) break; hk[i] = hk[p]; hf[i] = hf[p]; i = p; }
@@ -104,7 +108,7 @@
       this.gold = 0; this.rank = 0; this.claimed = {};
       this.stats = { produced: {}, goldEarned: 0, roads: 0, built: {}, upgrades: 0 };
       this.upg = {}; for (const u of VE.UPGRADES) this.upg[u.id] = 0;
-      this.arriveT = 4; this.dispT = 0; this.roadsDirty = false; this.roadT = 0;
+      this.arriveT = 4; this.dispT = 0; this.roadsDirty = false; this.roadT = 0; this.wearT = 5;
       this.speed = 1;
       this.mats = {
         building: new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 6, specular: 0x161616 })
@@ -189,7 +193,7 @@
         if (w.type[k] === 1) return { ok: false, why: 'Cannot build on water' };
         if (w.type[k] === 2) return { ok: false, why: 'Too rocky here' };
         if (w.bld[k]) return { ok: false, why: 'Space is taken' };
-        if (w.road[k] || w.door[k]) return { ok: false, why: 'A road is in the way' };
+        if (w.door[k]) return { ok: false, why: 'An entrance is in the way' };
         if (w.rock[k]) return { ok: false, why: 'A boulder is in the way' };
         if (w.field[k]) return { ok: false, why: 'A field is in the way' };
       }
@@ -215,7 +219,7 @@
       if (def.market) for (const r of ['bread', 'fish', 'wine', 'flour']) b.sell[r] = true;
       for (let dj = 0; dj < size; dj++) for (let di = 0; di < size; di++) {
         const k = (j + dj) * N + i + di;
-        w.bld[k] = b.id;
+        w.bld[k] = b.id; w.road[k] = 0; w.wear[k] = 0;
         if (w.tree[k]) this.nature.removeTree(w.tree[k]);
         if (w.rock[k]) { w.rock[k].amount = 1; this.nature.mineRock(w.rock[k]); }
         if (w.field[k]) this.nature.removeField(w.field[k]);
@@ -227,7 +231,7 @@
       for (const k of doorTiles) {
         if (w.tree[k]) this.nature.removeTree(w.tree[k]);
         if (w.field[k]) this.nature.removeField(w.field[k]);
-        if (!w.road[k]) { w.road[k] = 1; w.clearDeco(k); }
+        w.road[k] = 2; w.wear[k] = PATH_MAX; w.clearDeco(k);
       }
       b.y = w.flatten(i, j, size);
       this.nature.refreshArea(i - 1, j - 1, i + size, j + size);
@@ -323,22 +327,30 @@
       emit('dust', { x: b.cx, y: b.y, z: b.cz, n: 12 });
       sfx('demolish', b.cx, b.cz);
     }
-    canRoad(k) {
+    /* ---------- footpaths: they wear in where settlers walk a lot ---------- */
+    tread(k, amt) {
       const w = this.world;
-      return w.owned[k] && w.type[k] !== 1 && !w.bld[k] && !w.tree[k] && !w.rock[k] && !w.field[k] && !w.road[k];
+      if (w.type[k] === 1 || w.bld[k] || w.door[k]) return;
+      w.wear[k] = Math.min(PATH_MAX, w.wear[k] + (amt === undefined ? 1 : amt));
+      if (w.tree[k] || w.rock[k] || w.field[k]) return; // the path bends around trees and fields
+      const lvl = w.wear[k] >= PATH_ON ? 2 : w.wear[k] >= TRAIL_ON ? 1 : 0;
+      if (lvl > w.road[k]) {
+        if (lvl === 2) this.stats.roads++;
+        if (!w.road[k]) w.clearDeco(k);
+        w.road[k] = lvl; this.roadsDirty = true;
+      }
     }
-    addRoad(i, j) {
-      const w = this.world; if (!w.inb(i, j)) return false;
-      const k = j * N + i;
-      if (!this.canRoad(k)) return false;
-      w.road[k] = 1; w.clearDeco(k); this.stats.roads++; this.roadsDirty = true;
-      return true;
-    }
-    removeRoad(i, j) {
-      const w = this.world; if (!w.inb(i, j)) return false;
-      const k = j * N + i;
-      if (!w.road[k] || w.door[k]) return false;
-      w.road[k] = 0; this.roadsDirty = true; return true;
+    wearDecay() {
+      // unused paths slowly grow over again (half-life about 4 minutes without traffic)
+      const w = this.world;
+      for (let k = 0; k < N * N; k++) {
+        if (w.wear[k] <= 0 || w.door[k]) continue;
+        let v = w.wear[k] * 0.985 - 0.01; if (v < 0) v = 0;
+        w.wear[k] = v;
+        const r = w.road[k];
+        if (r === 2 && v < PATH_OFF) { w.road[k] = 1; this.roadsDirty = true; }
+        else if (r === 1 && v < TRAIL_OFF) { w.road[k] = 0; this.roadsDirty = true; }
+      }
     }
 
     /* ---------- settlers ---------- */
@@ -368,7 +380,8 @@
       const p = s.path[s.pi];
       const dx = p[0] - s.x, dz = p[1] - s.z, d = Math.hypot(dx, dz);
       const k = this.tileOf(s.x, s.z), w = this.world;
-      const sp = this.walkSpeed() * (w.road[k] ? 1.7 : 1) * (w.type[k] === 2 ? 0.8 : 1) * (s.carry ? 0.92 : 1);
+      if (k !== s.tk) { s.tk = k; this.tread(k, s.mode === 'wander' ? 0.25 : 1); } // strolling about barely wears the grass
+      const sp = this.walkSpeed() * (w.road[k] === 2 ? 1.6 : w.road[k] === 1 ? 1.25 : 1) * (w.type[k] === 2 ? 0.8 : 1) * (s.carry ? 0.92 : 1);
       const step = sp * dt;
       if (d <= step) {
         s.x = p[0]; s.z = p[1]; s.pi++;
@@ -896,6 +909,7 @@
           this.arriveT = (food ? 6.5 : 20) * Math.max(0.45, 1 - tav * 0.15);
         } else this.arriveT = 3;
       }
+      this.wearT -= dt; if (this.wearT <= 0) { this.wearT = 5; this.wearDecay(); }
       if (this.roadsDirty) { this.roadT -= dt; if (this.roadT <= 0) { this.roadT = 0.12; this.roadsDirty = false; w.rebuildRoads(); } }
     }
 
@@ -948,7 +962,7 @@
     /* ---------- save / load ---------- */
     serialize(cam) {
       const w = this.world, roads = [];
-      for (let k = 0; k < N * N; k++) if (w.road[k] && !w.door[k]) roads.push(k);
+      for (let k = 0; k < N * N; k++) if (w.wear[k] >= 1 && !w.door[k] && !w.bld[k]) roads.push([k, Math.round(w.wear[k])]);
       return {
         v: 1, seed: this.seed, time: Math.round(this.time), stock: this.stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
         stats: this.stats, upg: this.upg, pop: this.settlers.length, speed: this.speed,
@@ -978,7 +992,14 @@
       }
       // stats.built was re-incremented by instant completes; restore the saved values
       if (sv.stats && sv.stats.built) this.stats.built = Object.assign({}, sv.stats.built);
-      for (const k of sv.roads || []) { if (!w.bld[k] && w.type[k] !== 1) { w.road[k] = 1; w.clearDeco(k); } }
+      // roads: [tile, wear] pairs; older saves stored plain tile numbers of player-built roads → full paths
+      for (const e of sv.roads || []) {
+        const k = Array.isArray(e) ? e[0] : e, v = Array.isArray(e) ? e[1] : PATH_MAX;
+        if (w.bld[k] || w.door[k] || w.type[k] === 1) continue;
+        w.wear[k] = Math.min(PATH_MAX, v);
+        const lvl = v >= PATH_OFF ? 2 : v >= TRAIL_OFF ? 1 : 0;
+        if (lvl) { w.road[k] = lvl; w.clearDeco(k); }
+      }
       const nat = sv.nature || { t: [], r: [], f: [] };
       for (const t of nat.t) { const k = t[0]; if (!w.bld[k] && !w.road[k]) this.nature.addTree(k % N, (k / N) | 0, t[1], t[2], rand); }
       for (const r of nat.r) { const k = r[0]; if (!w.bld[k]) { this.nature.addRock(k % N, (k / N) | 0, r[1], rand); w.clearDeco(k); } }

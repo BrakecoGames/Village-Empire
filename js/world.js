@@ -12,7 +12,8 @@
       this.seed = seed; this.N = N; this.root = root;
       this.H = new Float32Array(V1 * V1);
       this.mount = new Float32Array(N * N); this.forest = new Float32Array(N * N); this.gnoise = new Float32Array(V1 * V1);
-      this.type = new Uint8Array(N * N); this.bld = new Int32Array(N * N); this.road = new Uint8Array(N * N);
+      this.type = new Uint8Array(N * N); this.bld = new Int32Array(N * N); this.road = new Uint8Array(N * N); // 0 grass, 1 faint trail, 2 worn path
+      this.wear = new Float32Array(N * N); // how much settlers have walked here
       this.owned = new Uint8Array(N * N); this.door = new Uint8Array(N * N);
       this.tree = new Array(N * N).fill(null); this.rock = new Array(N * N).fill(null); this.field = new Array(N * N).fill(null);
       this.decoT = new Array(N * N).fill(null); this.decoF = new Array(N * N).fill(null);
@@ -326,15 +327,18 @@
     rebuildRoads() {
       const pos = [], col = [];
       const rr = VE.rng(99);
-      const base = new THREE.Color(0xd6bb85), edge = new THREE.Color(0xc4a670);
+      // worn path = sandy brown; faint trail = trampled, half-grassy and narrower
+      const PATH = [new THREE.Color(0xd6bb85), new THREE.Color(0xc4a670)], TRAIL = [new THREE.Color(0xb3ad6c), new THREE.Color(0x9fa25e)];
+      let base = PATH[0], edge = PATH[1];
       const push = (x, z, c) => { pos.push(x, this.heightAt(x, z) + 0.035, z); col.push(c.r, c.g, c.b); };
       const tint = (f) => _c.copy(base).lerp(edge, f);
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-        const k = j * N + i; if (!this.road[k]) continue;
-        const cx = i + 0.5, cz = j + 0.5, segs = 10;
+        const k = j * N + i, lv = this.road[k]; if (!lv) continue;
+        const cx = i + 0.5, cz = j + 0.5, segs = 10, rad = lv === 2 ? 0.3 : 0.2;
         for (let s = 0; s < segs; s++) {
+          base = lv === 2 ? PATH[0] : TRAIL[0]; edge = lv === 2 ? PATH[1] : TRAIL[1];
           const a0 = s / segs * Math.PI * 2, a1 = (s + 1) / segs * Math.PI * 2;
-          const r0 = 0.3 + Math.sin(a0 * 3 + i * 1.3 + j) * 0.03, r1 = 0.3 + Math.sin(a1 * 3 + i * 1.3 + j) * 0.03;
+          const r0 = rad + Math.sin(a0 * 3 + i * 1.3 + j) * 0.03, r1 = rad + Math.sin(a1 * 3 + i * 1.3 + j) * 0.03;
           push(cx, cz, tint(0));
           push(cx + Math.cos(a1) * r1, cz + Math.sin(a1) * r1, tint(0.8));
           push(cx + Math.cos(a0) * r0, cz + Math.sin(a0) * r0, tint(0.8));
@@ -344,7 +348,9 @@
           const ni = i + d[0], nj = j + d[1];
           if (!this.inb(ni, nj) || !this.road[nj * N + ni]) continue;
           if (d[0] !== 0 && d[1] !== 0 && (this.road[j * N + ni] || this.road[nj * N + i])) continue;
-          const len = Math.hypot(d[0], d[1]), w = d[0] && d[1] ? 0.21 : 0.25;
+          const lo = Math.min(lv, this.road[nj * N + ni]); // a link is as wide as its weakest end
+          base = lo === 2 ? PATH[0] : TRAIL[0]; edge = lo === 2 ? PATH[1] : TRAIL[1];
+          const len = Math.hypot(d[0], d[1]), w = (d[0] && d[1] ? 0.21 : 0.25) * (lo === 2 ? 1 : 0.62);
           const px = -d[1] / len * w, pz = d[0] / len * w;
           const SEG = 4;
           for (let s = 0; s < SEG; s++) {
@@ -360,6 +366,15 @@
             push(mx0 - px * q, mz0 - pz * q, tint(-0.4)); push(mx1 + px * q, mz1 + pz * q, tint(-0.4)); push(mx1 - px * q, mz1 - pz * q, tint(-0.4));
           }
         }
+      }
+      // four path tiles in a square: fill the middle, so wide paths don't get grass holes
+      for (let j = 0; j < N - 1; j++) for (let i = 0; i < N - 1; i++) {
+        const a = this.road[j * N + i], b = this.road[j * N + i + 1], c = this.road[(j + 1) * N + i], d = this.road[(j + 1) * N + i + 1];
+        if (!a || !b || !c || !d) continue;
+        const lo = Math.min(a, b, c, d); base = lo === 2 ? PATH[0] : TRAIL[0]; edge = lo === 2 ? PATH[1] : TRAIL[1];
+        const x0 = i + 0.5, z0 = j + 0.5, x1 = i + 1.5, z1 = j + 1.5, t = tint(0.75).clone();
+        push(x0, z0, t); push(x0, z1, t); push(x1, z1, t);
+        push(x0, z0, t); push(x1, z1, t); push(x1, z0, t);
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

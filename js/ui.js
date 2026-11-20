@@ -50,7 +50,7 @@
   class UI {
     constructor(view) {
       this.view = view;
-      this.tool = null; // null | 'road' | 'demolish' | building type
+      this.tool = null; // null | 'demolish' | building type
       this.cat = 'basic';
       this.sel = null;
       this.pointers = new Map();
@@ -86,7 +86,7 @@
       for (const m of [this.ghostMat, this.tileMark.material, this.rangeRing.material, this.selRing.material]) m.toneMapped = false;
     }
     setGhost(type) {
-      if (!type || type === 'road' || type === 'demolish') { this.ghost.visible = false; return; }
+      if (!type || type === 'demolish') { this.ghost.visible = false; return; }
       this.ghostMesh.geometry = VE.buildModel(type, 1).geo;
       this.ghostType = type;
     }
@@ -119,11 +119,7 @@
         el.setPointerCapture(e.pointerId);
         this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, b: e.button, type: e.pointerType });
         this.moved = 0;
-        if (this.pointers.size === 1) {
-          this.painting = (this.tool === 'road' && e.button === 0 && e.pointerType === 'mouse');
-          this.paintRemove = false;
-          if (this.painting) this.paintAt(e.clientX, e.clientY, true);
-        } else { this.painting = false; this.pinch = null; }
+        if (this.pointers.size > 1) this.pinch = null;
       });
       el.addEventListener('pointermove', e => {
         if (!VE.playing) return;
@@ -145,11 +141,6 @@
           return;
         }
         this.moved += Math.abs(dx) + Math.abs(dy);
-        if (this.painting) { this.paintAt(e.clientX, e.clientY); return; }
-        if (this.tool === 'road' && p.type !== 'mouse' && Math.hypot(p.x - p.sx, p.y - p.sy) > 10 && !this.panTouch) {
-          // touch: drag paints roads when started on a road-able tile
-          this.painting = true; this.paintAt(p.sx, p.sy, true); this.paintAt(e.clientX, e.clientY); return;
-        }
         if (p.b === 1) { this.view.cam.rotate(-dx * 0.008); this.view.cam.tilt(dy * 0.006); return; } // middle drag: orbit + tilt
         if (p.b === 2) { this.view.cam.rotate(-dx * 0.006); return; }
         if (Math.hypot(p.x - p.sx, p.y - p.sy) > 6) this.view.cam.pan(dx, dy);
@@ -160,10 +151,9 @@
         if (!p) return;
         this.pointers.delete(e.pointerId);
         if (this.pointers.size === 0) {
-          if (!this.painting && this.moved < 9 && p.b === 0) this.tap(e.clientX, e.clientY, p.type);
-          if (!this.painting && this.moved < 9 && p.b === 2) this.setTool(null);
-          if (this.painting) this.game.world.rebuildRoads();
-          this.painting = false; this.pinch = null;
+          if (this.moved < 9 && p.b === 0) this.tap(e.clientX, e.clientY, p.type);
+          if (this.moved < 9 && p.b === 2) this.setTool(null);
+          this.pinch = null;
         } else this.pinch = null;
       };
       el.addEventListener('pointerup', up);
@@ -179,7 +169,6 @@
         else if (k === '-') c.zoom(1.18);
         else if (k === 'pageup') { c.tilt(0.15); e.preventDefault(); }
         else if (k === 'pagedown') { c.tilt(-0.15); e.preventDefault(); }
-        else if (k === 'r') this.setTool(this.tool === 'road' ? null : 'road');
         else if (k === 'x') this.setTool(this.tool === 'demolish' ? null : 'demolish');
         else if (k === ' ') { this.cycleSpeed(); e.preventDefault(); }
         else this.keys[k] = true;
@@ -194,22 +183,6 @@
       if (k.w || k.arrowup) dy += s; if (k.s || k.arrowdown) dy -= s;
       if (dx || dy) this.view.cam.pan(dx, dy);
     }
-    paintAt(cx, cy, first) {
-      const p = this.pick(cx, cy); if (!p || p.i < 0) return;
-      const g = this.game, k = p.j * N + p.i;
-      if (first) this.paintRemove = false;
-      if (this.lastPaint === k && !first) return;
-      this.lastPaint = k;
-      if (g.addRoad(p.i, p.j)) { VE.audio.play('road', p.i, p.j); }
-      else if (first && !g.world.road[k]) this.explainRoad(k);
-    }
-    explainRoad(k) {
-      const w = this.game.world;
-      if (!w.owned[k]) this.toast('That land is outside your borders');
-      else if (w.type[k] === 1) this.toast('Roads cannot cross water');
-      else if (w.tree[k] || w.rock[k]) this.toast('Trees and boulders block the way');
-      else if (w.field[k]) this.toast('A field is in the way');
-    }
     hover(cx, cy) {
       const g = this.game; if (!g) return;
       const p = this.pick(cx, cy);
@@ -221,11 +194,11 @@
       this.ghost.visible = false; this.tileMark.visible = false;
       if (!this.selRangeShown) this.rangeRing.visible = false;
       if (!p || p.i < 0 || !w.inb(p.i, p.j)) return;
-      if (this.tool === 'road' || this.tool === 'demolish') {
+      if (this.tool === 'demolish') {
         this.tileMark.visible = true;
         this.tileMark.position.set(p.i + 0.5, w.tileH(p.i, p.j) + 0.08, p.j + 0.5);
-        const ok = this.tool === 'road' ? g.canRoad(p.j * N + p.i) : (!!p.b && !p.b.def.fixed) || (w.road[p.j * N + p.i] && !w.door[p.j * N + p.i]);
-        this.tileMark.material.color.setHex(ok ? (this.tool === 'road' ? 0xffe7a8 : 0xff6a5a) : 0x9a9a9a);
+        const ok = !!p.b && !p.b.def.fixed;
+        this.tileMark.material.color.setHex(ok ? 0xff6a5a : 0x9a9a9a);
         return;
       }
       if (this.tool && VE.DEFS[this.tool]) {
@@ -249,19 +222,8 @@
       const g = this.game; if (!g) return;
       const p = this.pick(cx, cy); if (!p) return;
       const w = g.world;
-      if (this.tool === 'road') {
-        if (p.i < 0) return;
-        const k = p.j * N + p.i;
-        if (w.road[k]) { if (g.removeRoad(p.i, p.j)) VE.audio.play('road'); }
-        else if (g.addRoad(p.i, p.j)) VE.audio.play('road', p.i, p.j);
-        else this.explainRoad(k);
-        g.world.rebuildRoads();
-        this.updateGhost(p);
-        return;
-      }
       if (this.tool === 'demolish') {
         if (p.b && !p.b.def.fixed) this.confirmDemolish(p.b);
-        else if (p.i >= 0 && w.road[p.j * N + p.i]) { if (g.removeRoad(p.i, p.j)) { VE.audio.play('demolish', p.i, p.j); g.world.rebuildRoads(); } }
         return;
       }
       if (this.tool && VE.DEFS[this.tool]) {
@@ -299,8 +261,7 @@
       const hint = $('toolHint');
       if (t) {
         hint.classList.remove('hidden');
-        $('toolHintText').textContent = t === 'road' ? (VE.isMobile ? 'Tap or drag to lay roads · tap a road to remove' : 'Click or drag to lay roads · click a road to remove') :
-          t === 'demolish' ? 'Tap a building or road to remove it' : (VE.isMobile ? 'Tap a spot, then tap again to build ' : 'Click to place ') + VE.DEFS[t].name;
+        $('toolHintText').textContent = t === 'demolish' ? 'Tap a building to remove it' : (VE.isMobile ? 'Tap a spot, then tap again to build ' : 'Click to place ') + VE.DEFS[t].name;
       } else hint.classList.add('hidden');
       if (this.hoverP) this.updateGhost(this.hoverP);
     }
@@ -590,7 +551,7 @@
     openHelp() {
       this.openModal('<h2>How to play</h2><div class="help">' +
         '<p>🏗️ <b>Build</b> from the bar at the bottom. Carriers bring materials and a builder raises the building.</p>' +
-        '<p>🛤️ <b>Roads</b> make your settlers walk much faster. Every building gets a little path to its door.</p>' +
+        '<p>🛤️ <b>Paths</b> are not built: they wear in by themselves where settlers walk back and forth a lot. A trampled trail turns into a real path, and settlers walk faster on it. Paths that nobody uses grow over again.</p>' +
         '<p>🔗 <b>Production chains</b>: trees ➜ logs ➜ planks · wheat ➜ flour ➜ bread · grapes ➜ wine.</p>' +
         '<p>👥 <b>Cottages</b> give room for new settlers. They arrive much faster when bread or fish is in storage.</p>' +
         '<p>⚖️ <b>Marketplace</b>: choose which goods to sell for gold. Gold buys upgrades and watchtowers.</p>' +
