@@ -36,6 +36,19 @@ BASE_PAL = {
     "WoodL": (0xC89A5E, 0.08), "Wood": (0xA0703F, 0.08), "Soil": (0x5A3E28, 0.05),
     "Leaf": (0x4B8A30, 0.10), "LeafL": (0x6AAA3E, 0.10),
     "FlRed": (0xE84A5F, 0.0), "FlYel": (0xFFD166, 0.0), "FlPink": (0xF78FB3, 0.0), "FlWhite": (0xF7F3EA, 0.0),
+    # daken
+    "Thatch": (0xDCB65E, 0.07), "ThatchD": (0xC9A048, 0.07), "ThatchL": (0xE6C66E, 0.07),
+    "SlateA": (0x5F6C80, 0.07), "SlateB": (0x4E5A6C, 0.07), "SlateC": (0x6E7B8E, 0.07), "SlateD": (0x434E5E, 0.05),
+    "ShA": (0x7A5A3E, 0.08), "ShB": (0x6B4E36, 0.08), "ShC": (0x8A6A48, 0.08), "Moss": (0x7D8646, 0.08),
+    "TileBlueA": (0x3F6FA0, 0.07), "TileBlueB": (0x355F8C, 0.07), "TileBlueC": (0x4A7DB0, 0.07),
+    "TilePurpA": (0x7A3F6E, 0.07), "TilePurpB": (0x6A3360, 0.07), "TilePurpC": (0x864C7A, 0.07),
+    "TileDarkA": (0x8A3E2C, 0.07), "TileDarkB": (0x7A3424, 0.07), "TileDarkC": (0x9A4A36, 0.07),
+    "Log": (0x8A5A2B, 0.07), "LogD": (0x6E4522, 0.06), "LogEnd": (0xD9B07A, 0.05),
+    # goederen en accenten
+    "Hay": (0xE8C860, 0.08), "Sack": (0xD9C7A0, 0.06), "Canvas": (0xF4ECD8, 0.04), "Cream": (0xFFF3D6, 0.03),
+    "RedC": (0xD8402F, 0.05), "BlueC": (0x2F6FB0, 0.05), "Purple": (0x6E3463, 0.06), "Gold": (0xE8B73A, 0.03),
+    "Water": (0x4A9BD1, 0.03), "Grape": (0x6B2D7A, 0.06), "Bread": (0xD08B3E, 0.06), "Apple": (0xC8402F, 0.05),
+    "Pumpkin": (0xE08A2E, 0.05), "Cabbage": (0x8DBF4A, 0.06), "BarnRed": (0xA8402C, 0.06), "Wine": (0x7B1E3A, 0.04),
     # gronding (stijlgids): aangestampte aarde en gras dat aansluit op het terrein
     "Earth": (0x8A6A45, 0.06), "EarthD": (0x6E5236, 0.05), "EarthL": (0xA8865A, 0.07),
     "Grass": (0x6AA53C, 0.10), "GrassD": (0x4F8A30, 0.10), "GrassY": (0x96C050, 0.10),
@@ -240,6 +253,12 @@ def tiled_roof(x0, x1, eave_z, eave_y, ridge_z, ridge_y, rows, cols, side, kick=
         box(width + 0.02, 0.022, L + 0.03, "RoofDeck", pos=((x0 + x1) / 2, mid.y, mid.z), rot=(rx, 0, 0), base=False)
     for ri in range(rows):
         t = (ri + 0.5) * L / rows
+        if kind == "thatch":
+            # riet: dikke, afgeronde lagen over de volle breedte, trapsgewijs (12-44 driehoeken per laag)
+            c = E + up * t + nrm * 0.022
+            obj = box(width + 0.05, tl * 1.05, 0.04, rnd.choice(mats), base=False, bevel=0.016, smooth=True)
+            orient(obj, ((x0 + x1) / 2, c.y, c.z), up, nrm, kick * 1.2, rnd.uniform(-0.01, 0.01))
+            continue
         stagger = (0.12 if ri % 2 else -0.12) * tw          # verspringende rijen: leest als pannen, niet als planken
         if kind == "shingle":
             stagger = (0.5 if ri % 2 else 0.0) * tw          # spanen: halve plank verspringen
@@ -268,6 +287,9 @@ def gable_roof(w, depth_half, eave_y, ridge_y, rows, cols, x=0.0, z=0.0, ridge_r
     if kind == "shingle":
         # nokbalk: ronde stam langs x
         cyl(ridge_r, ridge_r, w + 0.05, 7, ridge_mat, pos=(x0 - 0.025, ridge_y + 0.006, z), rot=(0, 0, -math.pi / 2))
+    elif kind == "thatch":
+        # dikke, ronde rietnok
+        cyl(ridge_r * 1.5, ridge_r * 1.5, w + 0.07, 8, ridge_mat, pos=(x0 - 0.035, ridge_y + 0.002, z), rot=(0, 0, -math.pi / 2))
     else:
         # nokpannen (halve buis langs x)
         half_tube(((x0 + x1) / 2, ridge_y + 0.004, z), (1, 0, 0), (0, 1, 0), ridge_r, w + 0.03, ridge_mat, seg=6, cap=True)
@@ -384,6 +406,108 @@ def fence(p0, p1, posts):
 
 
 
+# ------------------------------------------------------------------ samengestelde gebouwdelen
+ROOFS = {   # soort -> (bouwwijze, materialen, nokmateriaal, nokstraal, plankmaat)
+    "tile": ("tile", ROOF_TILE_MATS, "Ridge", 0.032, 0.11),
+    "slate": ("shingle", ("SlateA", "SlateB", "SlateA", "SlateC"), "SlateD", 0.026, 0.1),
+    "shingle": ("shingle", ("ShA", "ShA", "ShB", "ShC", "ShB", "ShA", "Moss"), "LogD", 0.028, 0.12),
+    "thatch": ("thatch", ("Thatch", "ThatchD", "ThatchL", "Thatch"), "ThatchD", 0.03, 0.1),
+}
+
+
+def house_body(x=0.0, z=0.0, w=0.5, d=0.4, wall_top=0.42, ridge_y=0.72, roof="tile", wall="Plaster",
+               timber=True, over=0.08, y0=0.06, plinth=True, roof_color=None):
+    """Huis met puntgevels links/rechts, nok langs x en voorgevel aan +z: muren (stuc of steen),
+    vakwerk, natuurstenen plint en een dak van de gekozen soort. Geeft handige maten terug."""
+    apex = ridge_y - 0.04
+    prism([(-d / 2, y0), (d / 2, y0), (d / 2, wall_top), (0, apex), (-d / 2, wall_top)], w, wall,
+          pos=(x, 0, z), bevel=0.006)
+    t = 0.026
+    hx, hz = w / 2 + 0.004, d / 2 + 0.004
+    if timber:
+        mid = (y0 + wall_top) / 2
+        for sx in (-1, 1):
+            for sz in (-1, 1):
+                beam((x + sx * hx, y0, z + sz * hz), (x + sx * hx, wall_top, z + sz * hz), t)
+        for sz in (-1, 1):
+            beam((x - hx, wall_top - 0.012, z + sz * hz), (x + hx, wall_top - 0.012, z + sz * hz), t)
+            beam((x - hx, mid, z + sz * hz), (x + hx, mid, z + sz * hz), t * 0.9)
+        for sx in (-1, 1):
+            beam((x + sx * hx, wall_top - 0.012, z - hz), (x + sx * hx, wall_top - 0.012, z + hz), t)
+            beam((x + sx * hx, wall_top, z), (x + sx * hx, apex - 0.01, z), t * 0.9)
+            beam((x + sx * hx, y0 + 0.02, z - hz + 0.02), (x + sx * hx, mid, z - 0.03), t * 0.8)
+            beam((x + sx * hx, mid, z + 0.03), (x + sx * hx, wall_top - 0.02, z + hz - 0.02), t * 0.8)
+    elif wall.startswith("Stone"):
+        # metselwerk: een paar uitstekende stenen en hoekstenen voor textuur
+        for sx in (-1, 1):
+            for k in range(3):
+                yy = y0 + 0.03 + k * (wall_top - y0) / 3
+                box(0.05, 0.045, 0.05, "StoneL" if k % 2 else "StoneB", pos=(x + sx * (w / 2 - 0.018), yy, z + d / 2 - 0.018), bevel=0.006)
+        for _ in range(5):
+            box(rnd.uniform(0.04, 0.07), 0.03, 0.01, rnd.choice(("StoneL", "StoneB")),
+                pos=(x + rnd.uniform(-w / 2 + 0.06, w / 2 - 0.06), rnd.uniform(y0 + 0.04, wall_top - 0.05), z + d / 2 + 0.004))
+    kind, mats, rmat, rr, piece = ROOFS[roof]
+    if roof_color:
+        mats = roof_color
+    s = (ridge_y - (wall_top + 0.03)) / (d / 2)
+    eave_y = wall_top + 0.03 - s * over
+    L = math.hypot(d / 2 + over, ridge_y - eave_y)
+    rows = max(3, round(L / (0.085 if kind == "thatch" else 0.095)))
+    cols = max(3, round((w + 0.16) / piece))
+    gable_roof(w + 0.16, d / 2 + over, eave_y, ridge_y, rows, cols, x=x, z=z, kind=kind, mats=mats,
+               ridge_mat=rmat, ridge_r=rr, barge_mat="Timber" if kind != "thatch" else "ThatchD")
+    if plinth:
+        stone_plinth(x - w / 2, x + w / 2, z - d / 2, z + d / 2, y=y0, n_front=max(3, round(w / 0.12)), n_side=max(3, round(d / 0.12)))
+    return {"front": z + d / 2 + 0.004, "back": z - d / 2, "left": x - w / 2, "right": x + w / 2 + 0.004,
+            "top": wall_top, "ridge": ridge_y, "x": x, "z": z}
+
+
+def cone_roof(x, z, y, r, h, mats=("Thatch", "ThatchD", "ThatchL"), rows=4, seg=12, tip_mat=None):
+    """Kegeldak in overlappende ringen (riet of leien), met piek."""
+    for i in range(rows):
+        f0, f1 = i / rows, (i + 1) / rows
+        r0, r1 = r * (1 - f0 * 0.92), r * (1 - f1 * 0.92)
+        cyl(r1 * 0.98, r0 * 1.04, h / rows * 1.15, seg, rnd.choice(mats), pos=(x, y + h * f0 * 0.92, z), cap=False)
+    cyl(0.0, r * 0.14, h * 0.16, seg, tip_mat or mats[0], pos=(x, y + h * 0.9, z), cap=False)
+
+
+def crate(x, z, y=0.0, s=0.08, rot=0.0):
+    box(s, s, s, "WoodL", pos=(x, y, z), rot=(0, rot, 0), bevel=0.006)
+    beam((x - s / 2 * math.cos(rot), y + s * 0.5, z + s / 2 * math.sin(rot) + 0.0), (x + s / 2 * math.cos(rot), y + s * 0.5, z - s / 2 * math.sin(rot)), 0.01, "Wood")
+
+
+def sack(x, z, y=0.0, s=0.045, mat="Sack"):
+    blob(s, mat, (x, y + s * 0.8, z), scale=(1.0, 1.25, 0.85), sub=1)
+    blob(s * 0.35, mat, (x, y + s * 1.85, z), scale=(1, 0.6, 1), sub=0)
+
+
+def hay_bale(x, z, y=0.0, along="x", r=0.06, l=0.11):
+    rot = (0, 0, -math.pi / 2) if along == "x" else (math.pi / 2, 0, 0)
+    p = (x - l / 2, y + r, z) if along == "x" else (x, y + r, z - l / 2)
+    cyl(r, r, l, 10, "Hay", pos=p, rot=rot)
+
+
+def stall(x, z, c1="RedC", c2="Canvas", goods=("Apple", "Cabbage", "Pumpkin"), w=0.26, d=0.16):
+    """Marktkraam: palen, toonbank met waren en een gestreepte luifel (halve buizen)."""
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            box(0.018, 0.27, 0.018, "Timber", pos=(x + sx * w / 2, 0.04, z + sz * d / 2))
+    box(w, 0.07, d * 0.8, "Wood", pos=(x, 0.04, z + 0.01), bevel=0.006)
+    n = 5
+    for s_ in range(n):
+        xx = x - w / 2 + (s_ + 0.5) * w / n
+        half_tube((xx, 0.3, z), (0, -0.25, 1), (0, 1, 0.25), w / n * 0.55, d + 0.06, c1 if s_ % 2 else c2, seg=4, cap=False)
+    for g in range(4):
+        blob(0.022, goods[g % len(goods)], (x - w / 2 + 0.05 + g * (w - 0.1) / 3, 0.125, z + 0.02), sub=1)
+
+
+def flag_pole(x, z, y0, h):
+    """Vlaggenmast; de vlag zelf is een animatie in de game (marker 'flag')."""
+    cyl(0.008, 0.01, h, 6, "Iron", pos=(x, y0, z))
+    blob(0.014, "Gold", (x, y0 + h + 0.008, z), sub=1)
+    return (x + 0.005, y0 + h, z)
+
+
 # ------------------------------------------------------------------ gronding (stijlgids)
 def grass_clump(x, z, s=1.0, y=0.0, blades=4):
     """Pol gras: dunne, licht uitwaaierende sprieten (3 driehoeken per spriet)."""
@@ -496,10 +620,15 @@ def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
         # oorsprong exact op (0,0,0) = midden tegel op maaiveld; node heeft geen eigen transformatie
         obj.data.transform(obj.matrix_world)
         obj.matrix_world = Matrix.Identity(4)
-        if smoke is not None:
-            emp = bpy.data.objects.new(f"{prefix}_l{lvl}_smoke", None)
+        # markers: rook uit schoorstenen en ankerpunten voor geanimeerde delen (vlag, wieken, zaag).
+        # build_fn geeft None, één (x,y,z) of {"smoke": [(x,y,z), ...], "anims": {"flag": (x,y,z)}} terug.
+        info = smoke if isinstance(smoke, dict) else {"smoke": [smoke] if smoke is not None else []}
+        markers = [(f"{prefix}_l{lvl}_smoke" + ("" if i == 0 else str(i + 1)), p) for i, p in enumerate(info.get("smoke", []))]
+        markers += [(f"{prefix}_l{lvl}_anim_{k}", p) for k, p in info.get("anims", {}).items()]
+        for name, p in markers:
+            emp = bpy.data.objects.new(name, None)
             bpy.context.collection.objects.link(emp)
-            place(emp, smoke)
+            place(emp, p)
         tris = ve.triangle_count([obj])
         if tris > args.budget:
             raise SystemExit(f"VE-BLENDER: {prefix}_l{lvl} heeft {tris} driehoeken > budget {args.budget}")

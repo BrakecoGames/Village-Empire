@@ -15,18 +15,31 @@
    omgezet, zodat ze overeenkomen met de hex-kleuren in de rest van de game. */
 'use strict';
 (function (VE) {
-  /* Welke gebouwen uit een GLB komen. levels: game-level -> node-naam in de GLB.
-     smoke: node met dezelfde naam + '_smoke' markeert de top van de schoorsteen. */
-  const SOURCES = {
-    house: { url: 'public/models/house.glb', levels: { 1: 'house_l1', 2: 'house_l2', 3: 'house_l3' } },
-    woodcutter: { url: 'public/models/woodcutter.glb', levels: { 1: 'woodcutter_l1', 2: 'woodcutter_l2', 3: 'woodcutter_l3' } }
+  /* Welke gebouwen uit een GLB komen: public/models/<type>.glb met nodes <type>_l1..l<n>.
+     Markers per level: <node>_smoke, _smoke2 … (rook) en <node>_anim_<soort> (anker voor de
+     geanimeerde delen uit models.js: vlag, wieken, zaag).
+     first: nodig bij de start (rang 0 en vaste gebouwen) — de rest laadt daarna op de achtergrond. */
+  const TYPES = {
+    hq: { levels: 1, first: true }, yard: { levels: 1, first: true },
+    house: { first: true }, woodcutter: { first: true }, forester: { first: true }, quarry: { first: true }, sawmill: { first: true },
+    farm: {}, windmill: {}, bakery: {}, fisher: {}, market: {}, tower: {},
+    vineyard: {}, winery: {}, tavern: {}, warehouse: {}, monument: {}
   };
+  const SOURCES = {};
+  for (const t in TYPES) {
+    const n = TYPES[t].levels || 3, levels = {};
+    for (let l = 1; l <= n; l++) levels[l] = t + '_l' + l;
+    SOURCES[t] = { url: 'public/models/' + t + '.glb', levels: levels, first: !!TYPES[t].first };
+  }
   const TIMEOUT_MS = 10000;
   /* Sterkte van de in Blender gebakken ambient occlusion (COLOR_0): 0 = uit, 1 = volledig. */
   const AO_STRENGTH = 0.6;
-  /* AO staat per hoekpunt: grote vlakken met weinig hoekpunten (muren, aarde, dakbeschot) zouden
-     in hun geheel donker worden. Die krijgen geen AO; gloeiende ramen ook niet. */
+  /* AO staat per hoekpunt: grote vlakken met weinig hoekpunten (muren, torens, aarde, dakbeschot)
+     zouden in hun geheel donker worden. Daarom krijgen driehoeken groter dan AO_MAX_AREA (m²)
+     geen AO — kleine onderdelen (pannen, balken, keien, gras) wel. Gloeiende ramen nooit. */
   const AO_SKIP = /^(Glow|Plaster|Earth|RoofDeck)/;
+  const AO_MAX_AREA = 0.004;
+  const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3();
 
   VE.modelSource = {};
   for (const t in SOURCES) {
@@ -67,6 +80,13 @@
           const lin = arr[i * isz] / div;                                   // lineair
           const s = lin <= 0.0031308 ? lin * 12.92 : 1.055 * Math.pow(lin, 1 / 2.4) - 0.055;  // → perceptueel
           ao[i] = 1 - AO_STRENGTH * (1 - Math.min(1, s * 1.15));            // licht opgetild: open vlakken blijven helder
+        }
+        // grote driehoeken: geen AO (zie AO_MAX_AREA)
+        const pa = g.attributes.position.array;
+        for (let v = 0; v + 2 < ca.count; v += 3) {
+          _a.fromArray(pa, v * 3); _b.fromArray(pa, v * 3 + 3); _d.fromArray(pa, v * 3 + 6);
+          _b.sub(_a); _d.sub(_a);
+          if (_b.cross(_d).length() * 0.5 > AO_MAX_AREA) ao[v] = ao[v + 1] = ao[v + 2] = 1;
         }
       }
       parts.push({ g: g, col: col, jit: jit, ao: ao });
@@ -124,20 +144,38 @@
         if (!node) throw new Error('node ' + src.levels[lvl] + ' ontbreekt in ' + src.url);
         const geo = bakeNode(node, type.length * 31 + +lvl);
         if (!geo) throw new Error('node ' + src.levels[lvl] + ' bevat geen meshes');
-        const chimneys = [];
-        const smoke = gltf.scene.getObjectByName(src.levels[lvl] + '_smoke');
-        if (smoke) { smoke.getWorldPosition(_v); chimneys.push([_v.x, _v.y, _v.z]); }
-        baked[lvl] = { geo: geo, anims: [], chimneys: chimneys };
+        // markers uitlezen: rookpunten en ankers voor animaties
+        const chimneys = [], anchors = {}, pre = src.levels[lvl] + '_';
+        gltf.scene.traverse(o => {
+          if (!o.name || o.name.indexOf(pre) !== 0) return;
+          const rest = o.name.slice(pre.length);
+          o.getWorldPosition(_v);
+          if (/^smoke\d*$/.test(rest)) chimneys.push([_v.x, _v.y, _v.z]);
+          else if (rest.indexOf('anim_') === 0) anchors[rest.slice(5)] = [_v.x, _v.y, _v.z];
+        });
+        // geanimeerde delen (vlag, wieken, zaag) blijven procedureel, op het anker uit het nieuwe model
+        let anims = [];
+        if (VE.buildProcedural) {
+          const proc = VE.buildProcedural(type, +lvl);
+          proc.geo.dispose();
+          anims = proc.anims.map(a => {
+            const p = anchors[a.kind];
+            return p ? Object.assign({}, a, { x: p[0], y: p[1], z: p[2] }) : a;
+          });
+        }
+        baked[lvl] = { geo: geo, anims: anims, chimneys: chimneys };
       }
       // pas vervangen als alle levels gelukt zijn: nooit een half GLB / half procedureel gebouw
+      let replaced = false;
       for (const lvl in baked) {
         const key = type + '_' + lvl;
         const old = VE.modelCache[key];
         VE.modelCache[key] = baked[lvl];
         VE.modelSource[key] = 'glb';
-        if (old && old.geo && old.geo !== baked[lvl].geo) refreshExisting(type);
+        if (old && old.geo && old.geo !== baked[lvl].geo) replaced = true;
       }
       VE.modelSource[type] = 'glb';
+      if (replaced) refreshExisting(type);
       gltf.scene.traverse(o => { if (o.isMesh) { o.geometry.dispose(); } });
     } catch (e) {
       VE.modelSource[type] = 'procedural';
@@ -147,6 +185,11 @@
 
   /* Laden start direct bij het inladen van dit script (parallel aan de rest van het opstarten).
      VE.glbReady resolvet altijd (ook bij fouten of na de time-out). */
-  const all = Promise.all(Object.keys(SOURCES).map(loadType));
-  VE.glbReady = Promise.race([all, new Promise(r => setTimeout(r, TIMEOUT_MS))]);
+  // Eerst de gebouwen die je bij de start ziet (opstarten wacht hierop, met time-out); de rest
+  // daarna op de achtergrond — tot die binnen is, tonen die gebouwen hun procedurele model.
+  const first = Object.keys(SOURCES).filter(t => SOURCES[t].first);
+  const later = Object.keys(SOURCES).filter(t => !SOURCES[t].first);
+  const firstDone = Promise.all(first.map(loadType));
+  VE.glbReady = Promise.race([firstDone, new Promise(r => setTimeout(r, TIMEOUT_MS))]);
+  VE.glbAllReady = firstDone.then(() => Promise.all(later.map(loadType)));
 })(window.VE);

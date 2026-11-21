@@ -428,15 +428,17 @@
   };
 
   VE.modelCache = {};
-  VE.buildModel = function (type, lvl) {
-    const key = type + '_' + lvl;
-    if (VE.modelCache[key]) return VE.modelCache[key];
+  /* Procedureel model zonder cache (ook gebruikt door glb-models.js voor de geanimeerde delen). */
+  VE.buildProcedural = function (type, lvl) {
     const m = new VE.Model(type.length * 31 + lvl);
     const ex = { anims: [], chimneys: [] };
     B[type](m, lvl, ex);
-    const res = { geo: m.build(), anims: ex.anims, chimneys: ex.chimneys };
-    VE.modelCache[key] = res;
-    return res;
+    return { geo: m.build(), anims: ex.anims, chimneys: ex.chimneys };
+  };
+  VE.buildModel = function (type, lvl) {
+    const key = type + '_' + lvl;
+    if (VE.modelCache[key]) return VE.modelCache[key];
+    return (VE.modelCache[key] = VE.buildProcedural(type, lvl));
   };
 
   VE.scaffoldGeo = function (size) {

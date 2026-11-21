@@ -12,7 +12,8 @@
     "shots": "set VISUAL=1&& playwright test tests/visual.spec.js",
     "models": "node tools/blender/build.mjs",
     "models:verify": "node tools/blender/verify-glb.mjs",
-    "stage": "set VISUAL=1&& playwright test tests/stage.spec.js"
+    "stage": "set VISUAL=1&& playwright test tests/stage.spec.js",
+    "showcase": "set VISUAL=1&& playwright test tests/showcase.spec.js"
   },
   "keywords": [],
   "author": "",
