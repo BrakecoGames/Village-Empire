@@ -30,6 +30,16 @@ Preview, met de testserver (`npm run serve`):
 Blender wordt automatisch gevonden in `C:\Program Files\Blender Foundation\Blender *` (nieuwste versie)
 of op het PATH. Wil je een andere versie gebruiken, zet dan `BLENDER_EXE`.
 
+## Gedeelde bouwstenen en AO (`lib/ve_parts.py`)
+
+Modelscripts doen `from ve_parts import *`, roepen `setup(seed, extra_palette)` aan, bouwen per level
+met de onderdelen (`box`, `cyl`, `beam`, `gable_roof(kind="tile"|"shingle")`, `window`, `door`,
+`earth_base`, `grass_clump`, `chimney`, …) en eindigen met `build_levels("<type>", build, args)`.
+Dat voegt per level samen, bakt **ambient occlusion** (Cycles, met grondvlak) in de vertex-kleur
+`COLOR_0` en exporteert. De game verrekent de AO bij het laden (`AO_STRENGTH` / `AO_SKIP` in
+`js/glb-models.js`); grote vlakken (stuc, aarde) krijgen geen AO. Uitzetten: omgevingsvariabele
+`VE_NO_AO=1`. Stijlregels: [docs/STIJLGIDS.md](../../docs/STIJLGIDS.md).
+
 ## Nieuw model toevoegen
 
 1. Kopieer `models/test_cube.py` naar `models/<naam>.py`.

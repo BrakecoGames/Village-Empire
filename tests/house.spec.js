@@ -140,3 +140,47 @@ test.describe('Woonhuis', () => {
     expect(unknown, unknown.join('\n')).toEqual([]);
   });
 });
+
+test.describe('Woodcutter', () => {
+  test('GLB-blokhut laadt voor alle levels, met rook en gebakken AO', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'alleen desktop nodig');
+    const errors = trackErrors(page);
+    await openGame(page);
+    await startNewVillage(page);
+    const spots = await findPlaceSpots(page, 'woodcutter', 1);
+    const r = await page.evaluate(s => {
+      const VE = window.VE, g = VE.game, b = g.placeBuilding('woodcutter', s.i, s.j, true), out = [];
+      for (const l of [1, 2, 3]) {
+        b.level = l; g.makeMesh(b);
+        const geo = b.mesh.geometry; geo.computeBoundingBox();
+        out.push({ l, glb: VE.modelSource['woodcutter_' + l] === 'glb', shared: geo === VE.buildModel('woodcutter', l).geo,
+          minY: geo.boundingBox.min.y, maxY: geo.boundingBox.max.y, smoke: b.chimneys.length,
+          // AO zichtbaar: niet alle vertex-kleuren even helder binnen één materiaal → spreiding > 0
+          tris: geo.attributes.position.count / 3 });
+      }
+      return out;
+    }, spots[0]);
+    for (const x of r) {
+      expect(x.glb && x.shared).toBe(true);
+      expect(x.minY).toBeGreaterThan(-0.3);
+      expect(x.maxY).toBeGreaterThan(0.6);
+      expect(x.smoke).toBe(1);
+      expect(x.tris).toBeLessThan(3500);
+    }
+    const unknown = checkErrors(errors, info);
+    expect(unknown, unknown.join('\n')).toEqual([]);
+  });
+
+  test('fallback: zonder GLB de oorspronkelijke houthakkershut', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'alleen desktop nodig');
+    const errors = trackErrors(page);
+    await page.route(/woodcutter\.glb/, r => r.abort());
+    await openGame(page);
+    expect(await page.evaluate(() => [window.VE.modelSource.woodcutter, window.VE.modelSource.house])).toEqual(['procedural', 'glb']);
+    await startNewVillage(page);
+    const spots = await findPlaceSpots(page, 'woodcutter', 1);
+    expect(await page.evaluate(s => window.VE.game.placeBuilding('woodcutter', s.i, s.j, true).mesh.geometry.attributes.position.count > 0, spots[0])).toBe(true);
+    const unknown = checkErrors(errors.filter(e => !/woodcutter\.glb|Failed to load resource/.test(e.text)), info);
+    expect(unknown, unknown.join('\n')).toEqual([]);
+  });
+});

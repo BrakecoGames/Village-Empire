@@ -4,7 +4,7 @@
   const N = 64; VE.N = N;
   const V1 = N + 1;
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
-  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color();
   VE.ZERO = ZERO;
 
   class World {
@@ -306,6 +306,8 @@
         ca.setXYZ(v, c.r, c.g, c.b);
       }
       ca.needsUpdate = true;
+      // padranden nemen de terreinkleur over: na hertekenen van het terrein ook de paden bijwerken
+      if (this.roadMesh && this.roadMesh.geometry.attributes.position) this.rebuildRoads();
     }
     updateHeights() {
       const pa = this.terrain.geometry.attributes.position;
@@ -324,24 +326,56 @@
     }
 
     /* ---------------- roads ---------------- */
+    /* Kleur/normaal van het terrein op (x, z): bilineair uit de vertex-attributen van het terreinraster. */
+    groundSample(attr, x, z, out) {
+      x = VE.clamp(x, 0, N - 0.0001); z = VE.clamp(z, 0, N - 0.0001);
+      const i = Math.floor(x), j = Math.floor(z), fx = x - i, fz = z - j, a = attr.array, s = attr.itemSize;
+      const v00 = (j * V1 + i) * s, v10 = v00 + s, v01 = v00 + V1 * s, v11 = v01 + s;
+      for (let c = 0; c < 3; c++) {
+        out[c] = (a[v00 + c] * (1 - fx) + a[v10 + c] * fx) * (1 - fz) + (a[v01 + c] * (1 - fx) + a[v11 + c] * fx) * fz;
+      }
+      return out;
+    }
     rebuildRoads() {
-      const pos = [], col = [];
-      const rr = VE.rng(99);
-      // worn path = sandy brown; faint trail = trampled, half-grassy and narrower
-      const PATH = [new THREE.Color(0xd6bb85), new THREE.Color(0xc4a670)], TRAIL = [new THREE.Color(0xb3ad6c), new THREE.Color(0x9fa25e)];
+      // Twee lagen: eerst de zachte randen (feather), daarna de padkernen iets hoger. De buitenrand van de
+      // feather krijgt exact de terreinkleur eronder → het pad loopt geleidelijk over in het gras. Alle
+      // vertices krijgen de terreinnormaal, zodat pad en gras even sterk belicht worden (geen naad).
+      const core = { pos: [], col: [], nor: [] }, fea = { pos: [], col: [], nor: [] };
+      const tc = this.terrain.geometry.attributes.color, tn = this.terrain.geometry.attributes.normal;
+      const gcol = [0, 0, 0], gnor = [0, 0, 0];
+      // worn path = aangestampte aarde; faint trail = vertrapt, half begroeid en smaller (stijlgids: gedempt)
+      const PATH = [new THREE.Color(0xc8ad82), new THREE.Color(0xb3976c)], TRAIL = [new THREE.Color(0xb2a96e), new THREE.Color(0x9e9c60)];
       let base = PATH[0], edge = PATH[1];
-      const push = (x, z, c) => { pos.push(x, this.heightAt(x, z) + 0.035, z); col.push(c.r, c.g, c.b); };
+      const put = (L, x, z, c, lift) => {
+        this.groundSample(tn, x, z, gnor);
+        L.pos.push(x, this.heightAt(x, z) + lift, z); L.col.push(c.r, c.g, c.b); L.nor.push(gnor[0], gnor[1], gnor[2]);
+      };
+      const push = (x, z, c) => put(core, x, z, c, 0.035);
+      // aparte hoogtes per laag: geen z-fighting (gekartelde vlekken) tussen vulvlak, pad en slijtspoor
+      const pushFill = (x, z, c) => put(core, x, z, c, 0.031), pushWear = (x, z, c) => put(core, x, z, c, 0.039);
+      const ground = (x, z) => { this.groundSample(tc, x, z, gcol); return _c2.setRGB(gcol[0], gcol[1], gcol[2]); };
       const tint = (f) => _c.copy(base).lerp(edge, f);
+      // feather-vierhoek: binnenrand a0→a1 in padkleur → buitenrand b0→b1 in terreinkleur.
+      // Richting: a0→a1 tegen de klok in gezien van boven (buitenkant rechts), dan wijzen de driehoeken omhoog.
+      const feather = (a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z, c) => {
+        // binnenrand iets hoger dan buitenrand: waar randen elkaar overlappen wint de padkleur (geen groene scherven)
+        const ci = c.clone(), li = 0.029, lo = 0.016, g0 = ground(b0x, b0z).clone(), g1 = ground(b1x, b1z).clone();
+        put(fea, a0x, a0z, ci, li); put(fea, a1x, a1z, ci, li); put(fea, b1x, b1z, g1, lo);
+        put(fea, a0x, a0z, ci, li); put(fea, b1x, b1z, g1, lo); put(fea, b0x, b0z, g0, lo);
+      };
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
         const k = j * N + i, lv = this.road[k]; if (!lv) continue;
-        const cx = i + 0.5, cz = j + 0.5, segs = 10, rad = lv === 2 ? 0.3 : 0.2;
+        const cx = i + 0.5, cz = j + 0.5, segs = 10, rad = lv === 2 ? 0.27 : 0.18, F = lv === 2 ? 0.1 : 0.08;
         for (let s = 0; s < segs; s++) {
           base = lv === 2 ? PATH[0] : TRAIL[0]; edge = lv === 2 ? PATH[1] : TRAIL[1];
           const a0 = s / segs * Math.PI * 2, a1 = (s + 1) / segs * Math.PI * 2;
           const r0 = rad + Math.sin(a0 * 3 + i * 1.3 + j) * 0.03, r1 = rad + Math.sin(a1 * 3 + i * 1.3 + j) * 0.03;
+          const x0 = cx + Math.cos(a0) * r0, z0 = cz + Math.sin(a0) * r0, x1 = cx + Math.cos(a1) * r1, z1 = cz + Math.sin(a1) * r1;
           push(cx, cz, tint(0));
-          push(cx + Math.cos(a1) * r1, cz + Math.sin(a1) * r1, tint(0.8));
-          push(cx + Math.cos(a0) * r0, cz + Math.sin(a0) * r0, tint(0.8));
+          push(x1, z1, tint(0.8));
+          push(x0, z0, tint(0.8));
+          const f0 = F * (0.8 + 0.4 * Math.abs(Math.sin(a0 * 2.3 + i + j * 0.7))), f1 = F * (0.8 + 0.4 * Math.abs(Math.sin(a1 * 2.3 + i + j * 0.7)));
+          feather(x0, z0, x1, z1, cx + Math.cos(a0) * (r0 + f0), cz + Math.sin(a0) * (r0 + f0), cx + Math.cos(a1) * (r1 + f1), cz + Math.sin(a1) * (r1 + f1), tint(0.8));
         }
         const dirs = [[1, 0], [0, 1], [1, 1], [-1, 1]];
         for (const d of dirs) {
@@ -352,6 +386,7 @@
           base = lo === 2 ? PATH[0] : TRAIL[0]; edge = lo === 2 ? PATH[1] : TRAIL[1];
           const len = Math.hypot(d[0], d[1]), w = (d[0] && d[1] ? 0.21 : 0.25) * (lo === 2 ? 1 : 0.62);
           const px = -d[1] / len * w, pz = d[0] / len * w;
+          const F = (lo === 2 ? 0.1 : 0.08) / w;            // feather-breedte relatief aan de halve padbreedte
           const SEG = 4;
           for (let s = 0; s < SEG; s++) {
             const t0 = s / SEG, t1 = (s + 1) / SEG;
@@ -360,10 +395,14 @@
             const L0 = [x0 + px * (1 + wob0), z0 + pz * (1 + wob0)], R0 = [x0 - px, z0 - pz], L1 = [x1 + px * (1 + wob1), z1 + pz * (1 + wob1)], R1 = [x1 - px, z1 - pz];
             push(R0[0], R0[1], tint(0.7)); push(L0[0], L0[1], tint(0.7)); push(L1[0], L1[1], tint(0.7));
             push(R0[0], R0[1], tint(0.7)); push(L1[0], L1[1], tint(0.7)); push(R1[0], R1[1], tint(0.7));
+            // zachte randen aan beide kanten
+            const fw0 = F * (0.85 + 0.3 * Math.abs(Math.sin((i * 3 + j + t0) * 4.7))), fw1 = F * (0.85 + 0.3 * Math.abs(Math.sin((i * 3 + j + t1) * 4.7)));
+            feather(L1[0], L1[1], L0[0], L0[1], L1[0] + px * fw1, L1[1] + pz * fw1, L0[0] + px * fw0, L0[1] + pz * fw0, tint(0.7));
+            feather(R0[0], R0[1], R1[0], R1[1], R0[0] - px * fw0, R0[1] - pz * fw0, R1[0] - px * fw1, R1[1] - pz * fw1, tint(0.7));
             // centre wear line
-            const mx0 = x0, mz0 = z0, mx1 = x1, mz1 = z1, q = 0.4;
-            push(mx0 - px * q, mz0 - pz * q, tint(-0.4)); push(mx0 + px * q, mz0 + pz * q, tint(-0.4)); push(mx1 + px * q, mz1 + pz * q, tint(-0.4));
-            push(mx0 - px * q, mz0 - pz * q, tint(-0.4)); push(mx1 + px * q, mz1 + pz * q, tint(-0.4)); push(mx1 - px * q, mz1 - pz * q, tint(-0.4));
+            const mx0 = x0, mz0 = z0, mx1 = x1, mz1 = z1, q = 0.3;   // subtiel donkerder slijtspoor
+            pushWear(mx0 - px * q, mz0 - pz * q, tint(0.25)); pushWear(mx0 + px * q, mz0 + pz * q, tint(0.25)); pushWear(mx1 + px * q, mz1 + pz * q, tint(0.25));
+            pushWear(mx0 - px * q, mz0 - pz * q, tint(0.25)); pushWear(mx1 + px * q, mz1 + pz * q, tint(0.25)); pushWear(mx1 - px * q, mz1 - pz * q, tint(0.25));
           }
         }
       }
@@ -373,16 +412,17 @@
         if (!a || !b || !c || !d) continue;
         const lo = Math.min(a, b, c, d); base = lo === 2 ? PATH[0] : TRAIL[0]; edge = lo === 2 ? PATH[1] : TRAIL[1];
         const x0 = i + 0.5, z0 = j + 0.5, x1 = i + 1.5, z1 = j + 1.5, t = tint(0.75).clone();
-        push(x0, z0, t); push(x0, z1, t); push(x1, z1, t);
-        push(x0, z0, t); push(x1, z1, t); push(x1, z0, t);
+        pushFill(x0, z0, t); pushFill(x0, z1, t); pushFill(x1, z1, t);
+        pushFill(x0, z0, t); pushFill(x1, z1, t); pushFill(x1, z0, t);
       }
+      // eerst de randen, dan de kernen (die liggen iets hoger en winnen dus altijd van een overlappende rand)
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-      g.computeVertexNormals();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(fea.pos.concat(core.pos), 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(fea.col.concat(core.col), 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(fea.nor.concat(core.nor), 3));
+      g.computeBoundingSphere();
       this.roadMesh.geometry.dispose();
       this.roadMesh.geometry = g;
-      void rr;
     }
 
     /* ---------------- territory ---------------- */

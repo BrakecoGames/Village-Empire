@@ -11,7 +11,8 @@
     "report": "playwright show-report",
     "shots": "set VISUAL=1&& playwright test tests/visual.spec.js",
     "models": "node tools/blender/build.mjs",
-    "models:verify": "node tools/blender/verify-glb.mjs"
+    "models:verify": "node tools/blender/verify-glb.mjs",
+    "stage": "set VISUAL=1&& playwright test tests/stage.spec.js"
   },
   "keywords": [],
   "author": "",

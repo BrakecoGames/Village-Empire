@@ -18,9 +18,15 @@
   /* Welke gebouwen uit een GLB komen. levels: game-level -> node-naam in de GLB.
      smoke: node met dezelfde naam + '_smoke' markeert de top van de schoorsteen. */
   const SOURCES = {
-    house: { url: 'public/models/house.glb', levels: { 1: 'house_l1', 2: 'house_l2', 3: 'house_l3' } }
+    house: { url: 'public/models/house.glb', levels: { 1: 'house_l1', 2: 'house_l2', 3: 'house_l3' } },
+    woodcutter: { url: 'public/models/woodcutter.glb', levels: { 1: 'woodcutter_l1', 2: 'woodcutter_l2', 3: 'woodcutter_l3' } }
   };
   const TIMEOUT_MS = 10000;
+  /* Sterkte van de in Blender gebakken ambient occlusion (COLOR_0): 0 = uit, 1 = volledig. */
+  const AO_STRENGTH = 0.6;
+  /* AO staat per hoekpunt: grote vlakken met weinig hoekpunten (muren, aarde, dakbeschot) zouden
+     in hun geheel donker worden. Die krijgen geen AO; gloeiende ramen ook niet. */
+  const AO_SKIP = /^(Glow|Plaster|Earth|RoofDeck)/;
 
   VE.modelSource = {};
   for (const t in SOURCES) {
@@ -50,7 +56,20 @@
       const at = name.lastIndexOf('@');
       const jit = at >= 0 ? parseFloat(name.slice(at + 1)) || 0 : 0.04;
       const col = mat.color ? mat.color.clone().convertLinearToSRGB() : new THREE.Color(0xcccccc);
-      parts.push({ g: g, col: col, jit: jit });
+      // gebakken AO (vertex-kleur) → per hoekpunt een helderheidsfactor; gloeiende ramen niet verdonkeren
+      let ao = null;
+      const ca = g.attributes.color;
+      if (ca && AO_STRENGTH > 0 && !AO_SKIP.test(name)) {
+        const arr = ca.array, isz = ca.itemSize;
+        const div = ca.normalized ? (arr instanceof Uint8Array ? 255 : arr instanceof Uint16Array ? 65535 : 1) : 1;
+        ao = new Float32Array(ca.count);
+        for (let i = 0; i < ca.count; i++) {
+          const lin = arr[i * isz] / div;                                   // lineair
+          const s = lin <= 0.0031308 ? lin * 12.92 : 1.055 * Math.pow(lin, 1 / 2.4) - 0.055;  // → perceptueel
+          ao[i] = 1 - AO_STRENGTH * (1 - Math.min(1, s * 1.15));            // licht opgetild: open vlakken blijven helder
+        }
+      }
+      parts.push({ g: g, col: col, jit: jit, ao: ao });
       count += g.attributes.position.count;
     });
     if (!count) return null;
@@ -63,7 +82,10 @@
       for (let v = 0; v < n; v += 3) {
         const f = 1 + (rnd() * 2 - 1) * p.jit;
         _c.setRGB(Math.min(1, p.col.r * f), Math.min(1, p.col.g * f), Math.min(1, p.col.b * f));
-        for (let q = 0; q < 3 && v + q < n; q++) { const i = (o + v + q) * 3; colA[i] = _c.r; colA[i + 1] = _c.g; colA[i + 2] = _c.b; }
+        for (let q = 0; q < 3 && v + q < n; q++) {
+          const i = (o + v + q) * 3, a = p.ao ? p.ao[v + q] : 1;
+          colA[i] = _c.r * a; colA[i + 1] = _c.g * a; colA[i + 2] = _c.b * a;
+        }
       }
       o += n;
       p.g.dispose();

@@ -133,8 +133,9 @@ def triangle_count(objs=None):
 
 
 # ---------------------------------------------------------------- export
-def export_glb(path, budget=DEFAULT_TRI_BUDGET):
-    """Exporteert alle meshes als .glb, geschikt voor Three.js r128 (GLTFLoader, zonder Draco)."""
+def export_glb(path, budget=DEFAULT_TRI_BUDGET, vertex_colors=False):
+    """Exporteert alle meshes als .glb, geschikt voor Three.js r128 (GLTFLoader, zonder Draco).
+    vertex_colors: de actieve kleur-attribuut (bijv. gebakken AO) meesturen als COLOR_0."""
     import os
     meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     if not meshes:
@@ -143,7 +144,7 @@ def export_glb(path, budget=DEFAULT_TRI_BUDGET):
     if tris > budget:
         raise SystemExit(f"VE-BLENDER: {tris} driehoeken > budget {budget}; vereenvoudig het model of verhoog --budget")
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    bpy.ops.export_scene.gltf(
+    opts = dict(
         filepath=path,
         export_format="GLB",
         use_selection=False,
@@ -158,6 +159,18 @@ def export_glb(path, budget=DEFAULT_TRI_BUDGET):
         export_animations=False,
         export_draco_mesh_compression_enable=False,  # r128 zonder DRACOLoader
     )
+    # vertex-kleuren: optienamen verschillen per Blender-versie; alleen doorgeven wat bestaat
+    avail = {p.identifier for p in bpy.ops.export_scene.gltf.get_rna_type().properties}
+    if vertex_colors:
+        for k, v in (("export_vertex_color", "ACTIVE"), ("export_all_vertex_colors", False),
+                     ("export_active_vertex_color_when_no_material", True), ("export_colors", True)):
+            if k in avail:
+                opts[k] = v
+    elif "export_vertex_color" in avail:
+        opts["export_vertex_color"] = "NONE"
+    elif "export_colors" in avail:
+        opts["export_colors"] = False
+    bpy.ops.export_scene.gltf(**opts)
     size = os.path.getsize(path)
     print(f"VE-BLENDER-OK {path} tris={tris} bytes={size}")
     return tris, size
