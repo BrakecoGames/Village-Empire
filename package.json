@@ -9,7 +9,9 @@
     "test:mobile": "playwright test --project=mobile",
     "serve": "http-server . -p 4173 -a 127.0.0.1 -c-1",
     "report": "playwright show-report",
-    "shots": "set VISUAL=1&& playwright test tests/visual.spec.js"
+    "shots": "set VISUAL=1&& playwright test tests/visual.spec.js",
+    "models": "node tools/blender/build.mjs",
+    "models:verify": "node tools/blender/verify-glb.mjs"
   },
   "keywords": [],
   "author": "",
