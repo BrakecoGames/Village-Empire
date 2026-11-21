@@ -10,7 +10,9 @@ module.exports = defineConfig({
   testDir: './tests',
   // visual.spec.js maakt alleen vergelijkingsbeelden; draai die met `npm run shots`
   testIgnore: process.env.VISUAL ? [] : ['**/visual.spec.js', '**/stage.spec.js', '**/showcase.spec.js', '**/characters.spec.js'],
-  outputDir: './test-results',
+  // Buiten iCloud Drive: iCloud verplaatst/verwijdert soms trace-bestanden terwijl Playwright erin
+  // schrijft (ENOENT bij browserContext.close), waardoor een geslaagde test toch faalt.
+  outputDir: require('path').join(require('os').tmpdir(), 'village-empire-test-results'),
   timeout: 90_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
