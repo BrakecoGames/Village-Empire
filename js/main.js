@@ -64,7 +64,7 @@
     const g = new VE.Game(scene);
     VE.game = g;
     g.init(save);
-    g.sr = new VE.SettlerRender(g.root);
+    g.sr = VE.makeSettlerRender ? VE.makeSettlerRender(g.root) : new VE.SettlerRender(g.root);   // Blender-bewoners of oude reserve
     g.fx = new VE.FX(g.root, g);
     g.piles = new VE.StockpileRender(g.root);
     g.started = !!save;

@@ -120,6 +120,10 @@
     return geo;
   }
 
+  // gedeeld met settler-glb.js (personages): GLB-node → vertex-gekleurde geometrie, en het laden zelf
+  VE.bakeGlbNode = (node, seed) => bakeNode(node, seed);
+  VE.loadGlb = url => loadGlb(url);
+
   function loadGlb(url) {
     return new Promise((resolve, reject) => {
       if (!THREE.GLTFLoader) { reject(new Error('GLTFLoader niet beschikbaar')); return; }

@@ -19,10 +19,11 @@
       // All meshes share `mat`; three.js r128 needs every one of them to have instanceColor once any
       // has it, otherwise rendering crashes (VE-001). Build the buffer at full capacity (white = unchanged);
       // setColorAt would size it by the current `count`, which is 0 here.
+      this.root = root; this._all = [];
       const mk = (geo, n, shadow) => {
         const m = new THREE.InstancedMesh(geo, mat, n);
         m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3);
-        m.count = 0; m.castShadow = shadow; m.frustumCulled = false; root.add(m);
+        m.count = 0; m.castShadow = shadow; m.frustumCulled = false; root.add(m); this._all.push(m);
         return m;
       };
       // tiny parts (hands, hair, face extras) skip the shadow pass: invisible in the shadow, saves draw calls
@@ -40,6 +41,8 @@
       this.roleCol = {};
       for (const r in VE.ROLES) this.roleCol[r] = [new THREE.Color(VE.ROLES[r][0]), new THREE.Color(VE.ROLES[r][1])];
     }
+    /* opruimen bij het live wisselen naar de Blender-bewoners (settler-glb.js) */
+    dispose() { for (const m of this._all) this.root.remove(m); }
     toolAngle(s) {
       const lerp = VE.lerp;
       if (s.act === 'chop' || s.act === 'pick') {
