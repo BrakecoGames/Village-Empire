@@ -625,6 +625,9 @@ def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
         info = smoke if isinstance(smoke, dict) else {"smoke": [smoke] if smoke is not None else []}
         markers = [(f"{prefix}_l{lvl}_smoke" + ("" if i == 0 else str(i + 1)), p) for i, p in enumerate(info.get("smoke", []))]
         markers += [(f"{prefix}_l{lvl}_anim_{k}", p) for k, p in info.get("anims", {}).items()]
+        # "pile": waar de game de werkelijke uitvoervoorraad als stapel neerlegt (y = grondniveau)
+        if info.get("pile"):
+            markers.append((f"{prefix}_l{lvl}_pile", info["pile"]))
         for name, p in markers:
             emp = bpy.data.objects.new(name, None)
             bpy.context.collection.objects.link(emp)

@@ -49,15 +49,14 @@ def build(lvl):
     cyl(0.012, 0.016, 0.04, 6, "Wine", pos=(-0.31, 0.255, f + 0.03))
     if lvl >= 2:
         lying_barrel(0.32, 0.24, 0.165)
-        for k in range(3):
-            cyl(0.01, 0.013, 0.045, 6, "Wine", pos=(0.06 + k * 0.03, 0.04, 0.34))
     if lvl >= 3:
         # kar met vat
         box(0.15, 0.04, 0.1, "Wood", pos=(-0.32, 0.09, -0.32), rot=(0, 0.5, 0), bevel=0.005)
         for s in (-1, 1):
             cyl(0.045, 0.045, 0.012, 8, "LogD", pos=(-0.32 + s * 0.035, 0.09, -0.32 + s * 0.06), rot=(math.pi / 2, 0, 0.5))
         lying_barrel(-0.32, -0.32, 0.13)
-    return smoke
+    # de werkelijke voorraad wijn (vaatjes) ligt op de marker 'pile'; het vatenrek is gisting, geen voorraad
+    return {"smoke": [smoke], "pile": (0.07, 0.04, 0.34)}
 
 
 build_levels("winery", build, args)

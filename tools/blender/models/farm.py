@@ -34,16 +34,12 @@ def build(lvl):
     for sx in (-1, 1):
         beam((0.24 + sx * 0.065, 0.06, b["front"] + 0.01), (0.24 + sx * 0.065, 0.24, b["front"] + 0.01), 0.012, "Canvas")
     window(0.24, 0.38, b["front"] + 0.002, "z", lit=False, shutters=None, w=0.06, h=0.06)
-    # hooi
-    hay_bale(0.3, 0.2, 0.04, "x")
-    hay_bale(0.3, 0.34, 0.04, "x")
+    # geen vaste hooibalen: de werkelijke voorraad graan ligt op de marker 'pile'
     if lvl >= 2:
-        hay_bale(0.3, 0.27, 0.16, "x")
-        # handkar
+        # handkar (leeg)
         box(0.14, 0.04, 0.1, "Wood", pos=(0.06, 0.09, 0.36), rot=(0, 0.4, 0), bevel=0.005)
         for sz in (-1, 1):
             cyl(0.04, 0.04, 0.012, 8, "LogD", pos=(0.06 + sz * 0.03, 0.08, 0.36 + sz * 0.05), rot=(math.pi / 2, 0, 0.4))
-        sack(0.07, 0.36, 0.13, 0.03)
     if lvl >= 3:
         # vogelverschrikker
         beam((-0.38, 0.04, 0.32), (-0.38, 0.28, 0.32), 0.014, "Wood")
@@ -53,7 +49,7 @@ def build(lvl):
         box(0.06, 0.07, 0.03, "BlueC", pos=(-0.38, 0.17, 0.32), bevel=0.004)
         for k in range(3):
             blob(0.028, "Pumpkin", (0.0 + k * 0.06, 0.06, -0.4 + (k % 2) * 0.03), scale=(1.2, 0.85, 1.2), sub=1)
-    return smoke
+    return {"smoke": [smoke], "pile": (0.3, 0.04, 0.27)}
 
 
 build_levels("farm", build, args)

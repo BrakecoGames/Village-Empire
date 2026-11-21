@@ -47,11 +47,8 @@ def build(lvl):
     box(0.008, 0.2, 0.36, "Net", pos=(0.34, 0.08, 0.0), bevel=0.0)
     for k in range(4):
         blob(0.012, "Gold", (0.345, 0.1 + (k % 2) * 0.09, -0.12 + k * 0.08), sub=0)
-    # bootje (halve romp) en viskist
+    # bootje; de werkelijke voorraad vis ligt op de vlonder op de marker 'pile'
     boat((-0.22, 0.11, 0.32), (1, 0, 0.25), 0.07, 0.32, "Log")
-    box(0.1, 0.035, 0.07, "Wood", pos=(0.12, 0.096, 0.13), bevel=0.004)
-    for k in range(3):
-        blob(0.016, "Fish", (0.1 + k * 0.025, 0.135, 0.13), scale=(1.8, 0.6, 0.8), sub=1)
     if lvl >= 2:
         cyl(0.04, 0.035, 0.08, 8, "Wood", pos=(0.18, 0.097, -0.22))     # emmer/ton
         for k in range(2):
@@ -61,7 +58,7 @@ def build(lvl):
         boat((-0.2, 0.1, -0.36), (1, 0, -0.2), 0.06, 0.28, "LogD")
         beam((-0.32, 0.097, 0.16), (-0.32, 0.32, 0.16), 0.014, "Timber")
         box(0.03, 0.04, 0.03, "Glow", pos=(-0.32, 0.28, 0.19), bevel=0.003)
-    return None
+    return {"pile": (0.14, 0.097, 0.1)}
 
 
 build_levels("fisher", build, args)

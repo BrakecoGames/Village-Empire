@@ -39,15 +39,7 @@ def build(lvl):
                    wall="StoneA", timber=False)
     door(-0.13, h["front"], w=0.11, h=0.18)
     window(h["right"] + 0.002, 0.2, -0.13, "x", lit=False, shutters="Shutter", w=0.08, h=0.08)
-    # gestapelde blokken
-    for i in range(3):
-        block(0.16 + i * 0.1, 0.22)
-    for i in range(2):
-        block(0.21 + i * 0.1, 0.22, y=0.105)
-    if lvl >= 2:
-        for i in range(3):
-            block(0.16 + i * 0.1, 0.34)
-        block(0.26, 0.34, y=0.105)
+    # geen vaste blokkenstapel: de game legt de werkelijke voorraad stenen op de marker 'pile'
     crane(0.34, -0.26, h=0.56 if lvl < 3 else 0.66, reach=0.3)
     # puin en gereedschap
     for _ in range(5):
@@ -61,7 +53,7 @@ def build(lvl):
         for k in range(3):
             pebble(0.04 + k * 0.025, 0.36, 0.018, 0.12)
         block(-0.34, -0.35, s=1.1)
-    return None
+    return {"pile": (0.26, 0.04, 0.27)}
 
 
 build_levels("quarry", build, args)

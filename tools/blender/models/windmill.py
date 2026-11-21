@@ -38,17 +38,13 @@ def build(lvl):
     door(0.0, 0.275, w=0.11, h=0.19)
     window(0.0, 0.7, 0.215, "z", lit=True, shutters=None, w=0.07, h=0.08)
     window(0.24, 0.32, 0.0, "x", lit=False, shutters="Shutter", w=0.07, h=0.08)
-    # meelzakken
-    for k, (x, z) in enumerate(((0.3, 0.26), (0.36, 0.18), (0.24, 0.32))):
-        sack(x, z, 0.04, 0.04)
+    # geen vaste meelzakken: de werkelijke voorraad meel ligt op de marker 'pile'
     if lvl >= 2:
-        sack(0.32, 0.22, 0.11, 0.035)
         fence((-0.38, 0.2), (-0.38, -0.2), 3)
     if lvl >= 3:
         crate(-0.3, 0.3, 0.04, 0.08, 0.3)
-        sack(-0.3, 0.3, 0.12, 0.032)
         blob(0.05, "Leaf", (-0.32, 0.07, -0.3), sub=2)
-    return {"smoke": [], "anims": {"sails": (0.0, 1.0, 0.31)}}
+    return {"smoke": [], "anims": {"sails": (0.0, 1.0, 0.31)}, "pile": (0.3, 0.04, 0.27)}
 
 
 build_levels("windmill", build, args)

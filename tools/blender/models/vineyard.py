@@ -40,14 +40,11 @@ def build(lvl):
     for x in (0.16, 0.38):                                       # ranken langs de palen
         blob(0.03, "Leaf", (x, 0.15, 0.36), scale=(0.8, 1.6, 0.8), sub=1)
     barrel(-0.34, 0.26, 0.04)
-    # mand met druiven
-    cyl(0.04, 0.032, 0.04, 8, "WoodL", pos=(-0.04, 0.04, 0.32))
-    for k in range(3):
-        blob(0.016, "Grape", (-0.05 + k * 0.012, 0.09, 0.32), sub=0)
+    # geen vaste druivenmand: de werkelijke voorraad druiven (manden) ligt op de marker 'pile'
     if lvl >= 3:
         barrel(-0.34, 0.12, 0.04)
         box(0.12, 0.012, 0.045, "WoodL", pos=(0.27, 0.1, 0.42), bevel=0.003)
-    return smoke
+    return {"smoke": [smoke], "pile": (-0.04, 0.04, 0.33)}
 
 
 build_levels("vineyard", build, args)

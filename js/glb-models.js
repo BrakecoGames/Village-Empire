@@ -146,12 +146,14 @@
         if (!geo) throw new Error('node ' + src.levels[lvl] + ' bevat geen meshes');
         // markers uitlezen: rookpunten en ankers voor animaties
         const chimneys = [], anchors = {}, pre = src.levels[lvl] + '_';
+        let pile = null;
         gltf.scene.traverse(o => {
           if (!o.name || o.name.indexOf(pre) !== 0) return;
           const rest = o.name.slice(pre.length);
           o.getWorldPosition(_v);
           if (/^smoke\d*$/.test(rest)) chimneys.push([_v.x, _v.y, _v.z]);
           else if (rest.indexOf('anim_') === 0) anchors[rest.slice(5)] = [_v.x, _v.y, _v.z];
+          else if (rest === 'pile') pile = [_v.x, _v.y, _v.z];          // plek voor de uitvoervoorraad
         });
         // geanimeerde delen (vlag, wieken, zaag) blijven procedureel, op het anker uit het nieuwe model
         let anims = [];
@@ -163,7 +165,7 @@
             return p ? Object.assign({}, a, { x: p[0], y: p[1], z: p[2] }) : a;
           });
         }
-        baked[lvl] = { geo: geo, anims: anims, chimneys: chimneys };
+        baked[lvl] = { geo: geo, anims: anims, chimneys: chimneys, pile: pile };
       }
       // pas vervangen als alle levels gelukt zijn: nooit een half GLB / half procedureel gebouw
       let replaced = false;

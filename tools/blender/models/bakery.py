@@ -37,20 +37,16 @@ def build(lvl):
     sack(0.36, -0.28, 0.04, 0.04)
     sack(0.3, -0.33, 0.04, 0.035)
     crate(0.4, -0.08, 0.04, 0.08, 0.2)
+    # geen vaste broden: de werkelijke voorraad brood ligt op de marker 'pile'
     if lvl >= 2:
-        # tafeltje met broden
-        box(0.14, 0.012, 0.08, "WoodL", pos=(-0.05, 0.12, 0.34), bevel=0.003)
-        for sx in (-1, 1):
-            box(0.012, 0.08, 0.06, "Wood", pos=(-0.05 + sx * 0.055, 0.04, 0.34))
-        for k in range(3):
-            blob(0.022, "Bread", (-0.09 + k * 0.04, 0.145, 0.34), scale=(1.4, 0.8, 1), sub=1)
+        crate(-0.36, -0.3, 0.04, 0.08, 0.4)
     if lvl >= 3:
         # luifel boven de deur en een tweede schoorsteen
         for s_ in range(4):
             half_tube((-0.22 + s_ * 0.04, 0.3, h["front"] + 0.05), (0, -0.4, 1), (0, 1, 0.4), 0.024, 0.11,
                       "RedC" if s_ % 2 else "Canvas", seg=4)
         blob(0.05, "Leaf", (-0.38, 0.07, -0.3), sub=2)
-    return {"smoke": [smoke1, (0.33, 0.29, 0.2)]}
+    return {"smoke": [smoke1, (0.33, 0.29, 0.2)], "pile": (-0.03, 0.04, 0.34)}
 
 
 build_levels("bakery", build, args)

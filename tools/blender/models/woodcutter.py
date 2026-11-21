@@ -141,12 +141,11 @@ def build(lvl):
     window(-0.15, 0.2, D / 2 + R + 0.002, "z", lit=False, shutters="Shutter", w=0.08, h=0.08)
     smoke = chimney(-0.15, -0.09, 0.36, 0.8)
     chopping_block(0.28, 0.33)
-    log_stack(-0.25, 0.33, rows=3, length=0.2, along="x")
+    # geen vaste houtstapel meer: de game legt de werkelijke voorraad stammen op de marker 'pile'
     blob(0.045, "Leaf", (0.36, 0.06, -0.3), scale=(1, 0.8, 1), sub=2)
 
     if lvl >= 2:
         lean_to(-W / 2 - R, -0.17, 0.12)
-        log_stack(0.33, -0.12, rows=2, length=0.18, along="z")
 
     if lvl >= 3:
         sawbuck(0.38, 0.12)
@@ -156,7 +155,7 @@ def build(lvl):
         box(0.1, 0.06, 0.012, "WoodL", pos=(0.16, 0.22, D / 2 + 0.105), bevel=0.003)
         box(0.05, 0.01, 0.004, "Iron", pos=(0.16, 0.245, D / 2 + 0.113), rot=(0, 0, 0.5))
         blob(0.03, "LeafL", (-0.38, 0.06, 0.05), sub=2)
-    return smoke
+    return {"smoke": [smoke], "pile": (-0.24, 0.04, 0.34)}
 
 
 build_levels("woodcutter", build, args)

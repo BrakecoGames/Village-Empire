@@ -160,12 +160,15 @@
   // 1 item per unit for small stocks, then the pile grows more slowly until it is full
   const visCount = (s, cap) => s <= 0 ? 0 : Math.min(cap, s <= 6 ? Math.ceil(s) : 6 + Math.ceil((s - 6) / 4));
 
+  // Uitvoervoorraad bij productiebedrijven: dezelfde stapels, kleiner, op de 'pile'-plek van het model.
+  const PILE_B = 0.85, PROD_CAP = 640;   // max. items per goed over alle bedrijven samen
+
   class StockpileRender {
     constructor(root) {
       const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5, specular: 0x111111 });
       this.meshes = {};
       for (const r of VE.RES_ORDER) {
-        const n = LAYOUT[r].length * 2;
+        const n = LAYOUT[r].length * 2 + PROD_CAP;
         const m = new THREE.InstancedMesh(VE.itemGeo(r), mat, n);
         m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3); // see VE-001
         m.count = 0; m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false;
@@ -176,17 +179,67 @@
     update(game) {
       const yards = game.buildings.filter(b => b.alive && b.built && b.type === 'yard').slice(0, 2);
       const counts = VE.RES_ORDER.map(r => visCount(game.stock[r] || 0, LAYOUT[r].length));
-      const sig = yards.map(b => b.id + ':' + b.y.toFixed(2)).join(',') + '|' + counts.join(',');
+      // productiebedrijven: elk stuk in de uitvoervoorraad (b.output) is één item op de stapel.
+      // Leeg = geen stapel; vol (= de werker wacht op dragers) = volle stapel.
+      const prod = [];
+      let psig = '';
+      for (const b of game.buildings) {
+        if (!b.alive || !b.built || !b.def.out) continue;
+        let any = false; for (const r in b.output) if (b.output[r] > 0) { any = true; psig += b.id + r + b.output[r] + ','; }
+        if (!any) continue;
+        const md = VE.buildModel(b.type, b.level), spot = md.pile || (VE.PILE_SPOT && VE.PILE_SPOT[b.type]);
+        if (spot) { prod.push({ b: b, spot: spot }); psig += b.level + ':' + b.y.toFixed(2) + (md.pile ? 'g' : 'p') + ';'; }
+      }
+      // bouwplaatsen: geleverde maar nog niet verbouwde materialen liggen op de grond. De bouwer verbruikt
+      // ze één voor één (b.used); het laatste stuk verdwijnt precies als het gebouw klaar is.
+      const sites = [];
+      for (const b of game.buildings) {
+        if (!b.alive || b.built || !b.def.cost) continue;
+        let u = b.used || 0;
+        const rem = {};
+        let any = false;
+        for (const r of Object.keys(b.def.cost)) {
+          const del = b.delivered[r] || 0, take = Math.min(del, u);
+          u -= take;
+          if (del - take > 0) { rem[r] = del - take; any = true; psig += 's' + b.id + r + rem[r] + ','; }
+        }
+        if (any) { sites.push({ b: b, rem: rem }); psig += b.y.toFixed(2) + ';'; }
+      }
+      const sig = yards.map(b => b.id + ':' + b.y.toFixed(2)).join(',') + '|' + counts.join(',') + '|' + psig;
       if (sig === this.sig) return;
       this.sig = sig;
       VE.RES_ORDER.forEach((r, ri) => {
-        const mesh = this.meshes[r], lay = LAYOUT[r], sl = SLOT[r];
+        const mesh = this.meshes[r], lay = LAYOUT[r], sl = SLOT[r], capN = mesh.instanceMatrix.count;
         let n = 0;
         for (const b of yards) for (let q = 0; q < counts[ri]; q++) {
           const p = lay[q], jit = ((q * 37 + ri * 11) % 7 - 3) * 0.012;  // a little untidiness
           _q.setFromAxisAngle(UP, (p.ry || 0) + jit);
           _m.compose(_p.set(b.cx + sl[0] + p.x * PILE_S, b.y + 0.07 + p.y * PILE_S, b.cz + sl[1] + p.z * PILE_S), _q, _s.set(PILE_S, PILE_S, PILE_S));
           mesh.setMatrixAt(n++, _m);
+        }
+        for (const pr of prod) {
+          const b = pr.b, amt = Math.min(lay.length, Math.ceil(b.output[r] || 0));
+          for (let q = 0; q < amt && n < capN; q++) {
+            const p = lay[q], jit = ((q * 37 + b.id * 13) % 7 - 3) * 0.015;
+            _q.setFromAxisAngle(UP, (p.ry || 0) + jit);
+            _m.compose(_p.set(b.cx + pr.spot[0] + p.x * PILE_B, b.y + pr.spot[1] + p.y * PILE_B, b.cz + pr.spot[2] + p.z * PILE_B), _q, _s.set(PILE_B, PILE_B, PILE_B));
+            mesh.setMatrixAt(n++, _m);
+          }
+        }
+        for (const st of sites) {
+          const amt = Math.min(lay.length, st.rem[r] || 0);
+          if (!amt) continue;
+          // eerste materiaal links vooraan op de bouwplaats, tweede rechts vooraan
+          // vaste kant per materiaal (volgorde in de bouwkosten), zodat een stapel niet verspringt
+          // vóór de steiger (loopplank op z≈0.41), links en rechts van de ingang: zichtbaar vanuit de
+          // gebruikelijke camerahoek en het deurpad blijft vrij. 2×2: naast de steiger (palen op ±0.8).
+          const b = st.b, side = Object.keys(b.def.cost).indexOf(r) % 2 ? 1 : -1, e = b.size > 1 ? 0.88 : 0.27, f = b.size > 1 ? 0.5 : 0.47;
+          for (let q = 0; q < amt && n < capN; q++) {
+            const p = lay[q], jit = ((q * 29 + b.id * 7) % 7 - 3) * 0.015;
+            _q.setFromAxisAngle(UP, (p.ry || 0) + jit);
+            _m.compose(_p.set(b.cx + side * e + p.x * PILE_B, b.y + 0.02 + p.y * PILE_B, b.cz + f + p.z * PILE_B), _q, _s.set(PILE_B, PILE_B, PILE_B));
+            mesh.setMatrixAt(n++, _m);
+          }
         }
         mesh.count = n; mesh.instanceMatrix.needsUpdate = true;
       });

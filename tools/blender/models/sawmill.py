@@ -46,14 +46,14 @@ def build(lvl):
     box(0.26, 0.075, 0.11, "Wood", pos=(0.27, 0.04, 0.21), bevel=0.006)          # zaagbank
     cyl(0.028, 0.028, 0.24, 6, "Log", pos=(0.15, 0.142, 0.21), rot=(0, 0, -math.pi / 2))
     box(0.06, 0.008, 0.06, "LogEnd", pos=(0.33, 0.115, 0.25))                    # zaagsel
-    plank_stack(-0.15, 0.34, 4 if lvl == 1 else 6)
+    # geen vaste plankenstapel: de werkelijke voorraad planken ligt op de marker 'pile'
     log_pile(-0.3, -0.36, rows=2 if lvl == 1 else 3)
     if lvl >= 3:
         for _ in range(4):
             blob(0.03, "LogEnd", (rnd.uniform(0.2, 0.36), 0.045, rnd.uniform(0.36, 0.42)), scale=(1.4, 0.35, 1.2), sub=1)
         crate(0.38, -0.3, 0.04, 0.08)
         crate(0.38, -0.3, 0.12, 0.065, 0.3)
-    return {"smoke": [smoke], "anims": {"saw": (0.27, 0.15, 0.21)}}
+    return {"smoke": [smoke], "anims": {"saw": (0.27, 0.15, 0.21)}, "pile": (-0.15, 0.04, 0.34)}
 
 
 build_levels("sawmill", build, args)

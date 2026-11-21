@@ -428,6 +428,14 @@
   };
 
   VE.modelCache = {};
+  /* Plek (gebouw-lokaal x, y, z) waar de uitvoervoorraad van een productiebedrijf als stapel ligt.
+     GLB-modellen hebben hun eigen marker 'pile'; dit is de reserve voor de procedurele modellen. */
+  VE.PILE_SPOT = {
+    woodcutter: [-0.24, 0.06, 0.34], quarry: [0.26, 0.06, 0.27], sawmill: [-0.15, 0.06, 0.34],
+    farm: [0.3, 0.06, 0.27], windmill: [0.3, 0.06, 0.27], bakery: [-0.03, 0.06, 0.34],
+    fisher: [0.14, 0.095, 0.1], vineyard: [-0.04, 0.06, 0.33], winery: [0.07, 0.06, 0.34]
+  };
+
   /* Procedureel model zonder cache (ook gebruikt door glb-models.js voor de geanimeerde delen). */
   VE.buildProcedural = function (type, lvl) {
     const m = new VE.Model(type.length * 31 + lvl);
