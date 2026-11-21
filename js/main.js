@@ -143,6 +143,7 @@
     const sc = sun.shadow.camera;
     if (sc.right !== d) { sc.left = -d; sc.right = d; sc.top = d; sc.bottom = -d; sc.updateProjectionMatrix(); }
     VE.audio.lx = c.tx; VE.audio.lz = c.tz; VE.audio.ld = c.dist;
+    if (g && VE.natureSync) VE.natureSync(g, camera);   // bomen en planten: alleen wat in beeld is
     renderer.render(scene, camera);
   }
 

@@ -89,3 +89,12 @@ en in `glb-models.js` een regel aan `SOURCES` toevoegen.
   niet Euler-hoeken: met hoeken wijst de bolling al snel de verkeerde kant op.
 - Open vormen: zet normalen expliciet naar buiten; `recalc_face_normals` raadt daar soms fout.
 - Zet na het samenvoegen de oorsprong op (0,0,0), anders krijgt de node een eigen verschuiving.
+
+## Natuur (`models/nature.py` → `public/models/nature.glb`)
+
+37 nodes in één GLB: 12 boomsoorten (eik, oude eik, beuk, berk, jonge boom, den, spar, appel,
+peer, bloesem + 2 easter eggs), 6 struiken, 5 grassoorten, 5 bloemgroepjes en 9 details/eggs.
+De game (`js/nature-glb.js`) maakt van elke node één InstancedMesh. Materiaalnamen sturen de
+wind: `Leaf*`, `Needle*`, `Blossom*`, `Fruit*`, `Grass*`, `Fl*`, `Petal*`, `Berry*` bewegen,
+`Twig*` een beetje, stam/steen/hout niet. Grassoorten zijn licht van kleur: de game tint ze per
+exemplaar. Bouwen: `npm run models -- nature`. Uitschakelen om te vergelijken: `index.html?oldnature`.

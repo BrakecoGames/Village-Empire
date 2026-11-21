@@ -116,6 +116,7 @@
       this.scaffolds = {};
       if (save) this.load(save, rand);
       else this.newVillage(rand);
+      if (w.veg) w.veg.settle();             // geen struiken door stammen; easter eggs op een vrije plek
       this.updateTerritory(true);
       if (!this.buildings.some(b => b.type === 'yard')) this.placeYard(); // new village, or a save from before stockyards
       w.rebuildRoads();

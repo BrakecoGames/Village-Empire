@@ -423,6 +423,7 @@
       g.computeBoundingSphere();
       this.roadMesh.geometry.dispose();
       this.roadMesh.geometry = g;
+      if (this.veg) this.veg.updateEdges();          // bloemen langs paden, plantjes rond gebouwen
     }
 
     /* ---------------- territory ---------------- */
@@ -455,6 +456,32 @@
 
     /* ---------------- decorations ---------------- */
     buildDecor(rand) {
+      if (VE.natureGeo && VE.Vegetation) {
+        // nieuwe vegetatie (Blender) met een eigen random-reeks; de oude reeks wordt exact even ver
+        // doorgeschoven, zodat de bomen en rotsen van een seed precies op dezelfde plek blijven
+        this.skipLegacyDecor(rand);
+        this.veg = new VE.Vegetation(this, VE.natureGeo);
+        this.veg.build();
+        return;
+      }
+      this.buildDecorLegacy(rand);
+    }
+    skipLegacyDecor(rand) {
+      const cap = VE.isMobile ? 2600 : 5200, fcap = VE.isMobile ? 700 : 1400;
+      let t = 0, f = 0;
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+        const k = j * N + i; if (this.type[k] === 1 || this.type[k] === 2) continue;
+        const dens = this.type[k] === 3 ? 0.4 : 1.5;
+        const cnt = Math.floor(rand() * dens * 2 + 0.3);
+        for (let q = 0; q < cnt && t < cap; q++) {
+          const x = i + 0.1 + rand() * 0.8, z = j + 0.1 + rand() * 0.8; rand();
+          if (this.heightAt(x, z) < 0.08) continue;
+          rand(); rand(); t++;
+        }
+        if (this.type[k] === 0 && rand() < 0.16 + this.gnoise[j * V1 + i] * 0.12 && f < fcap) { rand(); rand(); rand(); rand(); rand(); f++; }
+      }
+    }
+    buildDecorLegacy(rand) {
       const cap = VE.isMobile ? 2600 : 5200, fcap = VE.isMobile ? 700 : 1400;
       this.tufts = new THREE.InstancedMesh(VE.tuftGeo(), VE.swayMat({ vertexColors: true }, 0.35, 0.0, 'tuft'), cap);
       this.flowers = new THREE.InstancedMesh(VE.flowerGeo(), VE.swayMat({ vertexColors: true }, 0.4, 0.0, 'flower'), fcap);
@@ -493,10 +520,12 @@
       mesh.setMatrixAt(idx, _m);
     }
     clearDeco(k) {
+      if (this.veg) { this.veg.clearTile(k); this.veg.edgeMask[k] = -1; this.veg.flush(); return; }
       if (this.decoT[k]) { for (const t of this.decoT[k]) this.tufts.setMatrixAt(t, ZERO); this.decoT[k] = null; this.tufts.instanceMatrix.needsUpdate = true; }
       if (this.decoF[k]) { for (const f of this.decoF[k]) this.flowers.setMatrixAt(f, ZERO); this.decoF[k] = null; this.flowers.instanceMatrix.needsUpdate = true; }
     }
     refreshDecoArea(i0, j0, i1, j1) {
+      if (this.veg) { this.veg.refreshArea(i0, j0, i1, j1); this.veg.flush(); return; }
       for (let j = Math.max(0, j0); j <= Math.min(N - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(N - 1, i1); i++) {
         const k = j * N + i;
         if (this.decoT[k]) for (const t of this.decoT[k]) { const p = this.tuftPos[t]; this.setDeco(this.tufts, t, p[0], p[1], p[2], p[3]); }
@@ -513,16 +542,11 @@
       this.w = world; this.root = root;
       const cap = 1500;
       this.cap = cap;
-      const trunkMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 3 });
-      this.types = [0, 1, 2].map(t => {
-        const g = VE.treeGeo(t);
-        const trunk = new THREE.InstancedMesh(g.trunk, trunkMat, cap);
-        const crown = new THREE.InstancedMesh(g.crown, VE.swayMat({ vertexColors: true }, t === 1 ? 0.035 : 0.05, 0.3, 'tree' + t), cap);
-        trunk.castShadow = crown.castShadow = true; crown.receiveShadow = true;
-        trunk.count = crown.count = 0; trunk.frustumCulled = crown.frustumCulled = false;
-        root.add(trunk); root.add(crown);
-        return { trunk: trunk, crown: crown, free: [], used: 0, dirty: false };
-      });
+      /* Boomsoorten: elke soort is een pool met eigen InstancedMesh(es). Met de Blender-natuur
+         (VE.natureGeo) zijn dat eik, beuk, oude eik, berk, den, spar, fruitbomen, jonge boom en twee
+         easter eggs (één mesh per soort, wind via aWind). Zonder: de drie oude procedurele types. */
+      this.glb = !!VE.natureGeo;
+      this.pools = {};
       this.trees = [];
       this.rockMesh = new THREE.InstancedMesh(VE.rockGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 8 }), 600);
       this.rockMesh.castShadow = this.rockMesh.receiveShadow = true; this.rockMesh.count = 0; this.rockMesh.frustumCulled = false;
@@ -546,31 +570,72 @@
       this.green = new THREE.Color(0x86c24a); this.goldC = new THREE.Color(0xe3c27e);
     }
     /* trees */
+    pool(name) {
+      if (this.pools[name]) return this.pools[name];
+      let meshes, cap;
+      if (name[0] === 'L') {                                       // oud procedureel model: stam + kroon
+        const t = +name[1], g = VE.treeGeo(t);
+        cap = this.cap;
+        this.trunkMat = this.trunkMat || new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 3 });
+        meshes = [new THREE.InstancedMesh(g.trunk, this.trunkMat, cap), new THREE.InstancedMesh(g.crown, VE.swayMat({ vertexColors: true }, t === 1 ? 0.035 : 0.05, 0.3, 'tree' + t), cap)];
+      } else {
+        cap = VE.TREE_CAP[name] || 400;
+        const conifer = name === 'tree_pine' || name === 'tree_spruce';
+        meshes = [new THREE.InstancedMesh(VE.natureGeo[name], VE.windMat({}, { amp: conifer ? 0.035 : 0.045, flutter: conifer ? 0.002 : 0.007, base: 0.12, pow: 1.5 }, name), cap)];
+        meshes[0].setColorAt(0, _c.setHex(0xffffff));
+        meshes[0].name = name;
+      }
+      for (const m of meshes) { m.castShadow = true; m.receiveShadow = true; m.count = 0; m.frustumCulled = false; this.w.root.add(m); }
+      // Blender-bomen: alleen de zichtbare exemplaren naar de GPU (VE.natureSync)
+      const inst = name[0] === 'L' ? null : new VE.Instancer(meshes[0], cap, 0.9);
+      return (this.pools[name] = { name: name, meshes: meshes, inst: inst, cap: cap, free: [], used: 0, dirty: false });
+    }
+    speciesOf(t) {
+      if (!this.glb) return 'L' + t.type;
+      if (t.growth < 0.5 && t.type !== 1) return 'tree_young';
+      return t.sp0 || (t.sp0 = VE.treeSpecies(this.w, t));
+    }
+    alloc(t, name) {
+      if (!name) return false;
+      const P = this.pool(name);
+      const idx = P.free.length ? P.free.pop() : P.used < P.cap ? P.used++ : -1;
+      if (idx < 0) return false;
+      t.sp = name; t.idx = idx;
+      if (P.inst) P.inst.color(idx, _c.setHex(t.look.tint));
+      return true;
+    }
+    release(t) {
+      const P = this.pools[t.sp]; if (!P) return;
+      if (P.inst) P.inst.kill(t.idx); else for (const m of P.meshes) m.setMatrixAt(t.idx, ZERO);
+      P.free.push(t.idx); P.dirty = true; t.sp = null;
+    }
     addTree(i, j, type, growth, r) {
       const w = this.w, k = j * VE.N + i;
       if (w.tree[k]) return null;
-      const T = this.types[type];
-      const idx = T.free.length ? T.free.pop() : T.used++;
-      if (idx >= this.cap) { T.used = this.cap; return null; }
       r = r || Math.random;
-      const t = { i: i, j: j, k: k, x: i + 0.5 + (r() - 0.5) * 0.3, z: j + 0.5 + (r() - 0.5) * 0.3, type: type, idx: idx, growth: growth, rot: r() * 6.28, sc: 0.85 + r() * 0.35, fall: 0, falling: false, reserved: false, dead: false };
+      const t = { i: i, j: j, k: k, x: i + 0.5 + (r() - 0.5) * 0.3, z: j + 0.5 + (r() - 0.5) * 0.3, type: type, idx: -1, growth: growth, rot: r() * 6.28, sc: 0.85 + r() * 0.35, fall: 0, falling: false, reserved: false, dead: false };
+      t.look = this.glb ? VE.treeLook(w, t) : { tint: 0xffffff, vx: 1, vy: 1 };
+      if (!this.alloc(t, this.speciesOf(t))) return null;
       w.tree[k] = t; this.trees.push(t);
       this.setTreeM(t);
       return t;
     }
     setTreeM(t) {
-      const T = this.types[t.type], w = this.w;
+      const w = this.w;
+      const sp = this.speciesOf(t);
+      if (sp !== t.sp) { const old = t.sp; this.release(t); if (!this.alloc(t, sp)) this.alloc(t, old); }   // jong → volwassen model
+      const P = this.pools[t.sp];
+      if (!P) return;
       const s = t.sc * (0.18 + 0.82 * Math.min(1, t.growth));
-      _e.set(t.fall, t.rot, 0); _q.setFromEuler(_e);
-      _m.compose(_p.set(t.x, w.heightAt(t.x, t.z) - 0.02, t.z), _q, _s.set(s, s, s));
-      T.trunk.setMatrixAt(t.idx, _m); T.crown.setMatrixAt(t.idx, _m);
-      T.dirty = true;
+      // easter-egg-bomen: vogelhuisje/embleem naar de standaardcamera
+      _e.set(t.fall, t.sp === 'tree_oak_bird' || t.sp === 'tree_beech_logo' ? Math.PI / 4 : t.rot, 0); _q.setFromEuler(_e);
+      _m.compose(_p.set(t.x, w.heightAt(t.x, t.z) - 0.02, t.z), _q, _s.set(s * t.look.vx, s * t.look.vy, s * t.look.vx));
+      if (P.inst) P.inst.set(t.idx, _m); else for (const m of P.meshes) m.setMatrixAt(t.idx, _m);
+      P.dirty = true;
     }
     removeTree(t) {
       if (t.dead) return;
-      const T = this.types[t.type];
-      T.trunk.setMatrixAt(t.idx, ZERO); T.crown.setMatrixAt(t.idx, ZERO); T.dirty = true;
-      T.free.push(t.idx);
+      this.release(t);
       t.dead = true;
       if (this.w.tree[t.k] === t) this.w.tree[t.k] = null;
     }
@@ -680,7 +745,11 @@
         if (this.fields.some(f => f.dead)) this.fields = this.fields.filter(f => !f.dead);
         if (this.rocks.some(r => r.dead)) this.rocks = this.rocks.filter(r => !r.dead);
       }
-      for (const T of this.types) if (T.dirty) { T.trunk.count = T.crown.count = T.used; T.trunk.instanceMatrix.needsUpdate = T.crown.instanceMatrix.needsUpdate = true; T.dirty = false; }
+      for (const name in this.pools) {
+        const P = this.pools[name]; if (!P.dirty || P.inst) { P.dirty = false; continue; }
+        for (const m of P.meshes) { m.count = P.used; m.instanceMatrix.needsUpdate = true; }
+        P.dirty = false;
+      }
       if (this.rockDirty) { this.rockMesh.count = this.rockUsed; this.rockMesh.instanceMatrix.needsUpdate = true; this.rockDirty = false; }
       if (this.fieldDirty) {
         for (const m of this.fieldMeshes) { m.count = this.fieldUsed; m.instanceMatrix.needsUpdate = true; }
