@@ -546,7 +546,8 @@
         '<button class="btn" data-act="help">❓ How to play</button>' +
         '<button class="btn" data-act="mainmenu">🏠 Main menu</button>' +
         '<button class="btn bad" data-act="newgame">🌱 Start a new village</button></div>' +
-        '<p class="copy">© 2026 Brakeco Games · progress is saved automatically</p>');
+        '<p class="copy">© 2026 Brakeco Games · progress is saved automatically</p>' +
+        '<p class="copy version">' + (VE.versionLabel ? VE.versionLabel() : '') + '</p>');
     }
     openHelp() {
       this.openModal('<h2>How to play</h2><div class="help">' +

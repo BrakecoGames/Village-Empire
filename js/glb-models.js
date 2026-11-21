@@ -29,7 +29,8 @@
   for (const t in TYPES) {
     const n = TYPES[t].levels || 3, levels = {};
     for (let l = 1; l <= n; l++) levels[l] = t + '_l' + l;
-    SOURCES[t] = { url: 'public/models/' + t + '.glb', levels: levels, first: !!TYPES[t].first };
+    // ?v=versie: na een nieuwe release haalt de browser de modellen opnieuw op (geen oude cache)
+    SOURCES[t] = { url: 'public/models/' + t + '.glb' + (VE.VERSION ? '?v=' + VE.VERSION : ''), levels: levels, first: !!TYPES[t].first };
   }
   const TIMEOUT_MS = 10000;
   /* Sterkte van de in Blender gebakken ambient occlusion (COLOR_0): 0 = uit, 1 = volledig. */

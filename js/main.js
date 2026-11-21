@@ -212,6 +212,9 @@
     requestAnimationFrame(t => { last = t; frame(t); });
   }
 
+  // versie + releasedatum op het startscherm (bron: js/version.js)
+  { const v = document.getElementById('versionLabel'); if (v && VE.versionLabel) v.textContent = VE.versionLabel(); }
+
   window.addEventListener('load', () => {
     if (!window.THREE) { document.getElementById('loadingText').textContent = 'Could not load the 3D engine. Please check your connection and reload.'; return; }
     boot().catch(e => { console.error(e); document.getElementById('loadingText').textContent = 'Something went wrong while starting: ' + e.message; });
