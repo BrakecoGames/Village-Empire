@@ -613,7 +613,12 @@
     freeWorker(s) {
       const b = s.work;
       if (b && b.worker === s) b.worker = null;
-      if (s.resv) { s.resv.reserved = false; s.resv = null; }
+      if (s.resv) {
+        const f = s.resv; f.reserved = false; s.resv = null;
+        // half gemaaid of hok nog niet opgepakt: het veld staat er weer zoals voor het maaien
+        if (f.mow || f.state === 'cut') { f.mow = 0; if (f.state === 'cut') f.state = 'grown'; if (!f.dead && this.nature.setFieldM) this.nature.setFieldM(f); }
+      }
+      s.mowField = null;
       if (s.carry && b) { this.stock[s.carry]++; }
       s.carry = null; s.mode = 'idle'; s.role = 'carrier'; s.tool = null; s.act = null; s.work = null; s.hidden = false; s.path = null; s.cb = null; s.wstate = null; s.wt = 0.5;
       if (b) { s.x = b.dx; s.z = b.dz + 0.1; }
@@ -752,8 +757,25 @@
           s.resv = f || null;
           b.status = act === 'harvest' ? 'Harvesting' : 'Sowing';
           s.tool = act === 'harvest' ? d.tool : null;
-          const ok = this.goAct(s, b, k, i + 0.5 + (Math.random() - 0.5) * 0.4, j + 0.5 + 0.3, [i + 0.5, j + 0.5], act, (act === 'harvest' ? d.time : 1.8) / gm, () => {
-            s.resv = null; if (f) f.reserved = false;
+          // Graan: maaien met de zeis (60% van de tijd), dan de schoven tot een hok zetten en binden
+          // (40%), daarna neemt de boer een schoof mee naar de boerderij. Totale tijd blijft d.time.
+          const grain = act === 'harvest' && d.fieldKind === 0;
+          const tAct = (act === 'harvest' ? d.time * (grain ? 0.6 : 1) : 1.8) / gm;
+          if (grain) s.mowField = f;
+          const ok = this.goAct(s, b, k, i + 0.5 + (Math.random() - 0.5) * 0.4, j + 0.5 + 0.3, [i + 0.5, j + 0.5], act, tAct, () => {
+            s.mowField = null;
+            if (act === 'harvest' && grain && !f.dead && b.alive && b.worker === s) {
+              // gemaaid: hok van schoven op het stoppelveld; de boer bindt en pakt een schoof op
+              f.mow = 0; f.state = 'cut'; this.nature.setFieldM(f);
+              s.wstate = 'act'; s.act = 'sow'; s.ap = 0; s.actTick = 0; s.wt = d.time * 0.4 / gm; s.tool = null;
+              s.onAct = () => {
+                s.resv = null; f.reserved = false;
+                if (!f.dead) { f.state = 'empty'; f.growth = 0; this.nature.setFieldM(f); }
+                this.goHome(s, b, res, () => this.produce(b, res, 1));
+              };
+              return;
+            }
+            s.resv = null; if (f) { f.reserved = false; f.mow = 0; }
             if (act === 'harvest') {
               if (f.dead) { this.goHome(s, b, null); return; }
               f.state = 'empty'; f.growth = 0; this.nature.setFieldM(f);
@@ -797,6 +819,11 @@
       if (s.wstate === 'inside') { s.wt -= dt; if (s.wt <= 0) this.think(s, b); }
       else if (s.wstate === 'act') {
         s.wt -= dt; s.ap += dt;
+        // maaien: het graan zakt mee weg met de voortgang
+        if (s.mowField && s.act === 'harvest') {
+          const f = s.mowField, p = VE.clamp(s.ap / (s.ap + Math.max(0.001, s.wt)), 0, 1);
+          if (!f.dead && Math.abs((f.mow || 0) - p) > 0.04) { f.mow = p; this.nature.setFieldM(f); }
+        }
         const per = s.act === 'chop' ? 0.75 : s.act === 'pick' ? 0.6 : 0.9;
         const tick = Math.floor(s.ap / per);
         if (tick !== s.actTick) { s.actTick = tick; if (s.act === 'chop') sfx('chop', s.x, s.z); else if (s.act === 'pick') sfx('pick', s.x, s.z); }
@@ -1007,7 +1034,8 @@
         const k = f[0]; if (w.bld[k] || w.road[k]) continue;
         const owner = idmap[f[4]];
         const fo = this.nature.addField(k % N, (k / N) | 0, f[1], owner || null);
-        if (fo) { fo.growth = f[2]; fo.state = f[3]; this.nature.setFieldM(fo); if (owner) owner.fields.push(fo); }
+        // opgeslagen tijdens het binden ('cut'): het graan staat weer rijp op het veld, de boer oogst opnieuw
+        if (fo) { fo.growth = f[2]; fo.state = f[3] === 'cut' ? 'grown' : f[3]; if (f[3] === 'cut') fo.growth = 1; this.nature.setFieldM(fo); if (owner) owner.fields.push(fo); }
       }
       const n = Math.max(4, sv.pop || 10);
       for (let i = 0; i < n; i++) this.spawnSettler();

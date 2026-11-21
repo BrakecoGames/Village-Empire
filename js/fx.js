@@ -2,7 +2,9 @@
 'use strict';
 (function (VE) {
   const _m = new THREE.Matrix4(), _l = new THREE.Matrix4(), _o = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
-  const UP = new THREE.Vector3(0, 1, 0);
+  const UP = new THREE.Vector3(0, 1, 0), XAX = new THREE.Vector3(1, 0, 0), _qx = new THREE.Quaternion();
+  /* draaiing van een stapel-item: om de verticale as (ry), optioneel naar binnen leunend (lean, schoven) */
+  const pileRot = (p, jit) => { _q.setFromAxisAngle(UP, (p.ry || 0) + jit); if (p.lean) _q.multiply(_qx.setFromAxisAngle(XAX, -p.lean)); return _q; };
   const _a = new THREE.Matrix4(), _r = new THREE.Matrix4(), _v = new THREE.Vector3();
   // settler variety (multiplied with the white / skin vertex colours)
   const HAIR = [0x6b4423, 0x2e2018, 0xd9a441, 0xb8582a, 0xb3aea6].map(c => new THREE.Color(c));
@@ -151,10 +153,16 @@
     for (let l = 0; l < layers; l++) for (let q = 0; q < 4; q++) out.push({ x: ((q & 1) - 0.5) * sp, y: h + l * h * 2.6, z: ((q >> 1) - 0.5) * sp, ry: q });
     return out;
   }
+  function stookLayout() {         // schoven: rechtop in het midden, ringen eromheen die naar binnen leunen (hok)
+    const out = [{ x: 0, y: 0.07, z: 0 }];
+    for (let a = 0; a < 6; a++) out.push({ x: Math.sin(a * 1.047) * 0.06, y: 0.066, z: Math.cos(a * 1.047) * 0.06, ry: a * 1.047, lean: 0.3 });
+    for (let a = 0; a < 5; a++) out.push({ x: Math.sin(a * 1.257 + 0.5) * 0.12, y: 0.058, z: Math.cos(a * 1.257 + 0.5) * 0.12, ry: a * 1.257 + 0.5, lean: 0.45 });
+    return out;
+  }
   const LAYOUT = {
     log: (() => { const o = []; for (let r = 0; r < 4; r++) for (let c = 0; c < 4 - r; c++) o.push({ x: 0, y: 0.035 + r * 0.061, z: (c - (3 - r) / 2) * 0.072 }); return o; })(),
     plank: (() => { const o = []; for (let l = 0; l < 6; l++) for (let c = 0; c < 2; c++) o.push(l % 2 ? { x: (c - 0.5) * 0.09, y: 0.02 + l * 0.042, z: 0, ry: Math.PI / 2 } : { x: 0, y: 0.02 + l * 0.042, z: (c - 0.5) * 0.09 }); return o; })(),
-    stone: heap(0.055, 0.045), grain: heap(0.06, 0.066), flour: heap(0.06, 0.066),
+    stone: heap(0.055, 0.045), grain: stookLayout(), flour: heap(0.06, 0.066),
     bread: heap(0.058, 0.038), fish: heap(0.05, 0.034),
     grape: grid(0.13, 0.03, 2), wine: grid(0.11, 0.04, 2)
   };
@@ -216,7 +224,7 @@
         let n = 0;
         for (const b of yards) for (let q = 0; q < counts[ri]; q++) {
           const p = lay[q], jit = ((q * 37 + ri * 11) % 7 - 3) * 0.012;  // a little untidiness
-          _q.setFromAxisAngle(UP, (p.ry || 0) + jit);
+          pileRot(p, jit);
           _m.compose(_p.set(b.cx + sl[0] + p.x * PILE_S, b.y + 0.07 + p.y * PILE_S, b.cz + sl[1] + p.z * PILE_S), _q, _s.set(PILE_S, PILE_S, PILE_S));
           mesh.setMatrixAt(n++, _m);
         }
@@ -224,7 +232,7 @@
           const b = pr.b, amt = Math.min(lay.length, Math.ceil(b.output[r] || 0));
           for (let q = 0; q < amt && n < capN; q++) {
             const p = lay[q], jit = ((q * 37 + b.id * 13) % 7 - 3) * 0.015;
-            _q.setFromAxisAngle(UP, (p.ry || 0) + jit);
+            pileRot(p, jit);
             _m.compose(_p.set(b.cx + pr.spot[0] + p.x * PILE_B, b.y + pr.spot[1] + p.y * PILE_B, b.cz + pr.spot[2] + p.z * PILE_B), _q, _s.set(PILE_B, PILE_B, PILE_B));
             mesh.setMatrixAt(n++, _m);
           }
@@ -239,7 +247,7 @@
           const b = st.b, side = Object.keys(b.def.cost).indexOf(r) % 2 ? 1 : -1, e = b.size > 1 ? 0.88 : 0.27, f = b.size > 1 ? 0.5 : 0.47;
           for (let q = 0; q < amt && n < capN; q++) {
             const p = lay[q], jit = ((q * 29 + b.id * 7) % 7 - 3) * 0.015;
-            _q.setFromAxisAngle(UP, (p.ry || 0) + jit);
+            pileRot(p, jit);
             _m.compose(_p.set(b.cx + side * e + p.x * PILE_B, b.y + 0.02 + p.y * PILE_B, b.cz + f + p.z * PILE_B), _q, _s.set(PILE_B, PILE_B, PILE_B));
             mesh.setMatrixAt(n++, _m);
           }

@@ -4,7 +4,7 @@
   const N = 64; VE.N = N;
   const V1 = N + 1;
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
-  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color();
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color(), _up = new THREE.Vector3(0, 1, 0);
   VE.ZERO = ZERO;
 
   class World {
@@ -534,11 +534,16 @@
       this.wheat = new THREE.InstancedMesh(VE.wheatGeo(), VE.swayMat({ vertexColors: true }, 0.35, 0.05, 'wheat'), fc);
       this.vines = new THREE.InstancedMesh(VE.vineGeo(), VE.swayMat({ vertexColors: true }, 0.06, 0.15, 'vine'), fc);
       this.grapes = new THREE.InstancedMesh(VE.grapeGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30 }), fc);
+      // na de oogst: stoppels, en een hok (schoven tegen elkaar) tot de boer de schoof meeneemt
+      this.stubble = new THREE.InstancedMesh(VE.stubbleGeo(), new THREE.MeshLambertMaterial({ vertexColors: true }), fc);
+      this.stook = new THREE.InstancedMesh(VE.stookGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 4 }), fc);
       for (let i = 0; i < fc; i++) this.wheat.setColorAt(i, _c.setHex(0x7fbf3f));
-      for (const m of [this.soil, this.wheat, this.vines, this.grapes]) { m.count = 0; m.receiveShadow = true; m.frustumCulled = false; root.add(m); }
-      this.wheat.castShadow = this.vines.castShadow = true;
+      this.fieldMeshes = [this.soil, this.wheat, this.vines, this.grapes, this.stubble, this.stook];
+      for (const m of this.fieldMeshes) { m.count = 0; m.receiveShadow = true; m.frustumCulled = false; root.add(m); }
+      this.wheat.castShadow = this.vines.castShadow = this.stook.castShadow = true;
       this.fields = []; this.fieldFree = []; this.fieldUsed = 0;
-      this.green = new THREE.Color(0x86c24a); this.goldC = new THREE.Color(0xf0c94c);
+      // rijp graan: warm goud zoals een zomerse akker (was felgeel)
+      this.green = new THREE.Color(0x86c24a); this.goldC = new THREE.Color(0xe3c27e);
     }
     /* trees */
     addTree(i, j, type, growth, r) {
@@ -610,13 +615,23 @@
       _q.identity();
       _m.compose(_p.set(x, y + 0.01, z), _q, _s.set(1, 1, 1));
       this.soil.setMatrixAt(f.idx, _m);
-      const g = f.state === 'empty' ? 0 : Math.min(1, f.growth);
+      const g = (f.state === 'empty' || f.state === 'cut') ? 0 : Math.min(1, f.growth);
       if (f.kind === 0) {
-        if (g <= 0) this.wheat.setMatrixAt(f.idx, ZERO);
-        else { _m.compose(_p.set(x, y + 0.02, z), _q, _s.set(1, 0.15 + 0.85 * g, 1)); this.wheat.setMatrixAt(f.idx, _m); }
+        // maaien: een maaifront schuift over de akker; het staande graan wordt smaller vanaf één kant
+        const mw = Math.min(0.97, f.mow || 0), h = 0.15 + 0.85 * g;
+        if (g <= 0 || mw >= 0.97) this.wheat.setMatrixAt(f.idx, ZERO);
+        else { _m.compose(_p.set(x + mw * 0.45, y + 0.02, z), _q, _s.set(1 - mw, h, 1)); this.wheat.setMatrixAt(f.idx, _m); }
         this.wheat.setColorAt(f.idx, _c.copy(this.green).lerp(this.goldC, VE.smooth(0.55, 1.0, g)));
+        // stoppels na het maaien (tot er opnieuw gezaaid wordt), hok zolang de schoof er staat
+        const stub = f.state === 'empty' || f.state === 'cut' || (f.mow || 0) > 0;
+        if (stub) { _m.compose(_p.set(x, y + 0.02, z), _q, _s.set(1, 1, 1)); this.stubble.setMatrixAt(f.idx, _m); } else this.stubble.setMatrixAt(f.idx, ZERO);
+        if (f.state === 'cut') {
+          _q.setFromAxisAngle(_up, (f.i * 7 + f.j * 3) % 6);
+          _m.compose(_p.set(x + 0.12, y + 0.02, z - 0.06), _q, _s.set(1, 1, 1)); this.stook.setMatrixAt(f.idx, _m); _q.identity();
+        } else this.stook.setMatrixAt(f.idx, ZERO);
         this.vines.setMatrixAt(f.idx, ZERO); this.grapes.setMatrixAt(f.idx, ZERO);
       } else {
+        this.stubble.setMatrixAt(f.idx, ZERO); this.stook.setMatrixAt(f.idx, ZERO);
         _m.compose(_p.set(x, y + 0.02, z), _q, _s.set(1, 0.3 + 0.7 * Math.max(0.35, g), 1));
         this.vines.setMatrixAt(f.idx, _m);
         const gs = VE.smooth(0.5, 1.0, g);
@@ -627,7 +642,7 @@
       this.fieldDirty = true;
     }
     removeField(f) {
-      for (const m of [this.soil, this.wheat, this.vines, this.grapes]) m.setMatrixAt(f.idx, ZERO);
+      for (const m of this.fieldMeshes) m.setMatrixAt(f.idx, ZERO);
       this.fieldFree.push(f.idx); f.dead = true;
       if (this.w.field[f.k] === f) this.w.field[f.k] = null;
       this.fieldDirty = true;
@@ -668,7 +683,7 @@
       for (const T of this.types) if (T.dirty) { T.trunk.count = T.crown.count = T.used; T.trunk.instanceMatrix.needsUpdate = T.crown.instanceMatrix.needsUpdate = true; T.dirty = false; }
       if (this.rockDirty) { this.rockMesh.count = this.rockUsed; this.rockMesh.instanceMatrix.needsUpdate = true; this.rockDirty = false; }
       if (this.fieldDirty) {
-        for (const m of [this.soil, this.wheat, this.vines, this.grapes]) { m.count = this.fieldUsed; m.instanceMatrix.needsUpdate = true; }
+        for (const m of this.fieldMeshes) { m.count = this.fieldUsed; m.instanceMatrix.needsUpdate = true; }
         if (this.wheat.instanceColor) this.wheat.instanceColor.needsUpdate = true;
         this.fieldDirty = false;
       }

@@ -509,17 +509,73 @@
     }
     return m.build();
   };
+  /* Rijp graanveld zoals op een zomerse akker: een dichte massa halmen met daarbovenop een tapijt
+     van aren die licht knikken. De massa zorgt dat je geen kale grond ziet; de aren geven textuur
+     en hangen over de randen (geen 'hek'-rand). Wit/licht: de kleur komt per veld uit de
+     instance-kleur (groen → goud). ~1.400 driehoeken per veld. */
   VE.wheatGeo = function () {
-    const m = new VE.Model(14);
-    for (let i = 0; i < 16; i++) {
-      const x = -0.33 + (i % 4) * 0.22 + ((i * 7) % 5) * 0.01, z = -0.33 + Math.floor(i / 4) * 0.22;
-      m.box(0.012, 0.22, 0.012, 0xdddddd, { x: x, z: z, j: 0.1 });
-      m.add(new THREE.ConeGeometry(0.03, 0.09, 4), 0xffffff, { x: x, y: 0.26, z: z, rx: PI, j: 0.1 });
-      m.box(0.012, 0.18, 0.012, 0xcccccc, { x: x + 0.07, z: z + 0.07, rz: 0.15, j: 0.1 });
-      m.add(new THREE.ConeGeometry(0.026, 0.08, 4), 0xeeeeee, { x: x + 0.085, y: 0.21, z: z + 0.07, rx: PI, j: 0.1 });
+    const m = new VE.Model(14), r = VE.rng(141);
+    const H = 0.2;
+    m.box(0.86, H, 0.86, 0xe6dcc6, { j: 0.05 });
+    m.box(0.85, 0.012, 0.85, 0xf2ead8, { y: H - 0.006, j: 0.06 });
+    // aren-tapijt bovenop: dicht en speels geknikt, tot net over de rand
+    for (let i = 0; i < 13; i++) for (let j = 0; j < 13; j++) {
+      const x = -0.45 + i * 0.075 + (r() - 0.5) * 0.04, z = -0.45 + j * 0.075 + (r() - 0.5) * 0.04;
+      const y = H - 0.01 + r() * 0.05, lean = 0.25 + r() * 0.5, dir = 0.5 + (r() - 0.5) * 1.0;
+      const tx = Math.sin(dir) * lean, tz = Math.cos(dir) * lean, el = 0.09 + r() * 0.025, c = r() < 0.5 ? 0xffffff : 0xf4e8c8;
+      m.add(new THREE.ConeGeometry(0.021, el * 0.62, 4), c, { x: x, y: y + el * 0.31, z: z, rx: tz, rz: -tx, j: 0.1 });
+      m.add(new THREE.ConeGeometry(0.021, el * 0.38, 4), c, { x: x, y: y - el * 0.19, z: z, rx: tz + PI, rz: -tx, j: 0.1 });
     }
     return m.build();
   };
+  /* Stoppelveld na het maaien: korte, rechte stoppels. */
+  VE.stubbleGeo = function () {
+    const m = new VE.Model(16), r = VE.rng(161);
+    m.box(0.92, 0.02, 0.92, 0xc9a860, { y: 0.0, j: 0.05 });               // laag gemaaid stro over de akker
+    for (let i = 0; i < 12; i++) for (let j = 0; j < 12; j++) {
+      const x = -0.44 + i * 0.08 + (r() - 0.5) * 0.04, z = -0.44 + j * 0.08 + (r() - 0.5) * 0.04;
+      m.add(new THREE.CylinderGeometry(0.006, 0.008, 0.055, 3, 1, true), r() < 0.5 ? 0xe2c478 : 0xcdaa5e, { x: x, y: 0.045, z: z, rz: (r() - 0.5) * 0.4, j: 0.12 });
+    }
+    // losse strohalmen die blijven liggen
+    for (let n = 0; n < 14; n++) m.box(0.09, 0.005, 0.008, 0xe8cf86, { x: (r() - 0.5) * 0.8, y: 0.02, z: (r() - 0.5) * 0.8, ry: r() * PI, j: 0.1 });
+    return m.build();
+  };
+  /* Eén schoof: bundel halmen, in het midden met een strootouw gebonden, aren uitwaaierend bovenaan. */
+  function sheaf(m, o, s) {
+    s = s || 1;
+    const r = VE.rng(171 + (o.seed || 0));
+    const parts = new VE.Model(172 + (o.seed || 0));
+    parts.segMin = 6;                                   // niet afronden tot 18 segmenten: schoven zijn klein en talrijk
+    // stelen: slank, onderaan iets uitlopend, smal bij de band, daarboven weer wat breder
+    parts.add(new THREE.CylinderGeometry(0.018 * s, 0.03 * s, 0.13 * s, 6, 1, true), 0xd9b866, { y: 0.065 * s, j: 0.08 });
+    parts.add(new THREE.CylinderGeometry(0.03 * s, 0.018 * s, 0.06 * s, 6, 1, true), 0xe2c278, { y: 0.16 * s, j: 0.08 });
+    parts.add(new THREE.CylinderGeometry(0.021 * s, 0.021 * s, 0.014 * s, 6, 1, true), 0x9a7a3a, { y: 0.125 * s, j: 0 }); // band
+    // aren: pluim van kegels die naar buiten waaieren en wat overhangen
+    for (let k = 0; k < 9; k++) {
+      const a = k / 9 * PI * 2 + r() * 0.4, rr = (0.01 + r() * 0.022) * s;
+      parts.add(new THREE.ConeGeometry(0.012 * s, 0.065 * s, 4), k % 2 ? 0xf0cf73 : 0xe5bd5c,
+        { x: Math.cos(a) * rr, y: 0.215 * s, z: Math.sin(a) * rr, rx: Math.sin(a) * 0.75, rz: -Math.cos(a) * 0.75, j: 0.1 });
+    }
+    for (const p of parts.parts) {
+      if (o.tilt) { p.g.rotateX(o.tilt); }
+      if (o.ry) p.g.rotateY(o.ry);
+      p.g.translate(o.x || 0, o.y || 0, o.z || 0);
+      m.parts.push(p);
+    }
+  }
+  /* Hok (stuik): schoven die schuin tegen elkaar staan te drogen, zoals op de oude akkers. */
+  VE.stookGeo = function () {
+    const m = new VE.Model(18);
+    // schoven staan wijd uit met de voet en leunen met de koppen tegen elkaar (open, met tussenruimte)
+    const n = 6;
+    for (let i = 0; i < n; i++) {
+      const a = i / n * PI * 2;
+      sheaf(m, { x: Math.sin(a) * 0.12, z: Math.cos(a) * 0.12, ry: a, tilt: -0.42, seed: i }, 1.5);
+    }
+    sheaf(m, { seed: 9 }, 1.65);                       // middelste schoof rechtop
+    return m.build();
+  };
+  VE.sheafGeo = function (s) { const m = new VE.Model(19); sheaf(m, {}, s || 1); return m.build(); };
   VE.soilGeo = function () {
     const m = new VE.Model(15);
     m.box(0.94, 0.03, 0.94, 0x7a5a38, { y: -0.01, j: 0.03 });
@@ -648,7 +704,7 @@
       case 'log': m.add(new THREE.CylinderGeometry(0.035, 0.035, 0.24, 7), 0x8a5a2b, { rz: PI / 2 }); m.add(new THREE.CylinderGeometry(0.03, 0.03, 0.005, 7), 0xe2b77c, { x: 0.121, rz: PI / 2 }); break;
       case 'stone': m.add(new THREE.DodecahedronGeometry(0.06, 0), 0xa3a8ad, { sy: 0.8 }); break;
       case 'plank': m.box(0.24, 0.02, 0.06, 0xe0aa66, { y: -0.02 }); m.box(0.24, 0.02, 0.06, 0xd39a55, { y: 0.0, ry: 0.1 }); break;
-      case 'grain': m.ball(0.055, 0xe8c860, { sy: 1.2 }, 1); m.box(0.03, 0.03, 0.03, 0xc9a048, { y: 0.065 }); break;
+      case 'grain': { const g = VE.sheafGeo(0.85); g.translate(0, -0.07, 0); return g; }  // graan = schoof (ook in de handen van dragers)
       case 'flour': m.ball(0.055, 0xf4ecdb, { sy: 1.2 }, 1); m.box(0.03, 0.025, 0.03, 0xa89474, { y: 0.065 }); break;
       case 'bread': m.ball(0.05, 0xd08b3e, { sx: 1.5, sy: 0.75 }, 1); break;
       case 'fish': m.ball(0.04, 0x79b3df, { sx: 2, sy: 0.8, sz: 0.6 }, 1); m.cone(0.03, 0.05, 4, 0x5f9bc9, { x: -0.1, y: -0.025, rz: PI / 2 }); break;
