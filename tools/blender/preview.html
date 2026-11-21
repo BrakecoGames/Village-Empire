@@ -42,18 +42,22 @@
   let model = null, t = 0;
   new THREE.GLTFLoader().load(url, gltf => {
     model = gltf.scene;
+    // ?node=house_l2 toont één node uit een GLB met meerdere varianten
+    const only = q.get('node');
+    if (only) { const n = model.getObjectByName(only); if (n) { model = new THREE.Group(); model.add(n); n.position.set(0, 0, 0); } }
     let meshes = 0, tris = 0;
     model.traverse(o => {
       if (!o.isMesh) return;
       meshes++; o.castShadow = o.receiveShadow = true;
       const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
     });
+    if (q.has('rot')) model.rotation.y = (+q.get('rot') || 0) * Math.PI / 180;   // ?rot=90 draait het model
     scene.add(model);
     const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3());
     const r = Math.max(size.x, size.y, size.z, 0.5);
     camera.position.set(r * 2.2, r * 1.8, r * 2.2); camera.lookAt(0, size.y / 2, 0);
     window.__modelResult = { ok: true, url, meshes, tris, size: size.toArray().map(v => +v.toFixed(3)), min: box.min.toArray().map(v => +v.toFixed(3)) };
-    info.textContent = `${name}.glb\n${meshes} mesh(es) · ${tris} tris\nmaat ${window.__modelResult.size.join(' × ')}`;
+    info.textContent = `${name}.glb${only ? ' · ' + only : ''}\n${meshes} mesh(es) · ${tris} tris\nmaat ${window.__modelResult.size.join(' × ')}`;
   }, undefined, err => {
     window.__modelResult = { ok: false, url, error: String(err && err.message || err) };
     info.textContent = 'Fout bij laden: ' + window.__modelResult.error;

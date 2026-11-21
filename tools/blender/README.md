@@ -52,24 +52,30 @@ of op het PATH. Wil je een andere versie gebruiken, zet dan `BLENDER_EXE`.
 
 Voor veel exemplaren (bomen, stenen) gebruik je in de game een `InstancedMesh` op basis van de geometrie uit de GLB.
 
-## Integratie in de game (nog niet actief)
+## Integratie in de game (actief voor: Cottage / `house`)
 
-De game bouwt zijn modellen nu procedureel in `js/models.js`. Om GLB's te gebruiken:
+`js/glb-models.js` laadt de GLB's tijdens het opstarten (parallel aan de SDK) en zet elke
+variant om naar **hetzelfde formaat als de procedurele modellen**: één niet-geïndexeerde
+geometrie met `position`/`normal`/`color`, getekend met het gedeelde `game.mats.building`.
+Het resultaat komt in `VE.modelCache['<type>_<level>']`, dus `VE.buildModel` en alles
+daarachter (plaatsen, ghost, bouwsteiger, selectie, upgrades, opslaan) werkt ongewijzigd.
 
-```html
-<!-- in index.html, na three.min.js (r128) -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-```
+- **Eén GLB per gebouwtype**, met één node per upgrade-level (`house_l1`, `house_l2`, `house_l3`)
+  en optioneel een lege marker `<node>_smoke` voor de rook uit de schoorsteen.
+- **Kleuren:** materiaalkleuren worden vertex-kleuren (lineair → sRGB, zodat ze kloppen met de
+  hex-kleuren in de game). De naam `Naam@0.07` geeft de kleurvariatie per driehoek.
+- **Prestaties:** alle exemplaren van een level delen één geometrie (1 draw call per gebouw).
+- **Fallback:** ontbreekt de GLTFLoader, faalt de download of mist een node, dan blijft het
+  procedurele model in gebruik (`VE.modelSource.house === 'procedural'`). Laadt de GLB pas na
+  de time-out (10 s), dan worden bestaande gebouwen alsnog omgezet.
+- **Enkelzijdig:** de game tekent alleen voorkanten. `ve.material` exporteert daarom met
+  `doubleSided: false`, zodat de preview hetzelfde toont als de game.
 
-```js
-// eenmalig laden en cachen; daarna per gebouw clonen
-const loader = new THREE.GLTFLoader();
-const cache = {};
-VE.loadModel = name => cache[name] || (cache[name] = new Promise((ok, fail) =>
-  loader.load('public/models/' + name + '.glb', g => ok(g.scene), undefined, fail)));
-// gebruik:  VE.loadModel('test_cube').then(src => { const m = src.clone(); m.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true; }); group.add(m); });
-```
+Nog een gebouw omzetten: script `models/<type>.py` met nodes `<type>_l1..l3`, `npm run models`,
+en in `glb-models.js` een regel aan `SOURCES` toevoegen.
 
-Let op: zet `renderer.outputEncoding = THREE.sRGBEncoding` niet zomaar aan in de game, want dat
-verandert alle bestaande kleuren. Zonder die instelling zien GLB-kleuren er iets donkerder uit dan
-de hex-waarde. Kies dit bewust wanneer je overstapt.
+### Valkuilen (geleerd bij het huisje)
+- Gebruik voor halve buizen/bogen `half_tube(center, axis, bulge, ...)` met richtingsvectoren,
+  niet Euler-hoeken: met hoeken wijst de bolling al snel de verkeerde kant op.
+- Open vormen: zet normalen expliciet naar buiten; `recalc_face_normals` raadt daar soms fout.
+- Zet na het samenvoegen de oorsprong op (0,0,0), anders krijgt de node een eigen verschuiving.

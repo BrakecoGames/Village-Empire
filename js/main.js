@@ -178,6 +178,8 @@
 
     $('loadingText').textContent = 'Preparing the valley…';
     await VE.sdk.init();
+    // Blender-modellen (GLB) laden parallel; bij een fout/time-out blijft het procedurele model in gebruik
+    if (VE.glbReady) await VE.glbReady;
     VE.sdk.loadingStart();
     try { const st = JSON.parse(VE.sdk.get(SET_KEY) || 'null'); if (st) { VE.audio.sfxOn = st.sfx !== false; VE.audio.musicOn = st.music !== false; } } catch (e) { /* ignore */ }
 

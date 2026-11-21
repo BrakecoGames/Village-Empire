@@ -55,6 +55,9 @@ def material(name, color, roughness=0.85, metallic=0.0, emission=None):
         bsdf.inputs["Emission Color"].default_value = tuple(emission) + (1.0,)
         bsdf.inputs["Emission Strength"].default_value = 1.0
     m.diffuse_color = rgba
+    # enkelzijdig exporteren (glTF doubleSided=false), net als de game: zo verbergt de
+    # preview geen omgekeerde normalen
+    m.use_backface_culling = True
     _mat_cache[key] = m
     return m
 

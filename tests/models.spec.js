@@ -18,7 +18,9 @@ test.describe('Blender-modellen', () => {
       expect(r.ok, r.error).toBe(true);
       expect(r.meshes).toBeGreaterThan(0);
       expect(r.tris).toBeGreaterThan(0);
-      expect(Math.abs(r.min[1]), 'oorsprong onderaan (y-min ≈ 0)').toBeLessThan(0.01);
+      // oorsprong op maaiveld; een fundering mag tot 0.25 onder de grond zakken (zoals de gebouwen in de game)
+      expect(r.min[1], 'onderkant tussen -0.25 en 0').toBeGreaterThanOrEqual(-0.25);
+      expect(r.min[1], 'onderkant tussen -0.25 en 0').toBeLessThan(0.01);
       fs.mkdirSync(path.join(__dirname, 'screenshots', 'models'), { recursive: true });
       await page.waitForTimeout(300);
       await page.screenshot({ path: path.join(__dirname, 'screenshots', 'models', name + '.png') });
