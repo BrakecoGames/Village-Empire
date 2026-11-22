@@ -947,13 +947,25 @@
           if (f) f.reserved = true;
           s.resv = f || null;
           b.status = act === 'harvest' ? 'Harvesting' : 'Sowing';
-          s.tool = act === 'harvest' ? d.tool : null;
+          // graan: eerst de grond schoffelen (een nieuwe akker verschijnt dan als omgewerkte grond), daarna zaaien
+          const hoeFirst = act === 'sow' && d.fieldKind === 0;
+          s.tool = act === 'harvest' ? d.tool : hoeFirst ? 'hoe' : null;
+          if (hoeFirst) b.status = 'Hoeing the soil';
           // Graan: maaien met de zeis (60% van de tijd), dan de schoven tot een hok zetten en binden
           // (40%), daarna neemt de boer een schoof mee naar de boerderij. Totale tijd blijft d.time.
           const grain = act === 'harvest' && d.fieldKind === 0;
           const tAct = (act === 'harvest' ? d.time * (grain ? 0.6 : 1) : 1.8) / gm;
           if (grain) s.mowField = f;
-          const ok = this.goAct(s, b, k, i + 0.5 + (Math.random() - 0.5) * 0.4, j + 0.5 + 0.3, [i + 0.5, j + 0.5], act, tAct, () => {
+          const hoed = () => {
+            if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
+            if (!f && this.freeTile(k)) {                    // nieuwe akker: de geschoffelde grond ligt er nu
+              const nf = this.nature.addField(i, j, d.fieldKind, b);
+              if (nf) { nf.state = 'empty'; nf.growth = 0; nf.reserved = true; s.resv = nf; this.nature.setFieldM(nf); b.fields.push(nf); }
+            }
+            b.status = 'Sowing';
+            s.wstate = 'act'; s.act = 'sow'; s.tool = null; s.ap = 0; s.actTick = 0; s.wt = 1.1 / gm; s.onAct = sowDone;
+          };
+          const sowDone = () => {
             s.mowField = null;
             if (act === 'harvest' && grain && !f.dead && b.alive && b.worker === s) {
               // gemaaid: hok van schoven op het stoppelveld; de boer bindt en pakt een schoof op
@@ -974,9 +986,15 @@
             } else {
               if (f && !f.dead) { f.state = 'growing'; f.growth = 0; this.nature.setFieldM(f); }
               else if (!f && this.freeTile(k)) { const nf = this.nature.addField(i, j, d.fieldKind, b); if (nf) b.fields.push(nf); }
+              else if (!f && this.world.field[k] && this.world.field[k].owner === b) {   // tijdens het schoffelen aangelegd
+                const nf = this.world.field[k]; nf.reserved = false; if (s.resv === nf) s.resv = null;
+                nf.state = 'growing'; nf.growth = 0; this.nature.setFieldM(nf);
+              }
               this.goHome(s, b, null);
             }
-          });
+          };
+          const ok = this.goAct(s, b, k, i + 0.5 + (Math.random() - 0.5) * 0.4, j + 0.5 + 0.3, [i + 0.5, j + 0.5],
+            hoeFirst ? 'hoe' : act, hoeFirst ? 1.3 / gm : tAct, hoeFirst ? hoed : sowDone);
           if (!ok) { if (f) f.reserved = false; s.resv = null; s.hidden = true; s.wstate = 'inside'; s.wt = 3; }
         } else if (d.gather === 'fish') {
           const spots = [];
@@ -1082,9 +1100,13 @@
           const f = s.mowField, p = VE.clamp(s.ap / (s.ap + Math.max(0.001, s.wt)), 0, 1);
           if (!f.dead && Math.abs((f.mow || 0) - p) > 0.04) { f.mow = p; this.nature.setFieldM(f); }
         }
-        const per = s.act === 'chop' ? 0.75 : s.act === 'pick' ? 0.6 : 0.9;
+        const per = s.act === 'chop' ? 0.75 : s.act === 'pick' ? 0.6 : s.act === 'hoe' ? 0.65 : 0.9;
         const tick = Math.floor(s.ap / per);
-        if (tick !== s.actTick) { s.actTick = tick; if (s.act === 'chop') sfx('chop', s.x, s.z); else if (s.act === 'pick') sfx('pick', s.x, s.z); }
+        if (tick !== s.actTick) {
+          s.actTick = tick;
+          if (s.act === 'chop') sfx('chop', s.x, s.z); else if (s.act === 'pick') sfx('pick', s.x, s.z);
+          else if (s.act === 'hoe') { sfx('plant', s.x, s.z); emit('dust', { x: s.x + Math.sin(s.rot) * 0.22, y: s.y + 0.02, z: s.z + Math.cos(s.rot) * 0.22, n: 3, small: true }); }   // kluitjes aarde
+        }
         if (s.wt <= 0) { s.act = null; const f = s.onAct; s.onAct = null; if (f) f(); }
       }
     }

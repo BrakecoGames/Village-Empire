@@ -535,6 +535,8 @@ swing("pick", 15, -2.4, -1.0, -0.3, 1.3, 0.58, 0.9, lean=(-0.15, 0.3))       # m
 swing("hammer", 11, -1.9, -0.6, -0.6, 1.2, 0.55, 0.92, lean=(0.25, 0.35), two_hands=False, crouch=0.5)  # bouwen
 # jagen: gebukt aansluipen, het net hoog opzwaaien en naar voren werpen (kindvriendelijk: alleen een net)
 swing("hunt", 40, -2.5, -0.9, -0.75, 1.35, 0.6, 0.85, lean=(-0.05, 0.42), two_hands=True, crouch=0.55)
+# schoffelen: het blad hoog naar voren, in de grond slaan en naar je toe trekken (gebukt)
+swing("hoe", 16, -1.6, -0.2, -0.55, 1.9, 0.5, 0.85, lean=(0.08, 0.38), two_hands=True, crouch=0.25)
 clip("harvest", 25, [    # zeis: draaien vanuit het middel
     (0.0, {"torso": k(ry=0.45, rx=0.15), "armR": k(rx=-1.0, rz=0.3), "armL": k(rx=-0.9, rz=-0.1), "tool": k(rx=0.8), "hips": k(dy=-0.004)}),
     (0.5, {"torso": k(ry=-0.45, rx=0.15), "armR": k(rx=-1.0, rz=-0.1), "armL": k(rx=-0.9, rz=-0.45), "tool": k(rx=1.7), "hips": k(dy=-0.006)}),

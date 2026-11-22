@@ -41,7 +41,7 @@ BASE_PAL = {
     "Thatch": (0xDCB65E, 0.07), "ThatchD": (0xC9A048, 0.07), "ThatchL": (0xE6C66E, 0.07),
     "SlateA": (0x5F6C80, 0.07), "SlateB": (0x4E5A6C, 0.07), "SlateC": (0x6E7B8E, 0.07), "SlateD": (0x434E5E, 0.05),
     "ShA": (0x7A5A3E, 0.08), "ShB": (0x6B4E36, 0.08), "ShC": (0x8A6A48, 0.08), "Moss": (0x7D8646, 0.08),
-    "TileBlueA": (0x3F6FA0, 0.07), "TileBlueB": (0x355F8C, 0.07), "TileBlueC": (0x4A7DB0, 0.07),
+    "TileBlueA": (0x3F6FA0, 0.03), "TileBlueB": (0x355F8C, 0.03), "TileBlueC": (0x4A7DB0, 0.03),   # geglazuurde blauwe golfpannen
     "TilePurpA": (0x7A3F6E, 0.07), "TilePurpB": (0x6A3360, 0.07), "TilePurpC": (0x864C7A, 0.07),
     "TileDarkA": (0x8A3E2C, 0.07), "TileDarkB": (0x7A3424, 0.07), "TileDarkC": (0x9A4A36, 0.07),
     "Log": (0x8A5A2B, 0.07), "LogD": (0x6E4522, 0.06), "LogEnd": (0xD9B07A, 0.05),
@@ -220,7 +220,33 @@ def half_tube(center, axis, bulge, r, length, mat, seg=3, cap=False, kick=0.0, t
     return orient(obj, center, axis, bulge, kick, twist)
 
 
-RED_PANS = ("RoofA", "RoofB", "RoofC", "TileDarkA", "TileDarkB", "TileDarkC")
+# pannen die als geglazuurde golfpan (pan) gebouwd worden: rood, donkerrood en blauw
+RED_PANS = ("RoofA", "RoofB", "RoofC", "TileDarkA", "TileDarkB", "TileDarkC", "TileBlueA", "TileBlueB", "TileBlueC")
+
+
+def strands(lines, mats=("ThatchL", "ThatchD"), wid=0.01):
+    """Rietstengels als dunne strookjes op een rieten dak: lines = [(p0, p1, n), ...] in game-assen
+    (n = buitenkant). Twee kleuren door elkaar, één object per kleur (2 driehoeken per stengel)."""
+    for mi, mat in enumerate(mats):
+        bm = bmesh.new()
+        faces = []
+        for i, (p0, p1, n) in enumerate(lines):
+            if i % len(mats) != mi:
+                continue
+            p0, p1, n = Vector(p0), Vector(p1), Vector(n).normalized()
+            d = (p1 - p0).normalized()
+            side = d.cross(n).normalized() * (wid / 2)
+            lift = n * 0.003
+            v = gverts(bm, [tuple(p0 - side + lift), tuple(p0 + side + lift), tuple(p1 + side * 0.6 + lift), tuple(p1 - side * 0.6 + lift)])
+            faces.append((bm.faces.new(v), M3 @ n))
+        if not faces:
+            bm.free()
+            continue
+        bm.normal_update()
+        for f, bn in faces:
+            if f.normal.dot(bn) < 0:
+                f.normal_flip()
+        new_obj("strands", bm, mat)
 
 
 def pan(center, up, nrm, w, length, mat, kick=0.09, amp=None):
@@ -229,7 +255,7 @@ def pan(center, up, nrm, w, length, mat, kick=0.09, amp=None):
     Naast elkaar sluiten de golven naadloos aan (periodiek profiel), zodat een rij één doorlopende
     golflijn vormt. Glad gearceerd. 20 driehoeken."""
     S = 5
-    amp = amp if amp is not None else w * 0.3
+    amp = amp if amp is not None else w * 0.22
     lipW, lipT = min(0.02, length * 0.2), w * 0.16
     prof = lambda u: amp * (0.5 + 0.5 * math.cos(2 * math.pi * (u - 0.68))) - amp * 0.5
     bm = bmesh.new()
@@ -291,14 +317,31 @@ def tiled_roof(x0, x1, eave_z, eave_y, ridge_z, ridge_y, rows, cols, side, kick=
     rx = a if sgn > 0 else -a
     if deck:
         mid = E + up * (L / 2) - nrm * 0.012
-        box(width + 0.02, 0.022, L + 0.03, "RoofDeck", pos=((x0 + x1) / 2, mid.y, mid.z), rot=(rx, 0, 0), base=False)
+        deck_mat = mats[-1] if kind == "tile" and mats[0].startswith("TileBlue") else "RoofDeck"   # blauw dak: blauw onderdak
+        box(width + 0.02, 0.022, L + 0.03, deck_mat, pos=((x0 + x1) / 2, mid.y, mid.z), rot=(rx, 0, 0), base=False)
     for ri in range(rows):
         t = (ri + 0.5) * L / rows
         if kind == "thatch":
-            # riet: dikke, afgeronde lagen over de volle breedte, trapsgewijs (12-44 driehoeken per laag)
+            # riet: dikke, afgeronde lagen over de volle breedte, trapsgewijs, met losse rietstengels erop
             c = E + up * t + nrm * 0.022
             obj = box(width + 0.05, tl * 1.05, 0.04, rnd.choice(mats), base=False, bevel=0.016, smooth=True)
-            orient(obj, ((x0 + x1) / 2, c.y, c.z), up, nrm, kick * 1.2, rnd.uniform(-0.01, 0.01))
+            k = kick * 1.2
+            orient(obj, ((x0 + x1) / 2, c.y, c.z), up, nrm, k, rnd.uniform(-0.01, 0.01))
+            yk = (up * math.cos(k) - nrm * math.sin(k)).normalized()
+            zk = (nrm * math.cos(k) + up * math.sin(k)).normalized()
+            cc = Vector(((x0 + x1) / 2, c.y, c.z)) + zk * 0.02
+            lines = []
+            n = int((width + 0.04) / 0.012)
+            for q in range(n):
+                xx = -(width + 0.04) / 2 + (q + rnd.uniform(0.2, 0.8)) * (width + 0.04) / n
+                lo = rnd.uniform(0.42, 0.5) * tl * 1.05
+                hi = rnd.uniform(0.25, 0.5) * tl
+                lines.append((cc + Vector((xx, 0, 0)) - yk * lo, cc + Vector((xx + rnd.uniform(-0.006, 0.006), 0, 0)) + yk * hi, zk))
+            strands(lines, mats=("ThatchL", "Thatch", "ThatchD"), wid=0.006)
+            if ri == 0:
+                # dikke, afgesneden rietrand langs de goot (zoals bij een echt rieten dak)
+                e = E + nrm * 0.03 - up * 0.004
+                cyl(0.026, 0.026, width + 0.06, 8, "ThatchD", pos=(x0 - 0.03, e.y, e.z), rot=(0, 0, -math.pi / 2))
             continue
         stagger = (0.12 if ri % 2 else -0.12) * tw          # verspringende rijen: leest als pannen, niet als planken
         if kind == "tile" and mats[0] in RED_PANS:
@@ -492,6 +535,8 @@ def house_body(x=0.0, z=0.0, w=0.5, d=0.4, wall_top=0.42, ridge_y=0.72, roof="ti
     kind, mats, rmat, rr, piece = ROOFS[roof]
     if roof_color:
         mats = roof_color
+        if kind == "tile":
+            rmat = roof_color[2]                 # nokpannen in de kleur van het dak (blauw, donkerrood)
     s = (ridge_y - (wall_top + 0.03)) / (d / 2)
     eave_y = wall_top + 0.03 - s * over
     L = math.hypot(d / 2 + over, ridge_y - eave_y)
@@ -506,12 +551,77 @@ def house_body(x=0.0, z=0.0, w=0.5, d=0.4, wall_top=0.42, ridge_y=0.72, roof="ti
 
 
 def cone_roof(x, z, y, r, h, mats=("Thatch", "ThatchD", "ThatchL"), rows=4, seg=12, tip_mat=None):
-    """Kegeldak in overlappende ringen (riet of leien), met piek."""
+    """Kegeldak in overlappende ringen (riet of leien), met piek. Riet krijgt rietstengels, een dikke
+    afgesneden rand langs de goot en een nokkap, zoals een echt rieten kegeldak."""
+    thatch = mats[0].startswith("Thatch")
+    lines = []
     for i in range(rows):
         f0, f1 = i / rows, (i + 1) / rows
         r0, r1 = r * (1 - f0 * 0.92), r * (1 - f1 * 0.92)
-        cyl(r1 * 0.98, r0 * 1.04, h / rows * 1.15, seg, rnd.choice(mats), pos=(x, y + h * f0 * 0.92, z), cap=False)
+        y0, hh = y + h * f0 * 0.92, h / rows * 1.15
+        cyl(r1 * 0.98, r0 * 1.04, hh, seg, rnd.choice(mats), pos=(x, y0, z), cap=False)
+        if thatch:
+            ra, rb = r0 * 1.04, r1 * 0.98
+            slope = math.atan2(ra - rb, hh)
+            n = max(10, int(2 * math.pi * ra / 0.028))
+            for q in range(n):
+                a = (q + rnd.uniform(0.2, 0.8)) / n * 2 * math.pi
+                ca, sa = math.cos(a), math.sin(a)
+                lo, hi = rnd.uniform(0.0, 0.08), rnd.uniform(0.55, 0.95)
+                pa = Vector((x + ca * (ra + (rb - ra) * lo), y0 + hh * lo, z + sa * (ra + (rb - ra) * lo)))
+                pb = Vector((x + ca * (ra + (rb - ra) * hi), y0 + hh * hi, z + sa * (ra + (rb - ra) * hi)))
+                lines.append((pa, pb, (ca * math.cos(slope), math.sin(slope), sa * math.cos(slope))))
+    if thatch:
+        strands(lines)
+        cyl(r * 1.06, r * 1.08, 0.035, seg * 2, "ThatchD", pos=(x, y - 0.012, z), cap=False)      # dikke rand
+        cyl(r * 0.2, r * 0.26, h * 0.12, seg, "ThatchD", pos=(x, y + h * 0.84, z), cap=False)     # nokkap
     cyl(0.0, r * 0.14, h * 0.16, seg, tip_mat or mats[0], pos=(x, y + h * 0.9, z), cap=False)
+
+
+def pyramid_roof(x, z, y, half, h, mats=ROOF_TILE_MATS, rows=5, ridge_mat="Ridge", tw=0.12):
+    """Vierkant piramidedak van geglazuurde golfpannen, recht op een vierkante onderbouw (de hoeken
+    liggen op de diagonalen, dus boven hoekpalen). Onderdak, pannen per dakvlak, hoekkepers met
+    nokpannen en een piek."""
+    A = Vector((x, y + h, z))
+    # onderdak: vier driehoeken
+    bm = bmesh.new()
+    cs = [Vector((x + sx * half, y, z + sz * half)) for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    faces = []
+    for i in range(4):
+        a, b = cs[i], cs[(i + 1) % 4]
+        out = ((a + b) / 2 - Vector((x, y, z)))
+        out.y = 0
+        v = gverts(bm, [tuple(a - Vector((0, 0.012, 0))), tuple(b - Vector((0, 0.012, 0))), tuple(A - Vector((0, 0.012, 0)))])
+        faces.append((bm.faces.new(v), M3 @ (out.normalized() + Vector((0, 1, 0)))))
+    bm.normal_update()
+    for f, bn in faces:
+        if f.normal.dot(bn) < 0:
+            f.normal_flip()
+    new_obj("deck", bm, "RoofDeck")
+    for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        d = Vector((dx, 0, dz))
+        E = Vector((x, y, z)) + d * half
+        up = (A - E).normalized()
+        lat = Vector((-dz, 0, dx))
+        nrm = up.cross(lat).normalized()
+        if nrm.dot(d) < 0:
+            nrm = -nrm
+        L = (A - E).length
+        for ri in range(rows):
+            t = (ri + 0.5) / rows
+            wt = 2 * half * (1 - t) * 0.98
+            n = max(1, int(wt / tw + 0.35))
+            c = E + (A - E) * t + nrm * 0.006
+            for k in range(n):
+                off = (k - (n - 1) / 2) * tw
+                pan(tuple(c + lat * off), up, nrm, tw, L / rows * 1.25, rnd.choice(mats), kick=0.08)
+    for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        C = Vector((x + sx * half, y, z + sz * half))
+        D = (A - C).normalized()
+        H = Vector((sx, 0, sz)).normalized()
+        bulge = (H - D * H.dot(D)).normalized()
+        half_tube(tuple((A + C) / 2 + bulge * 0.012), tuple(D), tuple(bulge), 0.022, (A - C).length + 0.02, ridge_mat, seg=5, cap=True)
+    cyl(0.0, 0.04, 0.06, 8, ridge_mat, pos=(x, y + h - 0.01, z))
 
 
 def crate(x, z, y=0.0, s=0.08, rot=0.0):

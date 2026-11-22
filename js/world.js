@@ -6,6 +6,7 @@
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color(), _up = new THREE.Vector3(0, 1, 0);
   VE.ZERO = ZERO;
+  const _sh = new THREE.Matrix4(), _tr = new THREE.Matrix4();
 
   class World {
     constructor(seed, root) {
@@ -597,33 +598,46 @@
       this.setFieldM(f);
       return f;
     }
+    /* Akkers volgen het terrein: het vlak door de vier hoeken van de tegel (hoogte in het midden en de
+       helling in x en z). Grond, graan en stoppels worden daarlangs 'geschoven' (shear): de akker ligt
+       overal op het maaiveld, en halmen blijven rechtop staan. */
+    fieldPlane(f) {
+      const w = this.w, i = f.i, j = f.j;
+      const a = w.heightAt(i + 0.02, j + 0.02), b = w.heightAt(i + 0.98, j + 0.02), c = w.heightAt(i + 0.02, j + 0.98), d = w.heightAt(i + 0.98, j + 0.98);
+      return { y: (a + b + c + d) / 4, hx: ((b + d) - (a + c)) / 2 / 0.96, hz: ((c + d) - (a + b)) / 2 / 0.96 };
+    }
+    fieldMat(f, P, ox, oy, oz, sx, sy, sz) {
+      _m.makeScale(sx, sy, sz); _m.setPosition(ox, oy, oz);
+      _sh.set(1, 0, 0, 0, P.hx, 1, P.hz, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+      _m.premultiply(_sh);
+      _m.premultiply(_tr.makeTranslation(f.i + 0.5, P.y, f.j + 0.5));
+      return _m;
+    }
     setFieldM(f) {
-      const x = f.i + 0.5, z = f.j + 0.5, y = this.w.heightAt(x, z);
+      const x = f.i + 0.5, z = f.j + 0.5, P = this.fieldPlane(f), y = P.y;
       _q.identity();
-      _m.compose(_p.set(x, y + 0.01, z), _q, _s.set(1, 1, 1));
-      this.soil.setMatrixAt(f.idx, _m);
+      this.soil.setMatrixAt(f.idx, this.fieldMat(f, P, 0, 0.0, 0, 1, 1, 1));         // bovenkant net boven het maaiveld
       const g = (f.state === 'empty' || f.state === 'cut') ? 0 : Math.min(1, f.growth);
       if (f.kind === 0) {
         // maaien: een maaifront schuift over de akker; het staande graan wordt smaller vanaf één kant
         const mw = Math.min(0.97, f.mow || 0), h = 0.15 + 0.85 * g;
         if (g <= 0 || mw >= 0.97) this.wheat.setMatrixAt(f.idx, ZERO);
-        else { _m.compose(_p.set(x + mw * 0.45, y + 0.02, z), _q, _s.set(1 - mw, h, 1)); this.wheat.setMatrixAt(f.idx, _m); }
+        else this.wheat.setMatrixAt(f.idx, this.fieldMat(f, P, mw * 0.45, 0.02, 0, 1 - mw, h, 1));
         this.wheat.setColorAt(f.idx, _c.copy(this.green).lerp(this.goldC, VE.smooth(0.55, 1.0, g)));
         // stoppels na het maaien (tot er opnieuw gezaaid wordt), hok zolang de schoof er staat
         const stub = f.state === 'empty' || f.state === 'cut' || (f.mow || 0) > 0;
-        if (stub) { _m.compose(_p.set(x, y + 0.02, z), _q, _s.set(1, 1, 1)); this.stubble.setMatrixAt(f.idx, _m); } else this.stubble.setMatrixAt(f.idx, ZERO);
+        if (stub) this.stubble.setMatrixAt(f.idx, this.fieldMat(f, P, 0, 0.02, 0, 1, 1, 1)); else this.stubble.setMatrixAt(f.idx, ZERO);
         if (f.state === 'cut') {
           _q.setFromAxisAngle(_up, (f.i * 7 + f.j * 3) % 6);
-          _m.compose(_p.set(x + 0.12, y + 0.02, z - 0.06), _q, _s.set(1, 1, 1)); this.stook.setMatrixAt(f.idx, _m); _q.identity();
+          _m.compose(_p.set(x + 0.12, y + 0.12 * P.hx - 0.06 * P.hz + 0.02, z - 0.06), _q, _s.set(1, 1, 1)); this.stook.setMatrixAt(f.idx, _m); _q.identity();   // hok rechtop, op het maaiveld
         } else this.stook.setMatrixAt(f.idx, ZERO);
         this.vines.setMatrixAt(f.idx, ZERO); this.grapes.setMatrixAt(f.idx, ZERO);
       } else {
         this.stubble.setMatrixAt(f.idx, ZERO); this.stook.setMatrixAt(f.idx, ZERO);
-        _m.compose(_p.set(x, y + 0.02, z), _q, _s.set(1, 0.3 + 0.7 * Math.max(0.35, g), 1));
-        this.vines.setMatrixAt(f.idx, _m);
+        this.vines.setMatrixAt(f.idx, this.fieldMat(f, P, 0, 0.02, 0, 1, 0.3 + 0.7 * Math.max(0.35, g), 1));
         const gs = VE.smooth(0.5, 1.0, g);
         if (gs <= 0.01) this.grapes.setMatrixAt(f.idx, ZERO);
-        else { _m.compose(_p.set(x, y + 0.02 + 0.3 * (1 - gs) * 0, z), _q, _s.set(1, gs, 1)); this.grapes.setMatrixAt(f.idx, _m); }
+        else this.grapes.setMatrixAt(f.idx, this.fieldMat(f, P, 0, 0.02, 0, 1, gs, 1));
         this.wheat.setMatrixAt(f.idx, ZERO);
       }
       this.fieldDirty = true;

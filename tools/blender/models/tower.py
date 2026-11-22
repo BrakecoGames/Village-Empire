@@ -36,7 +36,8 @@ def build(lvl):
     for s in (-1, 1):
         beam((-0.28, top + 0.1, s * 0.28), (0.28, top + 0.1, s * 0.28), 0.016, "Wood")
         beam((s * 0.28, top + 0.1, -0.28), (s * 0.28, top + 0.1, 0.28), 0.016, "Wood")
-    cone_roof(0, 0, top + 0.27, 0.46, 0.42, mats=("RoofA", "RoofB", "RoofC"), rows=3, seg=4)
+    # piramidedak van golfpannen, recht op de vier hoekpalen (hoeken boven de palen, overstek rondom)
+    pyramid_roof(0, 0, top + 0.27, 0.36, 0.4, rows=5)
     flag = flag_pole(0, 0, top + 0.6, 0.34)
     door(0.0, 0.234, w=0.12, h=0.21)
     window(0.0, 0.7, 0.236, "z", lit=True, shutters=None, w=0.08, h=0.1)

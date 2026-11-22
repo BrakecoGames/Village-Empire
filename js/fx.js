@@ -10,7 +10,7 @@
   const HAIR = [0x6b4423, 0x2e2018, 0xd9a441, 0xb8582a, 0xb3aea6].map(c => new THREE.Color(c));
   const SKIN = [0xffffff, 0xf2dfcc, 0xd9b49a, 0xb8896a].map(c => new THREE.Color(c));
   const PANTS = [0x5a4030, 0x4a566c, 0x6e5c3a, 0x44503a].map(c => new THREE.Color(c));
-  const TOOL_ACTS = new Set(['chop', 'pick', 'hammer', 'harvest', 'dig', 'fish']);
+  const TOOL_ACTS = new Set(['chop', 'pick', 'hammer', 'harvest', 'dig', 'fish', 'hoe']);
 
   /* ---------------- Settlers (fully instanced) ---------------- */
   class SettlerRender {
@@ -37,7 +37,7 @@
       this.parts = [this.torso, this.head, this.hair, this.hat, this.legL, this.legR, this.armL, this.armR, this.handL, this.handR];
       this.mustache = mk(g.mustache, cap, false); this.beard = mk(g.beard, cap, false); this.feather = mk(g.feather, cap, false);
       this.tools = {};
-      for (const t of ['axe', 'hammer', 'pick', 'spade', 'scythe', 'sickle', 'rod', 'net']) this.tools[t] = mk(VE.toolGeo(t), 80, true);
+      for (const t of ['axe', 'hammer', 'pick', 'spade', 'hoe', 'scythe', 'sickle', 'rod', 'net']) this.tools[t] = mk(VE.toolGeo(t), 80, true);
       this.items = {};
       for (const r of VE.RES_ORDER) this.items[r] = mk(VE.itemGeo(r), 120, true);
       this.roleCol = {};
@@ -580,7 +580,8 @@
       const bus = VE.bus;
       this.handlers = {
         smoke: e => this.smoke.emit(e),
-        dust: e => { for (let i = 0; i < (e.n || 8); i++) { const a = Math.random() * 6.28, sp = 0.4 + Math.random() * 0.6; this.dust.emit({ x: e.x + Math.cos(a) * 0.3, y: e.y + 0.1, z: e.z + Math.sin(a) * 0.3, vx: Math.cos(a) * sp, vy: 0.25 + Math.random() * 0.3, vz: Math.sin(a) * sp, life: 1.1 + Math.random() * 0.5, s0: 0.06, s1: 0.2 }); } },
+        // e.small: kluitjes aarde bij het schoffelen (klein en kort)
+        dust: e => { const k = e.small ? 0.22 : 1; for (let i = 0; i < (e.n || 8); i++) { const a = Math.random() * 6.28, sp = (0.4 + Math.random() * 0.6) * k; this.dust.emit({ x: e.x + Math.cos(a) * 0.3 * k, y: e.y + 0.1 * k, z: e.z + Math.sin(a) * 0.3 * k, vx: Math.cos(a) * sp, vy: (0.25 + Math.random() * 0.3) * (e.small ? 0.8 : 1), vz: Math.sin(a) * sp, g: e.small ? 1.2 : 0, life: (1.1 + Math.random() * 0.5) * (e.small ? 0.45 : 1), s0: 0.06 * k, s1: 0.2 * k }); } },
         leaves: e => { for (let i = 0; i < 10; i++) { const a = Math.random() * 6.28; this.leaves.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.6, vy: 0.6 + Math.random() * 0.5, vz: Math.sin(a) * 0.6, g: 1.4, life: 1.4, s0: 0.03, s1: 0.035, sy: 0.4 }); } },
         sparks: e => { for (let i = 0; i < 2; i++) { const a = Math.random() * 6.28; this.sparks.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.35, vy: 0.7 + Math.random() * 0.6, vz: Math.sin(a) * 0.35 + 0.15, g: 2.2, life: 0.5 + Math.random() * 0.3, s0: 0.012, s1: 0.004 }); } },
         poof: e => { for (let i = 0; i < 9; i++) { const a = i * 0.7; this.poofs.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.5, vy: 0.35 + (i % 3) * 0.15, vz: Math.sin(a) * 0.5, life: 0.8, s0: 0.05, s1: 0.16 }); } },

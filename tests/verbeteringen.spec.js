@@ -65,7 +65,7 @@ async function perf(page) {
 }
 
 test.describe('camera', () => {
-  test('links slepen verplaatst, rechts slepen draait, klikken selecteert en bouwt', async ({ page }, info) => {
+  test('links en rechts slepen verplaatsen, middelste knop draait, klikken selecteert en bouwt', async ({ page }, info) => {
     test.skip(info.project.name !== 'desktop', 'muis: desktop');
     const errors = trackErrors(page);
     await openGame(page);
@@ -86,14 +86,25 @@ test.describe('camera', () => {
     expect(Math.hypot(c1.tx - c0.tx, c1.tz - c0.tz)).toBeGreaterThan(2);
     expect(c1.yaw).toBeCloseTo(c0.yaw, 5);
     expect(await page.evaluate(() => !!window.VE.ui.sel), 'slepen selecteert niets').toBe(false);
-    // 2. rechts slepen: draaien rond het doel, geen contextmenu
+    // 2. rechts slepen: verschuift net als links (grond blijft onder de muis), geen contextmenu, geen selectie
+    const gr0 = await ground(900, 500);
     await page.mouse.move(900, 500); await page.mouse.down({ button: 'right' });
-    for (let i = 1; i <= 10; i++) await page.mouse.move(900 + i * 20, 500);
+    for (let i = 1; i <= 10; i++) await page.mouse.move(900 - i * 22, 500 - i * 10);
+    const gr1 = await ground(680, 400);
     await page.mouse.up({ button: 'right' });
-    const c2 = await cam();
-    expect(Math.abs(c2.yaw - c1.yaw), 'gedraaid').toBeGreaterThan(0.5);
-    expect(Math.hypot(c2.tx - c1.tx, c2.tz - c1.tz), 'doel blijft staan').toBeLessThan(0.01);
+    const c1b = await cam();
+    expect(Math.hypot(gr1[0] - gr0[0], gr1[1] - gr0[1]), 'rechts: grond blijft onder de muis').toBeLessThan(0.25);
+    expect(Math.hypot(c1b.tx - c1.tx, c1b.tz - c1.tz), 'rechts: verschoven').toBeGreaterThan(2);
+    expect(c1b.yaw).toBeCloseTo(c1.yaw, 5);
     expect(await page.evaluate(() => window.__ctx)).toBe(0);
+    expect(await page.evaluate(() => !!window.VE.ui.sel), 'rechts slepen selecteert niets').toBe(false);
+    // middelste knop: draaien rond het doel
+    await page.mouse.move(900, 500); await page.mouse.down({ button: 'middle' });
+    for (let i = 1; i <= 10; i++) await page.mouse.move(900 + i * 20, 500);
+    await page.mouse.up({ button: 'middle' });
+    const c2 = await cam();
+    expect(Math.abs(c2.yaw - c1b.yaw), 'gedraaid').toBeGreaterThan(0.5);
+    expect(Math.hypot(c2.tx - c1b.tx, c2.tz - c1b.tz), 'doel blijft staan').toBeLessThan(0.01);
     // 3. muiswiel zoomt
     await page.mouse.move(900, 500); await page.mouse.wheel(0, 400); await page.waitForTimeout(100);
     expect((await cam()).dist).toBeGreaterThan(c2.dist);

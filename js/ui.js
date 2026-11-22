@@ -140,8 +140,8 @@
         if (e.button === 1) e.preventDefault();
         el.setPointerCapture(e.pointerId);
         const pt = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, b: e.button, type: e.pointerType, drag: false, anchor: null };
-        // linkerknop / één vinger: het punt op de grond onthouden waar je de wereld 'vastpakt'
-        if (e.button === 0) { const a = new THREE.Vector3(); if (this.view.cam.groundAt(e.clientX, e.clientY, a)) pt.anchor = a; }
+        // linker- of rechterknop / één vinger: het punt op de grond onthouden waar je de wereld 'vastpakt'
+        if (e.button === 0 || e.button === 2) { const a = new THREE.Vector3(); if (this.view.cam.groundAt(e.clientX, e.clientY, a)) pt.anchor = a; }
         this.pointers.set(e.pointerId, pt);
         this.moved = 0;
         if (this.pointers.size > 1) this.pinch = null;
@@ -168,8 +168,8 @@
         }
         this.moved += Math.abs(dx) + Math.abs(dy);
         if (p.b === 1) { this.view.cam.rotate(-dx * 0.008); this.view.cam.tilt(dy * 0.006); return; } // middle drag: orbit + tilt
-        if (p.b === 2) { this.view.cam.rotate(-dx * 0.006); return; }
-        // linkerknop / één vinger: pas na een kleine drempel slepen (klikken blijft klikken)
+        // linker- en rechterknop / één vinger: verschuiven, pas na een kleine drempel (klikken blijft klikken;
+        // rechts klikken zonder slepen zet het gereedschap uit)
         if (!p.drag && Math.hypot(p.x - p.sx, p.y - p.sy) > (e.pointerType === 'mouse' ? 6 : 10)) { p.drag = true; this.ghost.visible = false; }
         if (p.drag) {
           if (p.anchor) this.view.cam.dragTo(p.anchor, e.clientX, e.clientY); else this.view.cam.pan(dx, dy);
@@ -687,7 +687,7 @@
         '<p>👥 <b>Cottages</b> give room for new settlers. They arrive much faster when you have bread, fish or meat.</p>' +
         '<p>⚖️ <b>Marketplace</b>: choose which goods to sell for gold. Gold buys upgrades and watchtowers.</p>' +
         '<p>📜 Complete the <b>Village Charter</b> to rise in rank and unlock new buildings.</p>' +
-        '<p>🖱️ <b>Left-drag</b> to move the view · <b>right-drag</b> (or Q/E, two fingers) to rotate · scroll or pinch to zoom · click to select or build · Space: game speed</p></div>' +
+        '<p>🖱️ <b>Left- or right-drag</b> to move the view · <b>middle-drag</b>, Q/E or two fingers to rotate · scroll or pinch to zoom · click to select or build · Space: game speed</p></div>' +
         '<div class="mbtns"><button class="btn good" data-act="closeModal">Got it</button></div>');
     }
     confirmNew() {

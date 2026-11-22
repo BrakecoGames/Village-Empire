@@ -667,6 +667,7 @@
   VE.soilGeo = function () {
     const m = new VE.Model(15);
     m.box(0.94, 0.03, 0.94, 0x7a5a38, { y: -0.01, j: 0.03 });
+    m.box(0.93, 0.12, 0.93, 0x7a5a38, { y: -0.13, j: 0.03 });      // zijkant tot in de grond: nergens een zwevende rand
     for (let i = 0; i < 4; i++) m.box(0.9, 0.035, 0.08, 0x8f6a42, { y: 0.0, z: -0.33 + i * 0.22, j: 0.05 });
     return m.build();
   };
@@ -779,6 +780,11 @@
         m.add(tip, 0x9aa0a6, { y: cy + R * Math.cos(A), z: sgn * R * Math.sin(A), rx: sgn * (Math.PI / 2 + A), j: 0 });
       }
       m.box(0.03, 0.03, 0.03, 0x5a5e64, { y: 0.135, j: 0 });      // collar where the head meets the handle
+    }
+    else if (kind === 'hoe') {   // schoffel: lange steel, smal blad haaks naar voren
+      handle(0.24);
+      m.box(0.012, 0.012, 0.04, 0x6a6e74, { y: 0.205, z: 0.02, j: 0 });
+      m.box(0.085, 0.055, 0.006, 0x9aa0a6, { y: 0.16, z: 0.045, j: 0.02 });
     }
     else if (kind === 'spade') { handle(0.18); m.box(0.05, 0.06, 0.008, 0x8a8f96, { y: -0.06 }); }
     else if (kind === 'scythe') { handle(0.22); m.box(0.13, 0.02, 0.008, 0xb8bec4, { x: 0.06, y: 0.18, rz: -0.25 }); }

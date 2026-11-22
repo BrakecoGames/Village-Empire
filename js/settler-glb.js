@@ -17,7 +17,7 @@
   const S = 1.28;                     // zelfde schaal als de oude dorpelingen
   const TAU = Math.PI * 2;
   // perioden (s) van de werkbewegingen in de simulatie (zie oude SettlerRender.toolAngle / sim.js)
-  const ACT_PERIOD = { chop: 0.75, pick: 0.6, hammer: 0.45, harvest: TAU / 6, dig: TAU / 5, sow: TAU / 5, fish: TAU / 1.4, hunt: 1.8 };
+  const ACT_PERIOD = { hoe: 0.65, chop: 0.75, pick: 0.6, hammer: 0.45, harvest: TAU / 6, dig: TAU / 5, sow: TAU / 5, fish: TAU / 1.4, hunt: 1.8 };
   // werkclip die (nog) niet in settler.glb zit: een clip die erop lijkt
   const ACT_ALIAS = { hunt: 'sow' };
   const BLEND = 0.18;                 // overvloeitijd tussen clips (s)
@@ -163,7 +163,7 @@
         this.part[k] = { mesh: mk(A.parts[k].geo, pairs ? cap * 2 : cap, SHADOW.test(k)), node: A.parts[k].node, n: 0 };
       }
       this.tools = {};
-      for (const t of ['axe', 'hammer', 'pick', 'spade', 'scythe', 'sickle', 'rod', 'net']) this.tools[t] = { mesh: mk(VE.toolGeo(t), 100, true), n: 0 };
+      for (const t of ['axe', 'hammer', 'pick', 'spade', 'hoe', 'scythe', 'sickle', 'rod', 'net']) this.tools[t] = { mesh: mk(VE.toolGeo(t), 100, true), n: 0 };
       this.items = {};
       for (const r of VE.RES_ORDER) this.items[r] = { mesh: mk(VE.itemGeo(r), 140, true), n: 0 };
       this.roleCol = {};

@@ -11,7 +11,7 @@ from ve_parts import *  # noqa: E402,F401,F403
 from ve_parts import rnd  # noqa: E402
 
 args = ve.parse_args()
-args.budget = max(args.budget, 3500)
+args.budget = max(args.budget, 4400)   # rieten dak met rietstengels
 ve.reset_scene()
 setup(seed=4101)
 
