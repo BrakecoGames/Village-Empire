@@ -3,6 +3,9 @@
 (function (VE) {
   const $ = id => document.getElementById(id);
   const N = VE.N;
+  /* een goed staat in de balk (en bij handel/markt) zodra je het kunt gebruiken of al hebt */
+  VE.resVisible = (g, r) => { const d = VE.RES[r]; return !d.rank || g.rank >= d.rank || (g.stock[r] || 0) > 0 || ((g.stats.produced || {})[r] || 0) > 0; };
+  const resTip = r => VE.RES[r].name + (VE.RES[r].tip ? ': ' + VE.RES[r].tip : '');
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const costHtml = (cost, game) => {
     let h = '';
@@ -204,14 +207,22 @@
       if (this.tool && VE.DEFS[this.tool]) {
         const def = VE.DEFS[this.tool], size = def.size || 1;
         const i = size > 1 ? Math.round(p.x - 1) : p.i, j = size > 1 ? Math.round(p.z - 1) : p.j;
-        const ok = g.canPlace(this.tool, i, j).ok;
+        const chk = g.canPlace(this.tool, i, j), ok = chk.ok;
         this.ghost.visible = true;
+        this.placeHint(chk);
         let sum = 0; for (let z = j; z <= j + size; z++) for (let x = i; x <= i + size; x++) if (w.inb(Math.min(x, N - 1), Math.min(z, N - 1))) sum += w.vh(Math.min(x, N), Math.min(z, N));
         this.ghost.position.set(i + size / 2, sum / ((size + 1) * (size + 1)) + 0.02, j + size / 2);
         this.ghostMat.color.setHex(ok ? 0x7dff8a : 0xff6a5a);
         this.ghostAt = { i: i, j: j, ok: ok };
         if (def.radius) this.showRange(i + size / 2, j + size / 2, def.radius);
       }
+    }
+    /* uitleg onder de werkbalk: groen = hier kan het (met reden), rood = waarom niet */
+    placeHint(chk) {
+      const el = $('toolHintWhy'); if (!el) return;
+      const t = chk.why || (chk.ok ? 'Good spot' : '');
+      if (el.textContent !== t) el.textContent = t;
+      el.className = chk.ok ? 'ok' : 'bad';
     }
     showRange(x, z, r) {
       this.rangeRing.visible = true;
@@ -259,6 +270,10 @@
       document.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', b.dataset.tool === (t || 'select')));
       document.querySelectorAll('.card').forEach(c => c.classList.toggle('on', c.dataset.b === t));
       const hint = $('toolHint');
+      if (!$('toolHintWhy')) { const w = document.createElement('span'); w.id = 'toolHintWhy'; hint.insertBefore(w, $('toolCancel')); }
+      $('toolHintWhy').textContent = '';
+      // mijn plaatsen: de passende ertsaders lichten op
+      if (VE.Mining) VE.Mining.highlight(this.game, t && VE.DEFS[t] && VE.DEFS[t].ore ? VE.DEFS[t].ore : 0);
       if (t) {
         hint.classList.remove('hidden');
         $('toolHintText').textContent = t === 'demolish' ? 'Tap a building to remove it' : (VE.isMobile ? 'Tap a spot, then tap again to build ' : 'Click to place ') + VE.DEFS[t].name;
@@ -349,6 +364,7 @@
         case 'demolish': if (this.sel) this.confirmDemolish(this.sel); break;
         case 'doDemolish': { const b = g.bmap[arg]; if (b) g.demolish(b); this.closeModal(); this.select(null); break; }
         case 'sell': if (this.sel) { this.sel.sell[arg] = !this.sel.sell[arg]; this.renderInfo(true); } break;
+        case 'recipe': if (this.sel && g.setRecipe(this.sel, arg)) { this.toast(VE.DEFS.smelter.icon + ' The smelter now makes ' + VE.RECIPES[arg].name.toLowerCase()); VE.save(); } this.renderInfo(true); break;
         case 'keep': if (this.sel && e.type === 'change') { this.sel.keep = +el.value; } break;
         case 'goto': if (this.sel) this.view.cam.focus(this.sel.cx, this.sel.cz); break;
         case 'buyUpg': if (g.buyUpgrade(arg)) { VE.audio.play('coin'); this.toast('🔨 Upgrade purchased!'); VE.save(); } this.openUpgrades(); break;
@@ -358,6 +374,7 @@
         case 'music': VE.audio.setMusic(!VE.audio.musicOn); VE.saveSettings(); this.syncSoundBtn(); this.openMenu(); break;
         case 'sfx': VE.audio.setSfx(!VE.audio.sfxOn); VE.saveSettings(); this.syncSoundBtn(); this.openMenu(); break;
         case 'help': this.openHelp(); break;
+        case 'production': this.openProduction(); break;
         case 'mainmenu': this.closeModal(); VE.toMenu(); break;
         case 'newgame': this.confirmNew(); break;
         case 'doNew': this.closeModal(); VE.newGame(); break;
@@ -391,13 +408,14 @@
       $('infoPanel').innerHTML = h; $('infoPanel').classList.remove('hidden');
       this.infoDef = k;
     }
-    chainHtml(d) {
+    chainHtml(d, b) {
+      if (d.recipes) d = (b ? this.game.rcp(b) : d.recipes[d.recipe]);
       if (d.inp) {
         let a = ''; for (const r in d.inp) a += VE.icon(r, 18) + (d.inp[r] > 1 ? d.inp[r] : '');
         let b = ''; if (d.out) for (const r in d.out) b += VE.icon(r, 18) + (d.out[r] > 1 ? '×' + d.out[r] : ''); if (d.outGold) b += VE.icon('gold', 18) + d.outGold;
         return '<div class="chain">' + a + '<span class="arr">➜</span>' + b + '</div>';
       }
-      if (d.out && typeof d.out === 'string') return '<div class="chain">' + (d.gather === 'tree' ? '🌳' : d.gather === 'rock' ? '🪨' : d.gather === 'fish' ? '🌊' : '🌱') + '<span class="arr">➜</span>' + VE.icon(d.out, 18) + '</div>';
+      if (d.out && typeof d.out === 'string') return '<div class="chain">' + (d.gather === 'tree' ? '🌳' : d.gather === 'rock' ? '🪨' : d.gather === 'fish' ? '🌊' : d.gather === 'ore' ? '⛰️' : d.gather === 'hunt' ? '🐇🦌🐗' : '🌱') + '<span class="arr">➜</span>' + VE.icon(d.out, 18) + '</div>';
       return '';
     }
     renderInfo(force) {
@@ -418,9 +436,31 @@
         if (need) h += '<div class="warn">Not enough materials in storage — keep producing!</div>';
         h += '<div class="ip-desc small">' + (b.builder ? '🔨 A builder is at work.' : 'Carriers bring materials, then a builder arrives.') + '</div>';
       } else {
-        h += this.chainHtml(d);
+        h += this.chainHtml(d, b);
+        if (d.recipes) {
+          // smelterij: kies het metaal
+          h += '<div class="ip-sub">Smelt:</div><div class="recipes">';
+          for (const k in d.recipes) {
+            const R = d.recipes[k], lock = R.rank && g.rank < R.rank;
+            let inp = ''; for (const r in R.inp) inp += VE.icon(r, 14) + R.inp[r];
+            h += '<button class="rcp ' + (b.recipe === k ? 'on' : '') + '" data-act="recipe" data-arg="' + k + '"' + (lock ? ' disabled title="Unlocks at rank ' + VE.RANKS[R.rank].name + '"' : '') + '>' +
+              VE.icon(k, 20) + '<small>' + (lock ? '🔒 ' + VE.RANKS[R.rank].name : inp) + '</small></button>';
+          }
+          h += '</div>';
+          if (b.working && b.wt0) { const pct = Math.round(100 * (1 - b.wt / b.wt0)); h += '<div class="bar"><i style="width:' + pct + '%"></i><span>' + pct + '%</span></div>'; }
+        }
+        if (d.gather === 'ore' && VE.Mining) {
+          const left = g.world.deposits.filter(o => o.type === d.ore && o.amount > 0 && (o.x - b.cx) ** 2 + (o.z - b.cz) ** 2 <= (d.radius + (b.level - 1) * 0.5) ** 2).reduce((n, o) => n + o.amount, 0);
+          h += '<div class="ip-row"><b>Vein</b> ' + (left ? left + ' ' + VE.RES[d.out].name.toLowerCase() + ' left' : '<span class="short">exhausted: build a new mine at another vein</span>') + '</div>';
+        }
+        if (d.gather === 'hunt' && g.wild) {
+          const r = d.radius + (b.level - 1), c = {};
+          for (const a of g.wild.list) if (!a.dead && a.sp.hunt && (a.x - b.cx) ** 2 + (a.z - b.cz) ** 2 <= r * r) c[a.sp.name] = (c[a.sp.name] || 0) + 1;
+          const txt = Object.keys(c).map(n => c[n] + ' ' + n.toLowerCase() + (c[n] > 1 && n !== 'Deer' && n !== 'Wild boar' ? 's' : '')).join(', ');
+          h += '<div class="ip-row"><b>Game nearby</b> ' + (txt || '<span class="short">none: build closer to woods and meadows</span>') + '</div>';
+        }
         if (d.worker) h += '<div class="ip-row"><b>Worker</b> ' + (b.worker ? (b.worker.mode === 'goWork' ? 'on the way' : 'at work') : '<span class="short">waiting for a free settler</span>') + '</div>';
-        if (d.inp) { h += '<div class="ip-row"><b>Input</b>'; for (const r in d.inp) h += '<span class="cost">' + VE.icon(r, 15) + (b.input[r] || 0) + '/' + g.cap(b) + '</span>'; h += '</div>'; }
+        if (d.inp) { const R = g.rcp(b); h += '<div class="ip-row"><b>Input</b>'; for (const r in R.inp) h += '<span class="cost">' + VE.icon(r, 15) + (b.input[r] || 0) + '/' + g.cap(b) + '</span>'; h += '</div>'; }
         const outs = Object.keys(b.output).filter(r => b.output[r] > 0);
         if (d.out || outs.length) { h += '<div class="ip-row"><b>Output</b>'; for (const r of outs) h += '<span class="cost">' + VE.icon(r, 15) + b.output[r] + '</span>'; if (!outs.length) h += '<span class="dim">—</span>'; h += '</div>'; }
         if (d.housing) h += '<div class="ip-row"><b>Homes</b> ' + (d.housing + (d.levelHousing || 0) * (b.level - 1)) + ' settlers</div>';
@@ -428,7 +468,7 @@
         if (d.storage) { h += '<div class="ip-row wrap"><b>Stock</b>'; for (const r of VE.RES_ORDER) if (g.stock[r] > 0) h += '<span class="cost">' + VE.icon(r, 15) + VE.fmt(g.stock[r]) + '</span>'; h += '</div>'; }
         if (d.market) {
           h += '<div class="ip-sub">Sell automatically:</div><div class="sellgrid">';
-          for (const r of VE.RES_ORDER) h += '<button class="sell ' + (b.sell[r] ? 'on' : '') + '" data-act="sell" data-arg="' + r + '">' + VE.icon(r, 16) + '<small>' + g.sellPrice(r) + '</small></button>';
+          for (const r of VE.RES_ORDER) if (VE.resVisible(g, r)) h += '<button class="sell ' + (b.sell[r] ? 'on' : '') + '" data-act="sell" data-arg="' + r + '" title="' + esc(VE.RES[r].name) + '">' + VE.icon(r, 16) + '<small>' + g.sellPrice(r) + '</small></button>';
           h += '</div><div class="ip-row"><b>Keep in store</b> <select data-act="keep">' + [0, 5, 10, 20, 40].map(v => '<option value="' + v + '"' + (b.keep === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></div>';
           let pend = 0; for (const r in b.input) pend += b.input[r];
           h += '<div class="ip-row"><b>On the stalls</b> ' + pend + ' goods</div>';
@@ -526,6 +566,7 @@
       } else {
         h += '<p class="dim">Instant trades. Merchants pay a little less than your market stalls do.</p><div class="tlist">';
         for (const r of VE.RES_ORDER) {
+          if (!VE.resVisible(g, r)) continue;
           h += '<div class="trow"><span class="t-name">' + VE.icon(r, 20) + VE.RES[r].name + '</span><span class="t-stock">' + VE.fmt(g.stock[r]) + '</span>' +
             '<button class="btn small" data-act="trade" data-arg="' + r + '" data-n="-1" ' + (g.avail(r) >= 1 ? '' : 'disabled') + '>Sell +' + g.sellPrice(r) + '</button>' +
             '<button class="btn small" data-act="trade" data-arg="' + r + '" data-n="-10" ' + (g.avail(r) >= 10 ? '' : 'disabled') + '>×10</button>' +
@@ -543,17 +584,40 @@
         '<button class="btn" data-act="save">💾 Save now</button>' +
         '<button class="btn" data-act="music">🎵 Music: ' + (a.musicOn ? 'on' : 'off') + '</button>' +
         '<button class="btn" data-act="sfx">🔔 Sounds: ' + (a.sfxOn ? 'on' : 'off') + '</button>' +
+        '<button class="btn" data-act="production">📊 Production overview</button>' +
         '<button class="btn" data-act="help">❓ How to play</button>' +
         '<button class="btn" data-act="mainmenu">🏠 Main menu</button>' +
         '<button class="btn bad" data-act="newgame">🌱 Start a new village</button></div>' +
         '<p class="copy">© 2026 Brakeco Games · progress is saved automatically</p>' +
         '<p class="copy version">' + (VE.versionLabel ? VE.versionLabel() : '') + '</p>');
     }
+    /* overzicht per goed: voorraad, totaal gemaakt, en welke gebouwen het maken (aantal in je dorp) */
+    openProduction() {
+      const g = this.game, P = g.stats.produced || {};
+      const makers = {};
+      for (const k in VE.DEFS) {
+        const d = VE.DEFS[k], outs = [];
+        if (typeof d.out === 'string') outs.push(d.out);
+        else if (d.recipes) for (const r in d.recipes) for (const o in d.recipes[r].out) outs.push(o);
+        else if (d.out) for (const o in d.out) outs.push(o);
+        for (const o of outs) (makers[o] = makers[o] || []).push(k);
+      }
+      let h = '<h2>📊 Production overview</h2><div class="plist"><div class="prow head"><span></span><span>In store</span><span>Made</span><span>Made by</span></div>';
+      for (const r of VE.RES_ORDER) {
+        if (!VE.resVisible(g, r)) continue;
+        const by = (makers[r] || []).map(k => '<span class="pm' + (g.countBuilt(k) ? '' : ' none') + '" title="' + esc(VE.DEFS[k].name) + '">' + VE.DEFS[k].icon + (g.countBuilt(k) ? '<small>' + g.countBuilt(k) + '</small>' : '') + '</span>').join('');
+        h += '<div class="prow" title="' + esc(resTip(r)) + '"><span class="t-name">' + VE.icon(r, 20) + VE.RES[r].name + '</span><span>' + VE.fmt(g.stock[r] || 0) + '</span><span>' + VE.fmt(P[r] || 0) + '</span><span class="pby">' + (by || '—') + '</span></div>';
+      }
+      h += '</div><p class="dim small">Grey icons: you have not built that workshop yet.</p><div class="mbtns"><button class="btn" data-act="closeModal">Close</button></div>';
+      this.openModal(h);
+    }
     openHelp() {
       this.openModal('<h2>How to play</h2><div class="help">' +
         '<p>🏗️ <b>Build</b> from the bar at the bottom. Carriers bring materials and a builder raises the building.</p>' +
         '<p>🛤️ <b>Paths</b> are not built: they wear in by themselves where settlers walk back and forth a lot. A trampled trail turns into a real path, and settlers walk faster on it. Paths that nobody uses grow over again.</p>' +
-        '<p>🔗 <b>Production chains</b>: trees ➜ logs ➜ planks · wheat ➜ flour ➜ bread · grapes ➜ wine.</p>' +
+        '<p>🔗 <b>Production chains</b>: trees ➜ logs ➜ planks · wheat ➜ flour ➜ bread · grapes ➜ wine · game ➜ meat · ore + coal ➜ metal bars.</p>' +
+        '<p>🦌 <b>Hunters</b> sneak up on rabbits, roe, deer and wild boar. They always leave enough animals to breed, so game recovers over time.</p>' +
+        '<p>⛏️ <b>Mines</b> can only be built on the mountain, right beside a vein of their ore: coal (black), iron (rust-red), copper (green) or gold. The matching veins light up while you place a mine. A <b>Smelter</b> turns ore and coal into bars.</p>' +
         '<p>👥 <b>Cottages</b> give room for new settlers. They arrive much faster when bread or fish is in storage.</p>' +
         '<p>⚖️ <b>Marketplace</b>: choose which goods to sell for gold. Gold buys upgrades and watchtowers.</p>' +
         '<p>📜 Complete the <b>Village Charter</b> to rise in rank and unlock new buildings.</p>' +
@@ -567,7 +631,7 @@
     /* ---------- HUD ---------- */
     buildResBar() {
       let h = '';
-      for (const r of VE.RES_ORDER) h += '<div class="res" id="res_' + r + '" title="' + VE.RES[r].name + '">' + VE.icon(r, 22) + '<b>0</b></div>';
+      for (const r of VE.RES_ORDER) h += '<div class="res" id="res_' + r + '" title="' + esc(resTip(r)) + '">' + VE.icon(r, 22) + '<b>0</b></div>';
       $('resBar').innerHTML = h;
       $('goldIco').innerHTML = VE.icon('gold', 24);
       $('popIco').innerHTML = VE.icon('pop', 20);
@@ -576,6 +640,8 @@
       const g = this.game;
       for (const r of VE.RES_ORDER) {
         const el = $('res_' + r); if (!el) continue;
+        const vis = VE.resVisible(g, r);
+        if (el.classList.contains('hidden') === vis) el.classList.toggle('hidden', !vis);
         const v = VE.fmt(g.stock[r]);
         const b = el.lastChild; if (b.textContent !== v) b.textContent = v;
         el.classList.toggle('zero', g.stock[r] <= 0);

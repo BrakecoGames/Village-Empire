@@ -67,6 +67,7 @@
     g.sr = VE.makeSettlerRender ? VE.makeSettlerRender(g.root) : new VE.SettlerRender(g.root);   // Blender-bewoners of oude reserve
     g.fx = new VE.FX(g.root, g);
     g.piles = new VE.StockpileRender(g.root);
+    g.wr = VE.WildlifeRender ? new VE.WildlifeRender(g.root) : null;      // wilde dieren (Blender of reserve)
     g.started = !!save;
     const hq = g.hq;
     if (save && save.cam) { view.cam.tx = save.cam.x; view.cam.tz = save.cam.z; view.cam.tdist = view.cam.dist = save.cam.d || 17; view.cam.tyaw = view.cam.yaw = save.cam.yaw || Math.PI / 4; }
@@ -130,6 +131,7 @@
       g.fx.update(dt, VE.uTime.value);
       g.sr.render(g.settlers);
       g.piles.update(g);
+      if (g.wr) g.wr.render(g.wild, camera, dt);
     }
     if (VE.playing) {
       ui.update(dt);

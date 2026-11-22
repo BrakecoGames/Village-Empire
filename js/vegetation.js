@@ -144,6 +144,8 @@
     /* ---------------- instances ---------------- */
     add(name, k, x, z, s, rot, sy, list, tint) {
       const K = this.byName[name];
+      // 10% van elke soort blijft vrij voor plantjes langs paden en gebouwen die later ontstaan
+      if (list !== 'edge' && K.used - K.free.length >= Math.floor(K.cap * 0.9)) return false;
       const idx = K.free.length ? K.free.pop() : K.used < K.cap ? K.used++ : -1;
       if (idx < 0) return false;
       K.pos[idx] = [x, z, s, rot, sy || 1];

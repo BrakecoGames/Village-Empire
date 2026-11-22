@@ -37,7 +37,7 @@
       this.parts = [this.torso, this.head, this.hair, this.hat, this.legL, this.legR, this.armL, this.armR, this.handL, this.handR];
       this.mustache = mk(g.mustache, cap, false); this.beard = mk(g.beard, cap, false); this.feather = mk(g.feather, cap, false);
       this.tools = {};
-      for (const t of ['axe', 'hammer', 'pick', 'spade', 'scythe', 'sickle', 'rod']) this.tools[t] = mk(VE.toolGeo(t), 80, true);
+      for (const t of ['axe', 'hammer', 'pick', 'spade', 'scythe', 'sickle', 'rod', 'net']) this.tools[t] = mk(VE.toolGeo(t), 80, true);
       this.items = {};
       for (const r of VE.RES_ORDER) this.items[r] = mk(VE.itemGeo(r), 120, true);
       this.roleCol = {};
@@ -164,8 +164,15 @@
     plank: (() => { const o = []; for (let l = 0; l < 6; l++) for (let c = 0; c < 2; c++) o.push(l % 2 ? { x: (c - 0.5) * 0.09, y: 0.02 + l * 0.042, z: 0, ry: Math.PI / 2 } : { x: 0, y: 0.02 + l * 0.042, z: (c - 0.5) * 0.09 }); return o; })(),
     stone: heap(0.055, 0.045), grain: stookLayout(), flour: heap(0.06, 0.066),
     bread: heap(0.058, 0.038), fish: heap(0.05, 0.034),
-    grape: grid(0.13, 0.03, 2), wine: grid(0.11, 0.04, 2)
+    grape: grid(0.13, 0.03, 2), wine: grid(0.11, 0.04, 2),
+    meat: heap(0.06, 0.04), coal: heap(0.055, 0.04), ironore: heap(0.058, 0.045), copperore: heap(0.058, 0.045), goldore: heap(0.058, 0.045),
+    ironbar: bars(), copperbar: bars(), goldbar: bars()
   };
+  function bars() {               // metaalstaven: kruiselings gestapeld
+    const o = [];
+    for (let l = 0; l < 4; l++) for (let c = 0; c < 3; c++) o.push(l % 2 ? { x: (c - 1) * 0.045, y: 0.012 + l * 0.032, z: 0, ry: Math.PI / 2 } : { x: 0, y: 0.012 + l * 0.032, z: (c - 1) * 0.045 });
+    return o;
+  }
   // a fixed spot for every good inside the 2×2 yard (yard-local x/z)
   const SLOT = { log: [-0.55, -0.55], stone: [0, -0.55], plank: [0.55, -0.55], grain: [-0.55, 0], flour: [0, 0], bread: [0.55, 0], fish: [-0.55, 0.5], grape: [0, 0.5], wine: [0.55, 0.5] };
   // 1 item per unit for small stocks, then the pile grows more slowly until it is full
@@ -222,7 +229,7 @@
       VE.RES_ORDER.forEach((r, ri) => {
         const mesh = this.meshes[r], lay = LAYOUT[r], sl = SLOT[r], capN = mesh.instanceMatrix.count;
         let n = 0;
-        for (const b of yards) for (let q = 0; q < counts[ri]; q++) {
+        if (sl) for (const b of yards) for (let q = 0; q < counts[ri]; q++) {
           const p = lay[q], jit = ((q * 37 + ri * 11) % 7 - 3) * 0.012;  // a little untidiness
           pileRot(p, jit);
           _m.compose(_p.set(b.cx + sl[0] + p.x * PILE_S, b.y + 0.07 + p.y * PILE_S, b.cz + sl[1] + p.z * PILE_S), _q, _s.set(PILE_S, PILE_S, PILE_S));
@@ -294,11 +301,17 @@
       this.dust = new Puffs(root, 0xcdb88e, 160, 0.7, 1);
       this.leaves = new Puffs(root, 0x5aa83a, 120, 1.0, 0);
       this.splash = new Puffs(root, 0xe8f6ff, 80, 0.85, 0);
+      this.sparks = new Puffs(root, 0xffb347, 90, 1.0, 0);
+      this.poofs = new Puffs(root, 0xfffbe8, 60, 0.9, 1);
+      this.sparks.mesh.material.emissive.setHex(0xff7a18);              // vonken gloeien
+      this.poofs.mesh.material.emissive.setHex(0x555046);
       const bus = VE.bus;
       this.handlers = {
         smoke: e => this.smoke.emit({ x: e.x + (Math.random() - 0.5) * 0.03, y: e.y, z: e.z, vx: 0.12 + Math.random() * 0.05, vy: 0.32 + Math.random() * 0.1, vz: -0.05, life: 3.2, s0: 0.05, s1: 0.2 }),
         dust: e => { for (let i = 0; i < (e.n || 8); i++) { const a = Math.random() * 6.28, sp = 0.4 + Math.random() * 0.6; this.dust.emit({ x: e.x + Math.cos(a) * 0.3, y: e.y + 0.1, z: e.z + Math.sin(a) * 0.3, vx: Math.cos(a) * sp, vy: 0.25 + Math.random() * 0.3, vz: Math.sin(a) * sp, life: 1.1 + Math.random() * 0.5, s0: 0.06, s1: 0.2 }); } },
         leaves: e => { for (let i = 0; i < 10; i++) { const a = Math.random() * 6.28; this.leaves.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.6, vy: 0.6 + Math.random() * 0.5, vz: Math.sin(a) * 0.6, g: 1.4, life: 1.4, s0: 0.03, s1: 0.035, sy: 0.4 }); } },
+        sparks: e => { for (let i = 0; i < 2; i++) { const a = Math.random() * 6.28; this.sparks.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.35, vy: 0.7 + Math.random() * 0.6, vz: Math.sin(a) * 0.35 + 0.15, g: 2.2, life: 0.5 + Math.random() * 0.3, s0: 0.012, s1: 0.004 }); } },
+        poof: e => { for (let i = 0; i < 9; i++) { const a = i * 0.7; this.poofs.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.5, vy: 0.35 + (i % 3) * 0.15, vz: Math.sin(a) * 0.5, life: 0.8, s0: 0.05, s1: 0.16 }); } },
         splash: e => { for (let i = 0; i < 8; i++) { const a = Math.random() * 6.28; this.splash.emit({ x: e.x, y: 0.03, z: e.z, vx: Math.cos(a) * 0.4, vy: 0.9 + Math.random() * 0.5, vz: Math.sin(a) * 0.4, g: 4, life: 0.6, s0: 0.025, s1: 0.03 }); } }
       };
       for (const k in this.handlers) bus.on(k, a => { if (this.game === VE.game) this.handlers[k](a); });
@@ -363,7 +376,7 @@
       this.bfReady = true;
     }
     update(dt, t) {
-      this.smoke.update(dt); this.dust.update(dt); this.leaves.update(dt); this.splash.update(dt);
+      this.smoke.update(dt); this.dust.update(dt); this.leaves.update(dt); this.splash.update(dt); this.sparks.update(dt); this.poofs.update(dt);
       // birds
       let n = 0;
       for (const b of this.birds) {

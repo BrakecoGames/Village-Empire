@@ -427,13 +427,99 @@
     m.cyl(0.02, 0.03, 0.18, 6, C.stoneL, { x: 0.45, y: 0.08, z: 0.55 });
   };
 
+  /* ---------- jacht, mijnbouw en metaal (procedurele reserve; de Blender-modellen vervangen ze) ---------- */
+  B.hunter = function (m, lvl, ex) {
+    foundation(m, 0.8, 0.74, C.dirt);
+    // blokhut van liggende stammen
+    for (let i = 0; i < 6; i++) {
+      m.add(new THREE.CylinderGeometry(0.028, 0.028, 0.5, 7), i % 2 ? 0x7a4e2a : 0x8a5a2b, { y: 0.03 + i * 0.05, z: 0.13, rz: PI / 2, x: -0.04 });
+      m.add(new THREE.CylinderGeometry(0.028, 0.028, 0.5, 7), i % 2 ? 0x7a4e2a : 0x8a5a2b, { y: 0.03 + i * 0.05, z: -0.23, rz: PI / 2, x: -0.04 });
+    }
+    m.box(0.46, 0.3, 0.36, 0x7a4e2a, { x: -0.04, z: -0.05 });
+    m.roof(0.62, 0.26, 0.5, C.thatch, { x: -0.04, y: 0.3, z: -0.05, j: 0.07 });
+    door(m, -0.1, 0.135, 0.1, 0.17);
+    // veranda met palen
+    m.box(0.5, 0.025, 0.12, C.woodL, { x: -0.04, y: 0.0, z: 0.22 });
+    for (const sx of [-0.26, 0.18]) m.box(0.022, 0.24, 0.022, C.timber, { x: sx, z: 0.26 });
+    m.box(0.5, 0.02, 0.14, C.wood, { x: -0.04, y: 0.24, z: 0.22, rx: -0.2 });
+    chimney(m, 0.12, -0.15, 0.25, 0.3, C.stone);
+    ex.chimneys.push([0.12, 0.6, -0.15]);
+    // gewei boven de deur, houtstapel en vleesrek
+    m.box(0.08, 0.012, 0.012, 0xe8dcc0, { x: -0.1, y: 0.26, z: 0.15 });
+    m.box(0.012, 0.05, 0.012, 0xe8dcc0, { x: -0.13, y: 0.27, z: 0.15, rz: 0.4 }); m.box(0.012, 0.05, 0.012, 0xe8dcc0, { x: -0.07, y: 0.27, z: 0.15, rz: -0.4 });
+    logPile(m, 0.3, 0.05, 4);
+    for (const sx of [0.26, 0.4]) m.box(0.015, 0.22, 0.015, C.timber, { x: sx, z: -0.3 });
+    m.box(0.16, 0.012, 0.012, C.timber, { x: 0.33, y: 0.21, z: -0.3 });
+    m.ball(0.025, 0xc8553f, { x: 0.3, y: 0.16, z: -0.3, sy: 1.6 }); m.ball(0.025, 0xc8553f, { x: 0.36, y: 0.16, z: -0.3, sy: 1.6 });
+    if (lvl >= 2) barrel(m, -0.34, 0.24);
+    if (lvl >= 3) crate(m, 0.36, 0.3, 0, 0.08);
+  };
+  function mineB(ore) {
+    const oreCol = VE.ORES ? VE.ORES[ore].color : 0x444444;
+    return function (m, lvl, ex) {
+      // houten ingang tegen de berg, stutten, rails naar buiten en een stort met erts
+      m.add(new THREE.DodecahedronGeometry(0.42, 0), 0x8e877a, { y: 0.12, z: -0.18, sy: 0.7, j: 0.08 });
+      m.box(0.26, 0.26, 0.04, 0x1e1a18, { y: 0.0, z: 0.1 });
+      m.box(0.04, 0.3, 0.05, C.timber, { x: -0.15, z: 0.12 }); m.box(0.04, 0.3, 0.05, C.timber, { x: 0.15, z: 0.12 });
+      m.box(0.38, 0.05, 0.06, C.timber, { y: 0.3, z: 0.12 });
+      m.box(0.44, 0.03, 0.34, C.woodL, { y: -0.01, z: 0.3, j: 0.1 });            // houten platform
+      for (const sx of [-0.05, 0.05]) m.box(0.012, 0.012, 0.42, C.iron, { x: sx, y: 0.025, z: 0.28 });
+      for (let i = 0; i < 5; i++) m.box(0.14, 0.01, 0.025, C.woodD, { y: 0.018, z: 0.12 + i * 0.08 });
+      // ertsstort
+      for (let i = 0; i < 6; i++) m.ball(0.035, i % 2 ? oreCol : 0x6e675e, { x: 0.26 + (i % 3) * 0.04, y: 0.02 + Math.floor(i / 3) * 0.03, z: 0.32 + (i % 2) * 0.04 });
+      // lantaarn
+      m.box(0.012, 0.12, 0.012, C.iron, { x: 0.15, y: 0.3, z: 0.16 });
+      m.box(0.03, 0.04, 0.03, C.glow, { x: 0.15, y: 0.26, z: 0.2 });
+      // katrolbok
+      m.box(0.025, 0.4, 0.025, C.timber, { x: -0.3, z: 0.18 }); m.box(0.025, 0.4, 0.025, C.timber, { x: -0.3, z: 0.02 });
+      m.box(0.03, 0.03, 0.2, C.timber, { x: -0.3, y: 0.4, z: 0.1 });
+      if (lvl >= 2) crate(m, -0.32, 0.36, 0, 0.08);
+      if (lvl >= 3) barrel(m, 0.34, 0.12);
+      const cart = new VE.Model(91);
+      cart.box(0.12, 0.06, 0.15, 0x6e4a2a, { y: 0.03, j: 0.08 });
+      for (const sx of [-0.065, 0.065]) for (const sz of [-0.05, 0.05]) cart.add(new THREE.CylinderGeometry(0.022, 0.022, 0.012, 8), C.iron, { x: sx, y: 0.022, z: sz, rz: PI / 2 });
+      for (let i = 0; i < 4; i++) cart.ball(0.028, oreCol, { x: -0.03 + (i % 2) * 0.06, y: 0.09, z: -0.03 + Math.floor(i / 2) * 0.06 });
+      ex.anims.push({ geo: cart.build(), x: 0, y: 0.02, z: 0.18, kind: 'cart' });
+      const wheel = new VE.Model(92);
+      wheel.add(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 10), C.wood, { rz: PI / 2 });
+      wheel.box(0.024, 0.13, 0.02, C.woodD, {});
+      ex.anims.push({ geo: wheel.build(), x: -0.3, y: 0.4, z: 0.1, kind: 'wheel' });
+    };
+  }
+  B.coalmine = mineB(1); B.ironmine = mineB(2); B.coppermine = mineB(3); B.goldmine = mineB(4);
+  B.smelter = function (m, lvl, ex) {
+    foundation(m, 0.84, 0.8);
+    m.box(0.5, 0.34, 0.4, C.stone, { x: -0.08, z: -0.12, j: 0.06 });
+    m.roof(0.6, 0.22, 0.5, C.slate, { x: -0.08, y: 0.34, z: -0.12, j: 0.07 });
+    // grote stenen oven met schoorsteen
+    m.cyl(0.16, 0.2, 0.34, 10, C.brick, { x: 0.22, z: 0.06, j: 0.08 });
+    m.cyl(0.08, 0.1, 0.5, 8, C.brick, { x: 0.22, y: 0.34, z: 0.06, j: 0.08 });
+    ex.chimneys.push([0.22, 0.9, 0.06]);
+    m.box(0.1, 0.09, 0.03, 0x1a1010, { x: 0.22, y: 0.06, z: 0.23 });
+    door(m, -0.2, 0.08, 0.11, 0.18);
+    // gietvormen en staven
+    m.box(0.16, 0.03, 0.08, C.stoneD, { x: -0.08, z: 0.3 });
+    for (let i = 0; i < 3; i++) m.box(0.06, 0.02, 0.025, 0xa8b0b8, { x: -0.3 + i * 0.07, y: 0.0, z: 0.34 });
+    // kolenbak
+    m.box(0.14, 0.06, 0.12, C.woodD, { x: -0.32, z: 0.2 });
+    for (let i = 0; i < 4; i++) m.ball(0.025, 0x2b2b30, { x: -0.35 + (i % 2) * 0.05, y: 0.07, z: 0.18 + Math.floor(i / 2) * 0.04 });
+    const glow = new VE.Model(93); glow.box(0.08, 0.07, 0.01, 0xffffff, { j: 0 });
+    ex.anims.push({ geo: glow.build(), x: 0.22, y: 0.065, z: 0.245, kind: 'glow' });
+    const bel = new VE.Model(94); bel.box(0.1, 0.06, 0.14, 0x7a4e2a, { j: 0.06 }); bel.box(0.02, 0.02, 0.08, C.iron, { y: 0.03, z: 0.1 });
+    ex.anims.push({ geo: bel.build(), x: 0.42, y: 0.02, z: 0.1, kind: 'bellows' });
+    if (lvl >= 2) barrel(m, -0.36, -0.3);
+    if (lvl >= 3) crate(m, 0.36, -0.3, 0, 0.09);
+  };
+
   VE.modelCache = {};
   /* Plek (gebouw-lokaal x, y, z) waar de uitvoervoorraad van een productiebedrijf als stapel ligt.
      GLB-modellen hebben hun eigen marker 'pile'; dit is de reserve voor de procedurele modellen. */
   VE.PILE_SPOT = {
     woodcutter: [-0.24, 0.06, 0.34], quarry: [0.26, 0.06, 0.27], sawmill: [-0.15, 0.06, 0.34],
     farm: [0.3, 0.06, 0.27], windmill: [0.3, 0.06, 0.27], bakery: [-0.03, 0.06, 0.34],
-    fisher: [0.14, 0.095, 0.1], vineyard: [-0.04, 0.06, 0.33], winery: [0.07, 0.06, 0.34]
+    fisher: [0.14, 0.095, 0.1], vineyard: [-0.04, 0.06, 0.33], winery: [0.07, 0.06, 0.34],
+    hunter: [0.3, 0.06, 0.3], coalmine: [0.3, 0.06, 0.34], ironmine: [0.3, 0.06, 0.34], coppermine: [0.3, 0.06, 0.34],
+    goldmine: [0.3, 0.06, 0.34], smelter: [-0.1, 0.06, 0.34]
   };
 
   /* Procedureel model zonder cache (ook gebruikt door glb-models.js voor de geanimeerde delen). */
@@ -695,6 +781,11 @@
     else if (kind === 'spade') { handle(0.18); m.box(0.05, 0.06, 0.008, 0x8a8f96, { y: -0.06 }); }
     else if (kind === 'scythe') { handle(0.22); m.box(0.13, 0.02, 0.008, 0xb8bec4, { x: 0.06, y: 0.18, rz: -0.25 }); }
     else if (kind === 'sickle') { handle(0.08); m.box(0.07, 0.015, 0.008, 0xb8bec4, { x: 0.03, y: 0.07, rz: 0.6 }); }
+    else if (kind === 'net') {   // jachtnet aan een stok: een ring met een zak van touw
+      handle(0.2);
+      m.add(new THREE.TorusGeometry(0.06, 0.006, 4, 12), 0x9c7a50, { y: 0.22, rx: PI / 2 - 0.3 });
+      m.add(new THREE.ConeGeometry(0.058, 0.1, 8, 1, true), 0xd9c7a0, { y: 0.175, z: -0.015, rx: PI - 0.3, j: 0.04 });
+    }
     else if (kind === 'rod') { m.box(0.01, 0.4, 0.01, 0x9c7a50, { y: -0.03 }); m.box(0.003, 0.25, 0.003, 0xeeeeee, { x: 0.0, y: 0.12, z: 0.03, rx: 0.3 }); }
     return m.build();
   };
@@ -710,6 +801,22 @@
       case 'fish': m.ball(0.04, 0x79b3df, { sx: 2, sy: 0.8, sz: 0.6 }, 1); m.cone(0.03, 0.05, 4, 0x5f9bc9, { x: -0.1, y: -0.025, rz: PI / 2 }); break;
       case 'grape': m.cyl(0.06, 0.045, 0.06, 8, 0xb08050, { y: -0.03 }); for (let i = 0; i < 5; i++) m.ball(0.025, 0x6b2d7a, { x: (i % 3 - 1) * 0.03, y: 0.035, z: (i % 2) * 0.02 }); break;
       case 'wine': m.cyl(0.05, 0.045, 0.11, 8, 0x9c6b3f, { y: -0.04 }); m.cyl(0.052, 0.052, 0.01, 8, 0x555555, { y: 0.0 }); break;
+      // vlees: een ham in een doek gebonden (vriendelijk, geen bloed)
+      case 'meat': m.ball(0.05, 0xc8553f, { sx: 1.25, sy: 0.85, z: 0.01 }, 1); m.ball(0.03, 0xf2b8a0, { x: 0.035, y: 0.025, z: 0.01, sx: 1.2, sy: 0.5 }, 1);
+        m.cyl(0.012, 0.012, 0.07, 6, 0xf3ead6, { x: -0.07, y: -0.035, rz: PI / 2 }); m.ball(0.017, 0xf3ead6, { x: -0.105, y: 0.0 }); break;
+      case 'coal': for (let i = 0; i < 4; i++) m.add(new THREE.DodecahedronGeometry(0.03 + (i % 2) * 0.008, 0), i % 2 ? 0x2b2b30 : 0x3a3a40, { x: (i % 2 - 0.5) * 0.05, y: Math.floor(i / 2) * 0.03 - 0.01, z: (i - 1.5) * 0.012, j: 0.08 }); break;
+      case 'ironore': case 'copperore': case 'goldore': {
+        const base = res === 'goldore' ? 0x8f8a82 : res === 'copperore' ? 0x8a6a50 : 0x6e5a4c;
+        const vein = res === 'goldore' ? 0xf2c443 : res === 'copperore' ? 0x3fae94 : 0xc0612f;
+        m.add(new THREE.DodecahedronGeometry(0.055, 0), base, { sy: 0.8, j: 0.06 });
+        for (let i = 0; i < 4; i++) { const a = i * 1.6; m.add(new THREE.OctahedronGeometry(0.018, 0), vein, { x: Math.cos(a) * 0.045, y: 0.012 + (i % 2) * 0.015, z: Math.sin(a) * 0.04, j: 0.03 }); }
+        break;
+      }
+      case 'ironbar': case 'copperbar': case 'goldbar': {
+        const col = res === 'goldbar' ? 0xe8b73a : res === 'copperbar' ? 0xc4703e : 0x9aa2aa;
+        m.add(new THREE.CylinderGeometry(0.05, 0.068, 0.035, 4, 1), col, { ry: PI / 4, sz: 0.5, y: -0.01, j: 0.02 });
+        break;
+      }
       default: m.ball(0.04, 0xf2c443, {});
     }
     return m.build();

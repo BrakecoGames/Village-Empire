@@ -23,14 +23,21 @@
     hq: { levels: 1, first: true }, yard: { levels: 1, first: true },
     house: { first: true }, woodcutter: { first: true }, forester: { first: true }, quarry: { first: true }, sawmill: { first: true },
     farm: {}, windmill: {}, bakery: {}, fisher: {}, market: {}, tower: {},
-    vineyard: {}, winery: {}, tavern: {}, warehouse: {}, monument: {}
+    vineyard: {}, winery: {}, tavern: {}, warehouse: {}, monument: {},
+    // jacht en mijnbouw. De vier mijnen delen één model (mine.glb, nodes mine_l1..l3); de ertsaders
+    // in de rots en het bordje (materialen Vein/Vein2) krijgen per mijn de kleur van het erts
+    hunter: {}, smelter: {},
+    coalmine: { file: 'mine', node: 'mine', tint: { Vein: 0x26262b, Vein2: 0x6f7688 } },
+    ironmine: { file: 'mine', node: 'mine', tint: { Vein: 0xb0582c, Vein2: 0x6e4a38 } },
+    coppermine: { file: 'mine', node: 'mine', tint: { Vein: 0x3fae94, Vein2: 0x6fd6c4 } },
+    goldmine: { file: 'mine', node: 'mine', tint: { Vein: 0xf2c443, Vein2: 0xffe58a } }
   };
   const SOURCES = {};
   for (const t in TYPES) {
     const n = TYPES[t].levels || 3, levels = {};
-    for (let l = 1; l <= n; l++) levels[l] = t + '_l' + l;
+    for (let l = 1; l <= n; l++) levels[l] = (TYPES[t].node || t) + '_l' + l;
     // ?v=versie: na een nieuwe release haalt de browser de modellen opnieuw op (geen oude cache)
-    SOURCES[t] = { url: 'public/models/' + t + '.glb' + (VE.VERSION ? '?v=' + VE.VERSION : ''), levels: levels, first: !!TYPES[t].first };
+    SOURCES[t] = { url: 'public/models/' + (TYPES[t].file || t) + '.glb' + (VE.VERSION ? '?v=' + VE.VERSION : ''), levels: levels, first: !!TYPES[t].first };
   }
   const TIMEOUT_MS = 10000;
   /* Sterkte van de in Blender gebakken ambient occlusion (COLOR_0): 0 = uit, 1 = volledig. */
@@ -51,7 +58,7 @@
   const _m = new THREE.Matrix4(), _inv = new THREE.Matrix4(), _c = new THREE.Color(), _v = new THREE.Vector3();
 
   /** Zet een GLB-node (met submeshes/materialen) om naar één vertex-gekleurde geometrie. */
-  function bakeNode(node, seed) {
+  function bakeNode(node, seed, tint) {
     const rnd = VE.rng(seed);
     node.updateMatrixWorld(true);
     _inv.copy(node.matrixWorld).invert();
@@ -70,6 +77,8 @@
       const at = name.lastIndexOf('@');
       const jit = at >= 0 ? parseFloat(name.slice(at + 1)) || 0 : 0.04;
       const col = mat.color ? mat.color.clone().convertLinearToSRGB() : new THREE.Color(0xcccccc);
+      const base = at >= 0 ? name.slice(0, at) : name;
+      if (tint && tint[base] !== undefined) col.setHex(tint[base]);       // variant (bijv. mijn per ertssoort)
       // gebakken AO (vertex-kleur) → per hoekpunt een helderheidsfactor; gloeiende ramen niet verdonkeren
       let ao = null;
       const ca = g.attributes.color;
@@ -124,11 +133,14 @@
   VE.bakeGlbNode = (node, seed) => bakeNode(node, seed);
   VE.loadGlb = url => loadGlb(url);
 
+  // één keer laden per bestand (meerdere gebouwtypes kunnen uit hetzelfde GLB komen)
+  const glbCache = {};
   function loadGlb(url) {
-    return new Promise((resolve, reject) => {
+    if (glbCache[url]) return glbCache[url];
+    return (glbCache[url] = new Promise((resolve, reject) => {
       if (!THREE.GLTFLoader) { reject(new Error('GLTFLoader niet beschikbaar')); return; }
       new THREE.GLTFLoader().load(url, resolve, undefined, reject);
-    });
+    }));
   }
 
   /** Gebouwen die al met het procedurele model in de wereld staan, opnieuw opbouwen. */
@@ -147,7 +159,7 @@
       for (const lvl in src.levels) {
         const node = gltf.scene.getObjectByName(src.levels[lvl]);
         if (!node) throw new Error('node ' + src.levels[lvl] + ' ontbreekt in ' + src.url);
-        const geo = bakeNode(node, type.length * 31 + +lvl);
+        const geo = bakeNode(node, type.length * 31 + +lvl, TYPES[type].tint);
         if (!geo) throw new Error('node ' + src.levels[lvl] + ' bevat geen meshes');
         // markers uitlezen: rookpunten en ankers voor animaties
         const chimneys = [], anchors = {}, pre = src.levels[lvl] + '_';
@@ -183,7 +195,7 @@
       }
       VE.modelSource[type] = 'glb';
       if (replaced) refreshExisting(type);
-      gltf.scene.traverse(o => { if (o.isMesh) { o.geometry.dispose(); } });
+      if (!TYPES[type].file) gltf.scene.traverse(o => { if (o.isMesh) { o.geometry.dispose(); } });
     } catch (e) {
       VE.modelSource[type] = 'procedural';
       console.warn('[Village Empire] ' + type + ': GLB niet geladen, oorspronkelijk model wordt gebruikt.', e && e.message || e);

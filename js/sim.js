@@ -116,11 +116,15 @@
       this.scaffolds = {};
       if (save) this.load(save, rand);
       else this.newVillage(rand);
+      // ertsaders in de bergen: uit de save, of (nieuw dorp / oude save) deterministisch uit de seed
+      if (VE.Mining) VE.Mining.init(this, save ? save.ore : null);
       if (w.veg) w.veg.settle();             // geen struiken door stammen; easter eggs op een vrije plek
       this.updateTerritory(true);
       if (!this.buildings.some(b => b.type === 'yard')) this.placeYard(); // new village, or a save from before stockyards
       w.rebuildRoads();
       this.nature.update(0, 1);
+      // wilde dieren (na het dorp: ze mijden de drukke dorpskern)
+      this.wild = VE.Wildlife ? new VE.Wildlife(this, save ? save.wild : null) : null;
     }
     dispose() { this.scene.remove(this.root); }
 
@@ -158,6 +162,19 @@
       return Math.min(MAX_POP, c);
     }
     lvlMult(b) { return 1 + 0.4 * (b.level - 1); }
+    /* recept van een werkplaats: { inp, out, time, outGold }. Smelterij: het gekozen metaal. */
+    rcp(b) { const d = b.def; return d.recipes ? (d.recipes[b.recipe] || d.recipes[d.recipe]) : d; }
+    setRecipe(b, key) {
+      const d = b.def;
+      if (!d.recipes || !d.recipes[key] || b.recipe === key) return false;
+      const R = d.recipes[key];
+      if (R.rank && this.rank < R.rank) return false;
+      b.recipe = key;
+      // grondstoffen die het nieuwe recept niet gebruikt: terug naar de uitvoer, dragers brengen ze weg
+      for (const r in b.input) if (b.input[r] > 0 && !R.inp[r]) { b.output[r] = (b.output[r] || 0) + b.input[r]; b.input[r] = 0; }
+      if (!b.working) b.status = '';
+      return true;
+    }
     gatherMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.tools); }
     craftMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.craft); }
     tradeMult() { return 1 + 0.15 * this.upg.trade; }
@@ -192,19 +209,42 @@
         const k = b * N + a;
         if (!w.owned[k]) return { ok: false, why: 'Outside your borders' };
         if (w.type[k] === 1) return { ok: false, why: 'Cannot build on water' };
-        if (w.type[k] === 2) return { ok: false, why: 'Too rocky here' };
+        if (def.mountain) {
+          if (w.type[k] !== 2) return { ok: false, why: 'Mines can only be built on the mountain' };
+          if (w.road[k]) return { ok: false, why: 'A path is in the way' };
+          if (w.ore && w.ore[k]) return { ok: false, why: 'That is the vein itself: build right beside it' };
+        } else if (w.type[k] === 2) return { ok: false, why: 'Too rocky here' };
         if (w.bld[k]) return { ok: false, why: 'Space is taken' };
         if (w.door[k]) return { ok: false, why: 'An entrance is in the way' };
         if (w.rock[k]) return { ok: false, why: 'A boulder is in the way' };
         if (w.field[k]) return { ok: false, why: 'A field is in the way' };
       }
-      if (w.slope(i, j, size) > (size > 1 ? 1.1 : 0.75)) return { ok: false, why: 'Ground too steep' };
+      if (w.slope(i, j, size) > (def.mountain ? 1.9 : size > 1 ? 1.1 : 0.75)) return { ok: false, why: def.mountain ? 'This cliff is too steep' : 'Ground too steep' };
       const di = i + (size > 1 ? 1 : 0), dj = j + size;
       if (!w.inb(di, dj)) return { ok: false, why: 'No room for an entrance' };
       const dk = dj * N + di;
       if (w.type[dk] === 1 || w.bld[dk] || w.rock[dk]) return { ok: false, why: 'Entrance is blocked' };
+      if (def.mountain) {
+        const M = VE.Mining, ore = VE.ORES[def.ore];
+        if (M && !M.near(w, i + 0.5, j + 0.5, def.ore, def.radius)) {
+          const other = M.anyNear(w, i + 0.5, j + 0.5, def.radius);
+          return { ok: false, why: other ? 'No ' + ore.name + ' here, but ' + VE.ORES[other].name + ': try a ' + VE.DEFS[VE.ORES[other].mine].name : 'No ' + ore.name + ' vein within reach' };
+        }
+        if (!this.routeToStore(dk)) return { ok: false, why: 'No route to your storage from here' };
+      }
       if (def.gold && this.gold < def.gold) return { ok: false, why: 'Needs ' + def.gold + ' gold' };
+      if (def.mountain) { const n = VE.ORES[def.ore].name; return { ok: true, why: 'Good spot: ' + (/^[aeiou]/.test(n) ? 'an ' : 'a ') + n + ' vein is within reach' }; }
       return { ok: true };
+    }
+    /* kan een drager van deze tegel naar een opslag lopen? (gecachet tot er iets gebouwd/gesloopt wordt) */
+    routeToStore(k) {
+      const key = k + ':' + this.bid + ':' + this.buildings.length;
+      this._route = this._route || {};
+      if (this._route[key] !== undefined) return this._route[key];
+      const st = this.nearestStorage(k % N + 0.5, ((k / N) | 0) + 0.5);
+      const ok = !!(st && this.pf.find(k, st.doorK));
+      if (Object.keys(this._route).length > 400) this._route = {};
+      return (this._route[key] = ok);
     }
     placeBuilding(type, i, j, instant) {
       const def = DEFS[type], w = this.world, size = def.size || 1;
@@ -218,6 +258,7 @@
       b.dx = b.doorI + 0.5; b.dz = b.doorJ + 0.32;
       if (def.cost) for (const r in def.cost) b.total += def.cost[r];
       if (def.market) for (const r of ['bread', 'fish', 'wine', 'flour']) b.sell[r] = true;
+      if (def.recipes) b.recipe = def.recipe;
       for (let dj = 0; dj < size; dj++) for (let di = 0; di < size; di++) {
         const k = (j + dj) * N + i + di;
         w.bld[k] = b.id; w.road[k] = 0; w.wear[k] = 0;
@@ -237,6 +278,7 @@
       b.y = w.flatten(i, j, size);
       this.nature.refreshArea(i - 1, j - 1, i + size, j + size);
       w.refreshDecoArea(i - 1, j - 1, i + size, j + size);
+      if (VE.Mining && w.deposits) VE.Mining.refreshArea(w, i - 1, j - 1, i + size, j + size);
       w.recolor();
       this.makeMesh(b);
       this.buildings.push(b); this.bmap[b.id] = b;
@@ -253,7 +295,7 @@
       mesh.castShadow = true; mesh.receiveShadow = true;
       g.add(mesh);
       b.anims = md.anims.map(a => {
-        const am = new THREE.Mesh(a.geo, this.mats.building);
+        const am = new THREE.Mesh(a.geo, a.kind === 'glow' && VE.glowMat ? VE.glowMat() : this.mats.building);
         am.position.set(a.x, a.y, a.z); am.castShadow = true; g.add(am);
         return { mesh: am, kind: a.kind, ph: Math.random() * 6 };
       });
@@ -427,6 +469,7 @@
       if (d.incoming[t.res]) d.incoming[t.res]--;
       if (!d.built) d.delivered[t.res] = (d.delivered[t.res] || 0) + 1;
       else if (d.def.storage) this.stock[t.res]++;
+      else if (d.def.recipes && !this.rcp(d).inp[t.res]) d.output[t.res] = (d.output[t.res] || 0) + 1;
       else d.input[t.res] = (d.input[t.res] || 0) + 1;
       s.carry = null; s.task = null; s.mode = 'idle'; s.wt = 0.2;
     }
@@ -448,7 +491,7 @@
         if (!b.alive || b === from || b.unreach > this.time) continue;
         let want = 0;
         if (!b.built) { if (b.def.cost && b.def.cost[res]) want = b.def.cost[res] - (b.delivered[res] || 0) - (b.incoming[res] || 0); }
-        else if (b.def.inp && b.def.inp[res] && (!b.def.market)) want = this.cap(b) - (b.input[res] || 0) - (b.incoming[res] || 0);
+        else if (b.def.inp && !b.def.market) { const R = this.rcp(b); if (R.inp[res]) want = this.cap(b) - (b.input[res] || 0) - (b.incoming[res] || 0); }
         if (want <= 0) continue;
         const d = (b.dx - from.dx) ** 2 + (b.dz - from.dz) ** 2;
         if (d < bd) { bd = d; best = b; }
@@ -510,7 +553,8 @@
           let n = 0;
           for (const b of B) {
             if (!alive(b) || !b.built || !b.def.inp) continue;
-            for (const r in b.def.inp) {
+            const R = this.rcp(b);
+            for (const r in R.inp) {
               let want = this.cap(b) - (b.input[r] || 0) - (b.incoming[r] || 0);
               while (want > 0 && n < cap && idle.length && this.avail(r) > 0) {
                 const src = this.nearestStorage(b.dx, b.dz); if (!src) break;
@@ -616,6 +660,7 @@
       if (b && b.worker === s) b.worker = null;
       if (s.resv) {
         const f = s.resv; f.reserved = false; s.resv = null;
+        if (f.onRelease) f.onRelease(s);
         // half gemaaid of hok nog niet opgepakt: het veld staat er weer zoals voor het maaien
         if (f.mow || f.state === 'cut') { f.mow = 0; if (f.state === 'cut') f.state = 'grown'; if (!f.dead && this.nature.setFieldM) this.nature.setFieldM(f); }
       }
@@ -811,8 +856,69 @@
           if (!ok) { s.hidden = true; s.wstate = 'inside'; s.wt = 3; }
         }
       }
+      if (d.gather === 'ore') this.thinkMine(s, b, d);
+      else if (d.gather === 'hunt') this.thinkHunt(s, b, d);
       // indoor workers just stay inside; the building does the work
-      else { s.wt = 0.5; }
+      if (!d.gather) { s.wt = 0.5; }
+    }
+    /* mijnwerker: loopt naar de ertsader naast de mijn, hakt een brok los en brengt die naar de mijn */
+    thinkMine(s, b, d) {
+      const w = this.world, M = VE.Mining, gm = this.gatherMult(b);
+      if (this.outFull(b)) { b.status = 'Waiting for carriers'; s.wt = 1; return; }
+      const r = d.radius + (b.level - 1) * 0.5;
+      const dep = M && M.pick(w, b.cx, b.cz, d.ore, r);
+      if (!dep) { b.status = M && M.near(w, b.cx, b.cz, d.ore, r) ? 'Waiting for a free spot at the vein' : 'The ' + VE.ORES[d.ore].name + ' vein is exhausted'; s.wt = 4; return; }
+      dep.reserved = true; s.resv = dep; b.status = 'Mining ' + VE.RES[d.out].name.toLowerCase();
+      const sp = this.standPoint(b, dep.x, dep.z, 0.32);
+      const ok = this.goAct(s, b, dep.k, sp[0], sp[1], [dep.x, dep.z], 'pick', d.time / gm, () => {
+        s.resv = null; dep.reserved = false;
+        if (dep.amount <= 0) { this.goHome(s, b, null); return; }
+        M.take(w, dep);
+        emit('dust', { x: dep.x, y: w.heightAt(dep.x, dep.z) + 0.2, z: dep.z, n: 5, stone: true });
+        this.goHome(s, b, d.out, () => this.produce(b, d.out, 1));
+      });
+      if (!ok) { dep.reserved = false; s.resv = null; s.hidden = true; s.wstate = 'inside'; s.wt = 3; b.status = 'Cannot reach the vein'; }
+    }
+    /* jager: sluipt naar een dier, gooit een net; lukt het, dan brengt hij het vlees thuis */
+    thinkHunt(s, b, d) {
+      const wl = this.wild, gm = this.gatherMult(b);
+      if (!wl) { b.status = 'No game in range'; s.wt = 4; return; }
+      if (this.outFull(b)) { b.status = 'Waiting for carriers'; s.wt = 1; return; }
+      const r = d.radius + (b.level - 1);
+      const a = wl.findPrey(b.cx, b.cz, r);
+      if (!a) { b.status = wl.anyGameNear(b.cx, b.cz, r) ? 'Letting the game recover' : 'No game in range'; s.wt = 4; return; }
+      const SP = a.sp;
+      const st = wl.stalkPoint(a, b);
+      if (!st) { s.wt = 2; return; }
+      a.reserved = true; s.resv = a; b.status = 'Stalking a ' + SP.name.toLowerCase();
+      s.hidden = false; s.x = b.dx; s.z = b.dz; s.wstate = 'walk'; s.act = null;
+      const ok = this.walkTo(s, st.k, () => {
+        if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
+        const dist = Math.hypot(a.x - s.x, a.z - s.z);
+        if (a.dead || a.state === 'flee' || dist > 2.6) {          // weggesprongen voor de jager er was
+          if (s.resv === a) { a.reserved = false; s.resv = null; }
+          b.status = 'The ' + SP.name.toLowerCase() + ' got away';
+          this.goHome(s, b, null); return;
+        }
+        wl.hold(a, s);
+        s.wstate = 'act'; s.act = 'hunt'; s.ap = 0; s.actTick = 0; s.wt = d.time * SP.effort / gm;
+        s.rot = Math.atan2(a.x - s.x, a.z - s.z);
+        s.onAct = () => {
+          if (s.resv === a) s.resv = null;
+          a.reserved = false;
+          if (a.dead) { this.goHome(s, b, null); return; }
+          if (Math.random() < SP.catch * (1 + 0.1 * (b.level - 1))) {
+            wl.caught(a);
+            sfx('plant', a.x, a.z);
+            this.goHome(s, b, 'meat', () => this.produce(b, 'meat', SP.meat));
+          } else {
+            wl.scare(a, s.x, s.z);
+            b.status = 'The ' + SP.name.toLowerCase() + ' escaped the net';
+            this.goHome(s, b, null);
+          }
+        };
+      }, st.x, st.z);
+      if (!ok) { a.reserved = false; s.resv = null; s.hidden = true; s.wstate = 'inside'; s.wt = 3; b.status = 'Cannot reach the game'; }
     }
     updateWorker(s, dt) {
       const b = s.work;
@@ -837,6 +943,7 @@
         if (a.kind === 'sails') { a.speed = VE.lerp(a.speed || 0, b.working ? 1.6 : 0.15, dt * 0.8); a.mesh.rotation.z -= a.speed * dt; }
         else if (a.kind === 'saw') { if (b.working) a.mesh.rotation.z -= dt * 14; }
         else if (a.kind === 'flag') { a.ph += dt * 2.2; a.mesh.rotation.y = Math.sin(a.ph) * 0.35 + Math.sin(a.ph * 2.3) * 0.12; }
+        else if (VE.animPart) VE.animPart(this, b, a, dt);         // mijnkarretje, katrol, blaasbalg, gloed (js/mining.js)
       }
       if (!b.built) return;
       // smoke
@@ -867,20 +974,32 @@
       }
       if (!d.inp) return;
       if (!present) { b.status = s ? 'Worker is on the way' : 'Needs a worker'; b.working = false; return; }
+      if (d.recipes) this.smithAtOven(b, s, dt);
+      const R = this.rcp(b);
       if (!b.working) {
-        let ok = true; for (const r in d.inp) if ((b.input[r] || 0) < d.inp[r]) ok = false;
-        if (!ok) { b.status = 'Waiting for ' + Object.keys(d.inp).map(r => VE.RES[r].name.toLowerCase()).join(' & '); return; }
-        if (d.out && this.outFull(b)) { b.status = 'Waiting for carriers'; return; }
-        for (const r in d.inp) b.input[r] -= d.inp[r];
-        b.working = true; b.wt = d.time; b.status = 'Working';
+        let ok = true; for (const r in R.inp) if ((b.input[r] || 0) < R.inp[r]) ok = false;
+        if (!ok) { b.status = 'Waiting for ' + Object.keys(R.inp).map(r => VE.RES[r].name.toLowerCase()).join(' & '); return; }
+        if (R.out && this.outFull(b)) { b.status = 'Waiting for carriers'; return; }
+        for (const r in R.inp) b.input[r] -= R.inp[r];
+        b.working = true; b.wt = R.time; b.wt0 = R.time; b.batch = b.recipe || null; b.status = d.recipes ? 'Smelting ' + R.name.toLowerCase() : 'Working';
       } else {
         b.wt -= dt * this.craftMult(b);
         if (b.wt <= 0) {
           b.working = false;
-          if (d.out) for (const r in d.out) this.produce(b, r, d.out[r]);
-          if (d.outGold) this.earn(Math.round(d.outGold * this.tradeMult()), b.cx, b.y + 1.1, b.cz);
+          const RB = d.recipes && b.batch && d.recipes[b.batch] ? d.recipes[b.batch] : R;   // de lopende batch maakt af wat erin ging
+          if (RB.out) for (const r in RB.out) this.produce(b, r, RB.out[r]);
+          if (RB.outGold) this.earn(Math.round(RB.outGold * this.tradeMult()), b.cx, b.y + 1.1, b.cz);
         }
       }
+    }
+    /* smelterij: tijdens het smelten staat de smelter buiten bij de ovenmond (hamer, vonken); daarna weer binnen */
+    smithAtOven(b, s, dt) {
+      const md = VE.buildModel(b.type, b.level), g = md.anims && md.anims.find(a => a.kind === 'glow');
+      if (b.working && g) {
+        s.hidden = false; s.tool = 'hammer'; s.act = 'hammer'; s.ap += dt;
+        s.x = b.cx + g.x + 0.05; s.z = b.cz + g.z + 0.15; s.rot = Math.PI + 0.25;
+        if (Math.floor(s.ap / 0.45) !== s.actTick) { s.actTick = Math.floor(s.ap / 0.45); if (s.actTick % 2 === 0) sfx('hammer', s.x, s.z); }
+      } else if (s.act === 'hammer') { s.hidden = true; s.act = null; s.x = b.dx; s.z = b.dz; }
     }
     updateIdle(s, dt) {
       if (s.path) return;
@@ -915,6 +1034,7 @@
       }
       for (const b of this.buildings) this.updateBuilding(b, dt);
       this.nature.update(dt, this.growMult());
+      if (this.wild) this.wild.update(dt);
       // exploration: wherever settlers walk, the clouds lift
       this.fogT = (this.fogT || 0) - dt;
       if (this.fogT <= 0) {
@@ -929,7 +1049,7 @@
       if (this.arriveT <= 0) {
         const cap = this.popCap();
         if (this.settlers.length < cap) {
-          const food = this.avail('bread') > 0 ? 'bread' : this.avail('fish') > 0 ? 'fish' : null;
+          const food = (VE.FOOD || ['bread', 'fish']).find(r => this.avail(r) > 0) || null;
           if (food) this.stock[food]--;
           const s = this.spawnSettler();
           if (s) emit('arrive', { x: s.x, z: s.z });
@@ -996,8 +1116,9 @@
         stats: this.stats, upg: this.upg, pop: this.settlers.length, speed: this.speed,
         buildings: this.buildings.filter(b => b.alive).map(b => ({
           id: b.id, t: b.type, i: b.i, j: b.j, l: b.level, b: b.built ? 1 : 0, u: b.used,
-          d: b.built ? {} : b.delivered, inp: b.input, out: b.output, sell: b.sell, keep: b.keep
+          d: b.built ? {} : b.delivered, inp: b.input, out: b.output, sell: b.sell, keep: b.keep, rc: b.recipe || undefined
         })),
+        ore: VE.Mining ? VE.Mining.serialize(w) : undefined, wild: this.wild ? this.wild.serialize() : undefined,
         roads: roads, nature: this.nature.serialize(), fog: w.serializeFog(), cam: cam || null, saved: Date.now()
       };
     }
@@ -1017,6 +1138,7 @@
         if (bs.l > 1) { b.level = bs.l; this.makeMesh(b); }
         if (!b.built) { b.delivered = bs.d || {}; b.used = bs.u || 0; b.mesh.scale.y = 0.03 + 0.97 * (b.total ? b.used / b.total : 0); }
         b.input = bs.inp || {}; b.output = bs.out || {}; if (bs.sell) b.sell = bs.sell; if (bs.keep !== undefined) b.keep = bs.keep;
+        if (bs.rc && b.def.recipes && b.def.recipes[bs.rc]) b.recipe = bs.rc;
       }
       // stats.built was re-incremented by instant completes; restore the saved values
       if (sv.stats && sv.stats.built) this.stats.built = Object.assign({}, sv.stats.built);

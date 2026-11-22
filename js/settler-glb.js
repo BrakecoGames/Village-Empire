@@ -17,7 +17,9 @@
   const S = 1.28;                     // zelfde schaal als de oude dorpelingen
   const TAU = Math.PI * 2;
   // perioden (s) van de werkbewegingen in de simulatie (zie oude SettlerRender.toolAngle / sim.js)
-  const ACT_PERIOD = { chop: 0.75, pick: 0.6, hammer: 0.45, harvest: TAU / 6, dig: TAU / 5, sow: TAU / 5, fish: TAU / 1.4 };
+  const ACT_PERIOD = { chop: 0.75, pick: 0.6, hammer: 0.45, harvest: TAU / 6, dig: TAU / 5, sow: TAU / 5, fish: TAU / 1.4, hunt: 1.8 };
+  // werkclip die (nog) niet in settler.glb zit: een clip die erop lijkt
+  const ACT_ALIAS = { hunt: 'sow' };
   const BLEND = 0.18;                 // overvloeitijd tussen clips (s)
   const LOD_FAR = 24;                 // verder dan dit (camera-afstand): geen eggs/baarden, halve animatie-update
 
@@ -34,9 +36,9 @@
   const HAT = {
     carrier: 'hat_straw', builder: 'hat_hood', woodcutter: 'hat_beanie', forester: 'hat_feather', mason: 'hat_helmet',
     farmer: 'hat_wide', miller: 'hat_floppy', baker: 'hat_toque', fisher: 'hat_souwester', vintner: 'hat_beret',
-    merchant: 'hat_bycocket', innkeeper: 'hat_bandana', sawyer: 'hat_flatcap', guard: 'hat_kettle'
+    merchant: 'hat_bycocket', innkeeper: 'hat_bandana', sawyer: 'hat_flatcap', guard: 'hat_kettle', hunter: 'hat_feather', miner: 'hat_helmet', smelter: 'hat_bandana'
   };
-  const APRON = new Set(['baker', 'miller', 'innkeeper', 'sawyer']);
+  const APRON = new Set(['baker', 'miller', 'innkeeper', 'sawyer', 'smelter']);
   /* Easter eggs: ~13% van de bewoners krijgt er één (vast per bewoner en beroep).
      part: extra deel; hat/beard: vervangt hoed/baard; fx: speciaal effect. roles: alleen voor die beroepen. */
   const EGGS = [
@@ -161,7 +163,7 @@
         this.part[k] = { mesh: mk(A.parts[k].geo, pairs ? cap * 2 : cap, SHADOW.test(k)), node: A.parts[k].node, n: 0 };
       }
       this.tools = {};
-      for (const t of ['axe', 'hammer', 'pick', 'spade', 'scythe', 'sickle', 'rod']) this.tools[t] = { mesh: mk(VE.toolGeo(t), 100, true), n: 0 };
+      for (const t of ['axe', 'hammer', 'pick', 'spade', 'scythe', 'sickle', 'rod', 'net']) this.tools[t] = { mesh: mk(VE.toolGeo(t), 100, true), n: 0 };
       this.items = {};
       for (const r of VE.RES_ORDER) this.items[r] = { mesh: mk(VE.itemGeo(r), 140, true), n: 0 };
       this.roleCol = {};
@@ -199,9 +201,10 @@
     /* clip + tijd voor deze bewoner, volgens de spelstatus */
     choose(s, T) {
       const clips = this.A.clips;
-      if (s.act && clips[s.act]) {
-        const P = ACT_PERIOD[s.act] || clips[s.act].dur;
-        return [s.act, ((s.ap % P) / P) * clips[s.act].dur];
+      const act = s.act && !clips[s.act] ? ACT_ALIAS[s.act] : s.act;
+      if (act && clips[act]) {
+        const P = ACT_PERIOD[s.act] || clips[act].dur;
+        return [act, ((s.ap % P) / P) * clips[act].dur];
       }
       if (s.carry) {
         if (s.moving) return ['carry', ((s.wp / TAU) % 1) * clips.carry.dur];

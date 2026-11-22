@@ -98,3 +98,29 @@ De game (`js/nature-glb.js`) maakt van elke node één InstancedMesh. Materiaaln
 wind: `Leaf*`, `Needle*`, `Blossom*`, `Fruit*`, `Grass*`, `Fl*`, `Petal*`, `Berry*` bewegen,
 `Twig*` een beetje, stam/steen/hout niet. Grassoorten zijn licht van kleur: de game tint ze per
 exemplaar. Bouwen: `npm run models -- nature`. Uitschakelen om te vergelijken: `index.html?oldnature`.
+
+## Wilde dieren (`models/animals.py` → `public/models/animals.glb`)
+
+Zeven soorten (konijn, ree, hert, wild zwijn, vos, eekhoorn, zangvogel), opgebouwd zoals de bewoners:
+- **Rig per soort:** lege nodes `rig_<soort>_<node>` (root, body, head, tail, legFL/FR/BL/BR; herten en
+  reeën ook `neck`; de vogel `wingL`/`wingR`).
+- **Delen:** `<soort>__<node>__<deel>`. Een deel op `legF` of `legB` wordt in de game aan beide kanten
+  gebruikt (linker- en rechterpoot). Het gewei (`deer__head__antlers`) krijgen alleen bokken.
+- **Clips:** NLA-tracks `<soort>_<clip>`, met idle, walk, run, eat, alert en rest. Daarnaast heeft de vos
+  `pounce`, de vogel `fly` en `walk` (hupjes), zit het konijn bij `alert` rechtop en heeft de
+  eekhoorn bij `eat` een nootje.
+
+Valkuil: de draaipunten in `quad_nodes` zijn plekken t.o.v. het midden van het lijf (`hb`). Een draaipunt
+op grondhoogte laat de kop bij het grazen los van het lijf zwaaien.
+In de game (`js/wildlife.js`) is elk deel één InstancedMesh voor alle dieren van die soort. Bouwen:
+`npm run models -- animals`. Zonder GLB (`index.html?noanimals`) tekent een procedurele reserve.
+
+## Jacht en mijnbouw
+
+- `models/hunter.py`: jagershut, 3 levels, rook en `pile`-marker.
+- `models/smelter.py`: smelterij, 3 levels. De gloed (`anim_glow`) en de blaasbalg (`anim_bellows`)
+  bewegen in de game.
+- `models/mine.py`: één mijnschacht, `mine_l1..l3`, gedeeld door alle vier de mijnen. De materialen `Vein`
+  en `Vein2` krijgen per mijntype de kleur van het erts (`TYPES.<mijn>.tint` in `js/glb-models.js`). Het
+  karretje (`anim_cart`) rijdt over de rails en de katrol (`anim_wheel`) draait.
+- `models/ores.py`: ertsaders `ore_<coal|iron|copper|gold>_<0|1>`, geladen door `js/mining.js`.
