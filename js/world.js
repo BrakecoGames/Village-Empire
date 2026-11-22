@@ -12,6 +12,7 @@
       this.seed = seed; this.N = N; this.root = root;
       this.H = new Float32Array(V1 * V1);
       this.mount = new Float32Array(N * N); this.forest = new Float32Array(N * N); this.gnoise = new Float32Array(V1 * V1);
+      this.soft = new Uint8Array(N * N);   // gebouwtegels zonder aarde eronder (startvoorraad in het gras)
       this.type = new Uint8Array(N * N); this.bld = new Int32Array(N * N); this.road = new Uint8Array(N * N); // 0 grass, 1 faint trail, 2 worn path
       this.wear = new Float32Array(N * N); // how much settlers have walked here
       this.owned = new Uint8Array(N * N); this.door = new Uint8Array(N * N);
@@ -280,6 +281,13 @@
       }
       return false;
     }
+    vertexNearHard(x, z) {
+      for (let dz = -1; dz <= 0; dz++) for (let dx = -1; dx <= 0; dx++) {
+        const i = x + dx, j = z + dz; if (!this.inb(i, j)) continue;
+        const k = j * N + i; if (this.bld[k] && !this.soft[k]) return true;
+      }
+      return false;
+    }
     vertexNear(x, z, arr) {
       for (let dz = -1; dz <= 0; dz++) for (let dx = -1; dx <= 0; dx++) {
         const i = x + dx, j = z + dz; if (this.inb(i, j) && arr[j * N + i]) return true;
@@ -302,7 +310,7 @@
         if (h > 4.6) c.lerp(snow, VE.smooth(4.6, 5.6, h));
         if (h < 0.34) c.lerp(sand, VE.smooth(0.34, 0.14, h));
         if (h < 0.0) c.lerp(bed, VE.smooth(0.0, -0.35, h));
-        if (this.vertexNear(x, z, this.bld)) c.lerp(dirt, 0.55);
+        if (this.vertexNearHard(x, z)) c.lerp(dirt, 0.55);
         if (!this.vertexOwned(x, z)) { c.lerp(dim, 0.28); c.multiplyScalar(0.78); }
         ca.setXYZ(v, c.r, c.g, c.b);
       }

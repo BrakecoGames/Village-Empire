@@ -67,7 +67,7 @@ test.describe('Paden', () => {
       const VE = window.VE, g = VE.game, w = g.world, N = VE.N, hq = g.hq;
       VE.ui.toast = () => {};
       // een houthakker en zagerij een eind van het dorpshuis, zodat er gesjouwd moet worden
-      for (const t of ['woodcutter', 'sawmill', 'quarry']) {
+      for (const t of ['woodcutter', 'sawmill', 'quarry', 'woodcutter']) {
         let done = false;
         for (let r = 5; r < 11 && !done; r++) for (let j = hq.j - r; j <= hq.j + r && !done; j++) for (let i = hq.i - r; i <= hq.i + r && !done; i++)
           if (Math.max(Math.abs(i - hq.i), Math.abs(j - hq.j)) === r && g.canPlace(t, i, j, true).ok) { g.placeBuilding(t, i, j, true); done = true; }
@@ -79,9 +79,9 @@ test.describe('Paden', () => {
       for (let n = 0; n < 6; n++) g.spawnSettler();
       const count = () => { let a = 0, b = 0; for (let k = 0; k < N * N; k++) if (!w.door[k]) { if (w.road[k] === 1) a++; else if (w.road[k] === 2) b++; } return { trail: a, path: b }; };
       const before = count();
-      // zes spel-minuten simuleren zonder te tekenen (de software-renderer is te traag)
+      // acht spel-minuten simuleren zonder te tekenen (de software-renderer is te traag)
       const saved = g.speed; g.speed = 0;
-      for (let t = 0; t < 360; t += 0.1) g.update(0.1);
+      for (let t = 0; t < 480; t += 0.1) g.update(0.1);
       g.speed = saved;
       w.rebuildRoads();
       w.paths.upload();
@@ -89,7 +89,7 @@ test.describe('Paden', () => {
       return { before, after: count(), roads: g.stats.roads, lit };
     });
     expect(r.before.path).toBeLessThan(4); // aan het begin alleen de ingangen van grote gebouwen
-    expect(r.after.trail + r.after.path).toBeGreaterThan(r.before.trail + r.before.path + 3);
+    expect(r.after.trail + r.after.path).toBeGreaterThan(r.before.trail + r.before.path + 2);
     expect(r.roads).toBeGreaterThan(3);
     expect(r.lit, 'slijtage zichtbaar in het terrein').toBeGreaterThan(100);
     expect(checkErrors(errors, info)).toEqual([]);

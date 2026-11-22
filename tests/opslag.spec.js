@@ -203,6 +203,14 @@ test.describe('Opslag en productie', () => {
       T.place('woodcutter', [hq.cx - 5, hq.cz + 3]);
       const saw = T.place('sawmill', [hq.cx + 3, hq.cz + 3], 3);
       const st = T.place('warehouse', [hq.cx - 3, hq.cz - 3], 3);
+      // de startvoorraad gaat eerst op: zolang er hout op de stapel ligt, haalt niemand hout bij de houthakker voor de zagerij
+      const pile = g.buildings.find(b => b.def.pile);
+      let fromProducerWhilePile = 0, fromPile = 0;
+      const st0 = g.startTransport.bind(g);
+      g.startTransport = (s, res, src, dst) => {
+        if (res === 'log' && dst === saw) { if (src === pile) fromPile++; else if (pile.alive && (pile.store.log || 0) - (pile.outRes.log || 0) > 0) fromProducerWhilePile++; }
+        return st0(s, res, src, dst);
+      };
       const bad = [];
       const check = tag => {
         const c = T.count(), p = T.produced(), d = r => (p[r] || 0) - (p0[r] || 0);
@@ -215,10 +223,13 @@ test.describe('Opslag en productie', () => {
       // een bouwplaats krijgt materiaal uit de opslag, de startstapel of rechtstreeks van de zagerij
       const site = g.placeBuilding('house', ...T.spot('house', [hq.cx, hq.cz + 5]));
       T.run(120);
-      return { bad: bad.slice(0, 6), planks: g.stats.produced.plank || 0, stPlank: st.store.plank || 0, built: site.built, used: site.used, total: site.total };
+      return { fromPile, fromProducerWhilePile, pileLog: pile.alive ? pile.store.log || 0 : 0, bad: bad.slice(0, 6), planks: g.stats.produced.plank || 0, stPlank: st.store.plank || 0, built: site.built, used: site.used, total: site.total };
     });
     expect(r.bad).toEqual([]);
     expect(r.planks).toBeGreaterThan(4);
+    expect(r.fromPile).toBe(6);                      // alle 6 stammen van de startstapel gingen naar de zagerij
+    expect(r.fromProducerWhilePile).toBe(0);
+    expect(r.pileLog).toBe(0);
     expect(r.built || r.used > 0).toBe(true);
     expect(errs(errors)).toEqual([]);
   });

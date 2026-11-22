@@ -129,13 +129,8 @@
   };
   /* Stockyard: fenced, trampled yard; the goods piles themselves are drawn by VE.StockpileRender */
   B.yard = function (m) {
-    // startvoorraad: aangestampte grond met 4×4 pallets; de goederen tekent VE.StockpileRender
-    m.box(1.8, 0.04, 1.8, 0x8a6a45, { y: 0.0, j: 0.06 });
-    m.box(1.7, 0.012, 1.7, 0xa8865a, { y: 0.04, j: 0.08 });
-    for (const sl of VE.STORE_SLOTS.yard[0]) {
-      for (const dz of [-0.1, 0.1]) m.box(0.34, 0.018, 0.03, C.woodD, { x: sl[0], y: 0.04, z: sl[2] + dz, j: 0.08 });
-      for (let k = 0; k < 5; k++) m.box(0.05, 0.012, 0.3, C.wood, { x: sl[0] - 0.14 + k * 0.07, y: 0.058, z: sl[2], j: 0.1 });
-    }
+    // startvoorraad: alleen de stapels zelf (VE.StockpileRender), gewoon in het gras; een paar graspolletjes
+    for (const [x, z] of [[-0.85, 0.1], [0.82, -0.3], [0.05, 0.86], [-0.4, -0.88]]) m.cone(0.03, 0.07, 4, 0x5f9a36, { x: x, z: z, j: 0.08 });
   };
   B.house = function (m, lvl, ex) {
     foundation(m, 0.82, 0.74);
@@ -508,7 +503,8 @@
   VE.ITEM_SCALE = 0.8;
   /* Vakken voor voorraadstapels (gebouw-lokaal x, y, z). De GLB-modellen hebben eigen 'slot'-markers;
      dit is de reserve voor de procedurele modellen en de bron voor yard.py en warehouse.py. */
-  const grid4 = []; for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) grid4.push([-0.63 + i * 0.42, 0.064, -0.63 + j * 0.42]);
+  // startvoorraad: losse stapels in het gras, de middelste eerst gevuld (gelijk aan yard.py)
+  const grid4 = [[-0.24, -0.2], [0.2, -0.14], [-0.18, 0.22], [0.24, 0.28], [-0.62, -0.58], [-0.2, -0.66], [0.22, -0.6], [0.64, -0.52], [-0.66, -0.16], [0.6, -0.1], [-0.6, 0.26], [0.66, 0.32], [-0.56, 0.66], [-0.14, 0.62], [0.28, 0.68], [0.68, 0.72]].map(p => [p[0], 0.012, p[1]]);
   const row = (xs, z) => xs.map(x => [x, 0.055, z]), X3 = [-0.27, 0, 0.27];
   VE.STORE_SLOTS = {
     yard: [grid4],

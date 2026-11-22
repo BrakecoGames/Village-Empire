@@ -251,7 +251,8 @@
         if (!b.store && !outputs) continue;
         const h = this.held(b);
         if ((h[r] || 0) - (b.outRes[r] || 0) <= 0) continue;
-        const d = (b.dx - x) ** 2 + (b.dz - z) ** 2 + (b.store ? 0 : 4);
+        // de startvoorraad gaat als eerste op (hij ligt er alleen tijdelijk), daarna de dichtstbijzijnde plek
+        const d = (b.dx - x) ** 2 + (b.dz - z) ** 2 + (b.store ? 0 : 4) - (b.def.pile ? 1e6 : 0);
         if (d < bd) { bd = d; best = b; }
       }
       return best;
@@ -273,7 +274,7 @@
     takeGoods(r, n) {
       n = Math.round(n); if (!(n > 0)) return true;
       this.sd = true;
-      const pr = b => b.type === 'hq' ? 0 : b.def.pile ? 1 : b.store ? 2 : 3;
+      const pr = b => b.def.pile ? 0 : b.type === 'hq' ? 1 : b.store ? 2 : 3;     // startvoorraad eerst
       const list = this.buildings.filter(b => b.alive && b.built).sort((a, c) => pr(a) - pr(c));
       for (const b of list) {
         const h = this.held(b), free = (h[r] || 0) - (b.outRes[r] || 0);
@@ -382,10 +383,11 @@
       for (let dj = 0; dj < size; dj++) for (let di = 0; di < size; di++) {
         const k = (j + dj) * N + i + di;
         w.bld[k] = b.id; w.road[k] = 0; w.wear[k] = 0; if (w.paths) w.paths.clearTile(k);
+        if (def.pile) w.soft[k] = 1;                  // startvoorraad ligt gewoon in het gras: geen aarde eronder
         if (w.tree[k]) this.nature.removeTree(w.tree[k]);
         if (w.rock[k]) { w.rock[k].amount = 1; this.nature.mineRock(w.rock[k]); }
         if (w.field[k]) this.nature.removeField(w.field[k]);
-        w.clearDeco(k);
+        if (!def.pile) w.clearDeco(k);
       }
       w.door[b.doorK]++;
       const doorTiles = [b.doorK];
@@ -393,6 +395,7 @@
       for (const k of doorTiles) {
         if (w.tree[k]) this.nature.removeTree(w.tree[k]);
         if (w.field[k]) this.nature.removeField(w.field[k]);
+        if (def.pile) continue;                        // geen stoepje: dragers lopen gewoon door het gras
         w.road[k] = 2; w.clearDeco(k); if (w.paths) w.paths.apron(k);
       }
       b.y = w.flatten(i, j, size);
@@ -471,7 +474,7 @@
       const w = this.world;
       b.alive = false; this.sd = true;
       this.root.remove(b.group);
-      for (let dj = 0; dj < b.size; dj++) for (let di = 0; di < b.size; di++) w.bld[(b.j + dj) * N + b.i + di] = 0;
+      for (let dj = 0; dj < b.size; dj++) for (let di = 0; di < b.size; di++) { const k = (b.j + dj) * N + b.i + di; w.bld[k] = 0; w.soft[k] = 0; }
       w.door[b.doorK] = Math.max(0, w.door[b.doorK] - 1);
       if (w.paths) { w.paths.unfix(b.doorK); if (b.size > 1) w.paths.unfix(b.doorJ * N + b.i); }   // stoepje groeit langzaam weer dicht
       if (b.dig) { b.dig.reserved = false; b.dig = null; }                // ondergrondse ronde van een mijn afbreken
@@ -721,11 +724,14 @@
     }
     moveOutputs(take, idle, cap, consumerOnly) {
       let n = 0;
+      // ligt dit goed nog op de startstapel, dan bedient die stapel de werkplaatsen en bouwplaatsen eerst
+      const pile = this.buildings.find(b => b.alive && b.built && b.def.pile);
+      const onPile = r => pile && (pile.store[r] || 0) - (pile.outRes[r] || 0) > 0;
       for (const b of this.buildings) {
         if (!b.alive || !b.built || b.store || b.unreach > this.time) continue;
         for (const r in b.output) {
           while (b.output[r] - (b.outRes[r] || 0) > 0 && n < cap && idle.length) {
-            let dst = this.findConsumer(r, b);
+            let dst = onPile(r) ? null : this.findConsumer(r, b);
             if (!dst) {
               if (consumerOnly && !this.outFull(b)) break;
               dst = this.depotFor(r, b.dx, b.dz);          // alleen een Storehouse dat dit goed aanneemt en plek heeft

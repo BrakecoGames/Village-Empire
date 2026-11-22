@@ -6,8 +6,8 @@ Git-checkpoint vóór de wijzigingen: tag `checkpoint-voor-opslag`.
 
 | Onderdeel | Hoe het nu werkt |
 |---|---|
-| Startvoorraad | 6 hout, 14 steen, 28 planken, 8 brood en 4 vis liggen op pallets naast het dorpshuis. Dragers brengen er nooit iets heen. Is alles op, dan verdwijnt de stapel en komt de grond vrij. |
-| Stockyard | Weg. Het omheinde erf is vervangen door de startstapel: aangestampte grond met 16 pallets, zonder hek. |
+| Startvoorraad | 6 hout, 14 steen, 28 planken, 8 brood en 4 vis liggen als losse stapels gewoon in het gras naast het dorpshuis (geen vak, geen aarde, geen stoepje). Dragers brengen er nooit iets heen, en deze voorraad gaat **als eerste** op: bouwplaatsen, werkplaatsen, markt, eten en upgrades nemen eerst van de startstapel. Is alles op, dan verdwijnt de stapel. |
+| Stockyard | Weg. Alleen de stapels van de startvoorraad blijven over, in het gras. |
 | Producenten | Ze houden maximaal 6 van hun eigen product bij zich (`VE.LOCAL_CAP`). Past de volgende opbrengst er niet meer bij, dan stoppen ze, met de melding *"Storage full (6/6): …"*. |
 | Storehouse | Nu al te bouwen in rang Hamlet (6 planken, 4 steen; nieuwe opdracht *Build a Storehouse*). Capaciteit 60, 80 of 100 (per level, gedeeld over alle goederen). Per Storehouse vink je aan welke goederen erin mogen. |
 | Transport | Dragers brengen goederen van een producent eerst naar een gebouw dat ze verwerkt (werkplaats of bouwplaats), anders naar het dichtstbijzijnde Storehouse dat dat goed aanneemt en nog plek heeft. Zonder plek blijft het goed bij de producent liggen. |
@@ -51,7 +51,7 @@ Git-checkpoint vóór de wijzigingen: tag `checkpoint-voor-opslag`.
 | Model | Inhoud |
 |---|---|
 | `items.py` → `items.glb` (89 KB) | 16 goederen: stam, plank, bouwsteen, meelzak, brood, vis, druivenmand, wijnvat, ham, steenkool, drie ertsen en drie staven. De bouwsteen is exact 0,09 × 0,05 × 0,06 (`VE.STONE_BLOCK`), met een smalle afschuining voor de voegen. |
-| `yard.py` → `yard.glb` | Startstapel: aangestampte grond, 16 pallets, een paaltje met een bord en een opgerold dekzeil. 16 vak-markers. |
+| `yard.py` → `yard.glb` | Startstapel: alleen een paar graspollen en 16 losse plekken (markers) voor de stapels in het gras; de middelste plekken worden eerst gevuld. |
 | `warehouse.py` → `warehouse.glb` | Open opslagloods: achterwand van planken, lessenaarsdak van leien en een plankenvloer met schotjes. Level 1 heeft 6 vakken, level 2 en 3 hebben 9 vakken, met een lantaarn en een hijsbalk. |
 | `lib/ve_parts.py` | `build_levels` schrijft vak-markers (`"slots"`). |
 

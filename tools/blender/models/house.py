@@ -107,7 +107,7 @@ def main_house(lvl):
             px = (ax + aw / 2 + 0.01) - run * tpos
             py = y_hi - (y_hi - y_lo) * tpos + r * 0.35 * math.cos(a)
             px -= r * 0.35 * math.sin(a)
-            stagger = (0.12 if ri % 2 else -0.12) * tw
+            stagger = 0.0                                # golfpannen: recht boven elkaar
             for ci in range(cols):
                 pz = -roof_w / 2 + (ci + 0.5) * tw + stagger
                 tile((px, py, pz), up_a, n_a, r, L / rows * 1.25, rnd.choice(("RoofA", "RoofB", "RoofC")),

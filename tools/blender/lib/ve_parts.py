@@ -26,8 +26,9 @@ import ve_blender as ve
 BASE_PAL = {
     "Plaster": (0xF3E5C8, 0.03), "Plaster2": (0xEAD2A6, 0.03),
     "Timber": (0x6A4226, 0.07), "TimberL": (0x8A5A34, 0.06),
-    "RoofA": (0xC2492E, 0.07), "RoofB": (0xAD3E28, 0.07), "RoofC": (0xD0603C, 0.07),
-    "RoofDeck": (0x6E2A1C, 0.03), "Ridge": (0x8E3322, 0.05),
+    # rode pannen: geglazuurde terracotta golfpannen (zie pan()), weinig variatie zoals echt geglazuurd
+    "RoofA": (0xC0583A, 0.03), "RoofB": (0xB24E32, 0.03), "RoofC": (0xC96640, 0.03),
+    "RoofDeck": (0x6E2A1C, 0.03), "Ridge": (0xA4462C, 0.03),
     "StoneA": (0xB5AE9F, 0.08), "StoneB": (0x9E978A, 0.08), "StoneD": (0x8E877A, 0.06), "StoneL": (0xCFC8B8, 0.06),
     "Brick": (0xA8553A, 0.08),
     "Door": (0x7A4A28, 0.08), "DoorD": (0x4B2F1C, 0.04), "Iron": (0x4A4D52, 0.0),
@@ -219,8 +220,48 @@ def half_tube(center, axis, bulge, r, length, mat, seg=3, cap=False, kick=0.0, t
     return orient(obj, center, axis, bulge, kick, twist)
 
 
+RED_PANS = ("RoofA", "RoofB", "RoofC", "TileDarkA", "TileDarkB", "TileDarkC")
+
+
+def pan(center, up, nrm, w, length, mat, kick=0.09, amp=None):
+    """Eén geglazuurde golfpan (zoals een moderne keramische S-pan): over de breedte een zachte golf
+    (brede holte en ronde rug) en onderaan een dikke, ronde neus die over de rij eronder valt.
+    Naast elkaar sluiten de golven naadloos aan (periodiek profiel), zodat een rij één doorlopende
+    golflijn vormt. Glad gearceerd. 20 driehoeken."""
+    S = 5
+    amp = amp if amp is not None else w * 0.3
+    lipW, lipT = min(0.02, length * 0.2), w * 0.16
+    prof = lambda u: amp * (0.5 + 0.5 * math.cos(2 * math.pi * (u - 0.68))) - amp * 0.5
+    bm = bmesh.new()
+    top, a, b = [], [], []
+    for k in range(S + 1):
+        u = k / S
+        x, z = -w / 2 + w * u, prof(u)
+        top.append(gverts(bm, [(x, length / 2, z)])[0])
+        a.append(gverts(bm, [(x, -length / 2 + lipW, z)])[0])
+        b.append(gverts(bm, [(x, -length / 2, z + lipT * 0.45)])[0])
+    for k in range(S):
+        for r0, r1 in ((a, top), (b, a)):
+            bm.faces.new((r0[k], r0[k + 1], r1[k + 1], r1[k]))
+    bm.normal_update()
+    for f in bm.faces:                                   # buitenkant (game +z = blender -y) naar buiten
+        if f.normal.y > 0:
+            f.normal_flip()
+    obj = new_obj("pan", bm, mat, smooth=True)
+    orient(obj, center, up, nrm, kick)
+    PANS[0] += 1
+    return obj
+
+
+PANS = [0]          # golfpannen in het huidige level: krijgen een eigen driehoeksbudget (zie build_levels)
+
+
 def tile(center, up, nrm, r, length, mat, kick=0.11, twist=0.0):
-    """Eén holle dakpan: as langs de helling omhoog (up), bolling naar buiten (nrm)."""
+    """Eén dakpan: as langs de helling omhoog (up), bolling naar buiten (nrm).
+    Rode pannen zijn geglazuurde golfpannen (pan); de andere kleuren blijven holle pannen."""
+    if mat in RED_PANS:
+        c = Vector(center) - Vector(nrm).normalized() * (r * 0.2)
+        return pan(tuple(c), up, nrm, r / 0.52, length, mat, kick=kick * 0.8)
     return half_tube(center, up, nrm, r, length, mat, seg=3, kick=kick, twist=twist)
 
 
@@ -260,6 +301,8 @@ def tiled_roof(x0, x1, eave_z, eave_y, ridge_z, ridge_y, rows, cols, side, kick=
             orient(obj, ((x0 + x1) / 2, c.y, c.z), up, nrm, kick * 1.2, rnd.uniform(-0.01, 0.01))
             continue
         stagger = (0.12 if ri % 2 else -0.12) * tw          # verspringende rijen: leest als pannen, niet als planken
+        if kind == "tile" and mats[0] in RED_PANS:
+            stagger = 0.0                                    # golfpannen: de golven lopen recht door, rij op rij
         if kind == "shingle":
             stagger = (0.5 if ri % 2 else 0.0) * tw          # spanen: halve plank verspringen
             c = E + up * t + nrm * 0.01
@@ -595,8 +638,10 @@ def bake_ao(obj, samples=48, distance=0.12):
 def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
     """Bouwt per level één samengevoegde mesh `<prefix>_l<n>` (+ rookmarker), bakt AO en exporteert."""
     built = []
+    extra = 0
     for lvl in levels:
         LEVEL.clear()
+        PANS[0] = 0
         smoke = build_fn(lvl)
         objs = list(LEVEL)
         if os.environ.get("VE_DEBUG"):
@@ -636,8 +681,11 @@ def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
             bpy.context.collection.objects.link(emp)
             place(emp, p)
         tris = ve.triangle_count([obj])
-        if tris > args.budget:
-            raise SystemExit(f"VE-BLENDER: {prefix}_l{lvl} heeft {tris} driehoeken > budget {args.budget}")
+        # geglazuurde golfpannen kosten 20 i.p.v. 6 driehoeken per pan: dat verschil krijgt het model erbij
+        budget = args.budget + PANS[0] * 14
+        extra = max(extra, PANS[0] * 14)
+        if tris > budget:
+            raise SystemExit(f"VE-BLENDER: {prefix}_l{lvl} heeft {tris} driehoeken > budget {budget}")
         built.append((obj, lvl, tris))
     use_ao = ao and not os.environ.get("VE_NO_AO")
     if use_ao:
@@ -649,4 +697,4 @@ def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
             o.hide_render = False
     for obj, lvl, tris in built:
         print(f"VE-BLENDER-LEVEL {prefix}_l{lvl} tris={tris} materials={len(obj.data.materials)}")
-    ve.export_glb(args.out, budget=args.budget * len(levels), vertex_colors=use_ao)
+    ve.export_glb(args.out, budget=(args.budget + extra) * len(levels), vertex_colors=use_ao)
