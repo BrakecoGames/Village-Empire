@@ -4,9 +4,7 @@
   const N = VE.N, DEFS = VE.DEFS;
   const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
   const MAX_POP = 160;
-  // footpath wear (one point per settler step onto a tile): a trail appears, becomes a path, and fades again when unused
-  const TRAIL_ON = 5, PATH_ON = 14, PATH_OFF = 8, TRAIL_OFF = 2, PATH_MAX = 40;
-  VE.PATH = { TRAIL_ON: TRAIL_ON, PATH_ON: PATH_ON, PATH_MAX: PATH_MAX };
+  // voetpaden: zie js/paths.js (slijtage per 1/4 tegel op de echte looproute, vijf stadia, langzaam herstel)
 
   VE.bus = {
     h: {},
@@ -212,7 +210,6 @@
         if (def.mountain) {
           if (w.type[k] !== 2) return { ok: false, why: 'Mines can only be built on the mountain' };
           if (w.road[k]) return { ok: false, why: 'A path is in the way' };
-          if (w.ore && w.ore[k]) return { ok: false, why: 'That is the vein itself: build right beside it' };
         } else if (w.type[k] === 2) return { ok: false, why: 'Too rocky here' };
         if (w.bld[k]) return { ok: false, why: 'Space is taken' };
         if (w.door[k]) return { ok: false, why: 'An entrance is in the way' };
@@ -228,12 +225,15 @@
         const M = VE.Mining, ore = VE.ORES[def.ore];
         if (M && !M.near(w, i + 0.5, j + 0.5, def.ore, def.radius)) {
           const other = M.anyNear(w, i + 0.5, j + 0.5, def.radius);
-          return { ok: false, why: other ? 'No ' + ore.name + ' here, but ' + VE.ORES[other].name + ': try a ' + VE.DEFS[VE.ORES[other].mine].name : 'No ' + ore.name + ' vein within reach' };
+          return { ok: false, why: other ? 'No ' + ore.name + ' below this spot, but ' + VE.ORES[other].name + ': try a ' + VE.DEFS[VE.ORES[other].mine].name : 'No ' + ore.name + ' found below this spot' };
         }
         if (!this.routeToStore(dk)) return { ok: false, why: 'No route to your storage from here' };
       }
       if (def.gold && this.gold < def.gold) return { ok: false, why: 'Needs ' + def.gold + ' gold' };
-      if (def.mountain) { const n = VE.ORES[def.ore].name; return { ok: true, why: 'Good spot: ' + (/^[aeiou]/.test(n) ? 'an ' : 'a ') + n + ' vein is within reach' }; }
+      if (def.mountain) {
+        const n = VE.ORES[def.ore].name, amt = VE.Mining.reach(w, i + 0.5, j + 0.5, def.ore, def.radius);
+        return { ok: true, why: 'Good spot: ' + VE.Mining.richness(amt) + ' ' + n + ' deposit below (about ' + (Math.round(amt / 5) * 5 || amt) + ')' };
+      }
       return { ok: true };
     }
     /* kan een drager van deze tegel naar een opslag lopen? (gecachet tot er iets gebouwd/gesloopt wordt) */
@@ -261,7 +261,7 @@
       if (def.recipes) b.recipe = def.recipe;
       for (let dj = 0; dj < size; dj++) for (let di = 0; di < size; di++) {
         const k = (j + dj) * N + i + di;
-        w.bld[k] = b.id; w.road[k] = 0; w.wear[k] = 0;
+        w.bld[k] = b.id; w.road[k] = 0; w.wear[k] = 0; if (w.paths) w.paths.clearTile(k);
         if (w.tree[k]) this.nature.removeTree(w.tree[k]);
         if (w.rock[k]) { w.rock[k].amount = 1; this.nature.mineRock(w.rock[k]); }
         if (w.field[k]) this.nature.removeField(w.field[k]);
@@ -273,7 +273,7 @@
       for (const k of doorTiles) {
         if (w.tree[k]) this.nature.removeTree(w.tree[k]);
         if (w.field[k]) this.nature.removeField(w.field[k]);
-        w.road[k] = 2; w.wear[k] = PATH_MAX; w.clearDeco(k);
+        w.road[k] = 2; w.clearDeco(k); if (w.paths) w.paths.apron(k);
       }
       b.y = w.flatten(i, j, size);
       this.nature.refreshArea(i - 1, j - 1, i + size, j + size);
@@ -353,6 +353,8 @@
       this.root.remove(b.group);
       for (let dj = 0; dj < b.size; dj++) for (let di = 0; di < b.size; di++) w.bld[(b.j + dj) * N + b.i + di] = 0;
       w.door[b.doorK] = Math.max(0, w.door[b.doorK] - 1);
+      if (w.paths) { w.paths.unfix(b.doorK); if (b.size > 1) w.paths.unfix(b.doorJ * N + b.i); }   // stoepje groeit langzaam weer dicht
+      if (b.dig) { b.dig.reserved = false; b.dig = null; }                // ondergrondse ronde van een mijn afbreken
       // refunds
       if (b.built) { if (b.def.cost) for (const r in b.def.cost) this.stock[r] += Math.floor(b.def.cost[r] / 2); }
       else for (const r in b.delivered) this.stock[r] += b.delivered[r];
@@ -371,30 +373,15 @@
       sfx('demolish', b.cx, b.cz);
     }
     /* ---------- footpaths: they wear in where settlers walk a lot ---------- */
+    /* één volledige passage over tegel k (tests en hulpfuncties; gewoon lopen gaat via moveSettler) */
     tread(k, amt) {
       const w = this.world;
       if (w.type[k] === 1 || w.bld[k] || w.door[k]) return;
-      w.wear[k] = Math.min(PATH_MAX, w.wear[k] + (amt === undefined ? 1 : amt));
-      if (w.tree[k] || w.rock[k] || w.field[k]) return; // the path bends around trees and fields
-      const lvl = w.wear[k] >= PATH_ON ? 2 : w.wear[k] >= TRAIL_ON ? 1 : 0;
-      if (lvl > w.road[k]) {
-        if (lvl === 2) this.stats.roads++;
-        if (!w.road[k]) w.clearDeco(k);
-        w.road[k] = lvl; this.roadsDirty = true;
-      }
+      w.paths.passTile(k, amt === undefined ? 1 : amt);
+      w.paths.syncTiles(this);
     }
-    wearDecay() {
-      // unused paths slowly grow over again (half-life about 4 minutes without traffic)
-      const w = this.world;
-      for (let k = 0; k < N * N; k++) {
-        if (w.wear[k] <= 0 || w.door[k]) continue;
-        let v = w.wear[k] * 0.985 - 0.01; if (v < 0) v = 0;
-        w.wear[k] = v;
-        const r = w.road[k];
-        if (r === 2 && v < PATH_OFF) { w.road[k] = 1; this.roadsDirty = true; }
-        else if (r === 1 && v < TRAIL_OFF) { w.road[k] = 0; this.roadsDirty = true; }
-      }
-    }
+    /* ongebruikte paden groeien heel langzaam weer dicht (elke 5 s) */
+    wearDecay() { this.world.paths.decay(); this.world.paths.syncTiles(this); }
 
     /* ---------- settlers ---------- */
     spawnSettler(near) {
@@ -423,7 +410,6 @@
       const p = s.path[s.pi];
       const dx = p[0] - s.x, dz = p[1] - s.z, d = Math.hypot(dx, dz);
       const k = this.tileOf(s.x, s.z), w = this.world;
-      if (k !== s.tk) { s.tk = k; this.tread(k, s.mode === 'wander' ? 0.25 : 1); } // strolling about barely wears the grass
       const sp = this.walkSpeed() * (w.road[k] === 2 ? 1.6 : w.road[k] === 1 ? 1.25 : 1) * (w.type[k] === 2 ? 0.8 : 1) * (s.carry ? 0.92 : 1);
       const step = sp * dt;
       if (d <= step) {
@@ -431,6 +417,8 @@
         if (s.pi >= s.path.length) { s.path = null; s.moving = false; const cb = s.cb; s.cb = null; if (cb) cb(); }
       } else {
         s.x += dx / d * step; s.z += dz / d * step;
+        // slijtage: alleen echte verplaatsing; rondslenteren telt een kwart, korte correctiestapjes nauwelijks
+        if (step > 0.004) w.paths.walk(s.x, s.z, step, s.mode === 'wander' ? 0.25 : 1);
         let tr = Math.atan2(dx, dz), dr = tr - s.rot;
         while (dr > Math.PI) dr -= Math.PI * 2; while (dr < -Math.PI) dr += Math.PI * 2;
         s.rot += dr * Math.min(1, dt * 12);
@@ -864,20 +852,25 @@
     /* mijnwerker: loopt naar de ertsader naast de mijn, hakt een brok los en brengt die naar de mijn */
     thinkMine(s, b, d) {
       const w = this.world, M = VE.Mining, gm = this.gatherMult(b);
+      // vorige ronde afronden: het losgehakte brok komt boven (karretje)
+      if (b.dig) {
+        const dep = b.dig; b.dig = null; dep.reserved = false;
+        if (dep.amount > 0) { M.take(w, dep); this.produce(b, d.out, 1); }
+      }
+      b.working = false;
       if (this.outFull(b)) { b.status = 'Waiting for carriers'; s.wt = 1; return; }
       const r = d.radius + (b.level - 1) * 0.5;
       const dep = M && M.pick(w, b.cx, b.cz, d.ore, r);
-      if (!dep) { b.status = M && M.near(w, b.cx, b.cz, d.ore, r) ? 'Waiting for a free spot at the vein' : 'The ' + VE.ORES[d.ore].name + ' vein is exhausted'; s.wt = 4; return; }
-      dep.reserved = true; s.resv = dep; b.status = 'Mining ' + VE.RES[d.out].name.toLowerCase();
-      const sp = this.standPoint(b, dep.x, dep.z, 0.32);
-      const ok = this.goAct(s, b, dep.k, sp[0], sp[1], [dep.x, dep.z], 'pick', d.time / gm, () => {
-        s.resv = null; dep.reserved = false;
-        if (dep.amount <= 0) { this.goHome(s, b, null); return; }
-        M.take(w, dep);
-        emit('dust', { x: dep.x, y: w.heightAt(dep.x, dep.z) + 0.2, z: dep.z, n: 5, stone: true });
-        this.goHome(s, b, d.out, () => this.produce(b, d.out, 1));
-      });
-      if (!ok) { dep.reserved = false; s.resv = null; s.hidden = true; s.wstate = 'inside'; s.wt = 3; b.status = 'Cannot reach the vein'; }
+      if (!dep) {
+        const empty = !(M && M.near(w, b.cx, b.cz, d.ore, r));
+        b.status = empty ? 'The ' + VE.ORES[d.ore].name + ' below this mine is used up' : 'Waiting for a free tunnel';
+        if (empty && !b.emptyTold) { b.emptyTold = true; emit('toast', { text: '⛏️ ' + b.def.name + ': the ' + VE.ORES[d.ore].name + ' is used up. Build a new mine above another deposit.' }); }
+        s.wt = 4; return;
+      }
+      // ondergronds hakken: de mijnwerker blijft binnen, het karretje rijdt
+      dep.reserved = true; b.dig = dep; b.working = true; b.emptyTold = false;
+      b.status = 'Mining ' + VE.RES[d.out].name.toLowerCase() + ' underground';
+      s.hidden = true; s.wstate = 'inside'; s.wt = d.time / gm;
     }
     /* jager: sluipt naar een dier, gooit een net; lukt het, dan brengt hij het vlees thuis */
     thinkHunt(s, b, d) {
@@ -949,10 +942,16 @@
       // smoke
       if (b.chimneys.length) {
         b.smokeT = (b.smokeT || Math.random()) - dt;
-        const active = d.storage || d.housing || b.working || (b.worker && b.worker.hidden);
         if (b.smokeT <= 0) {
-          b.smokeT = active ? (b.working ? 0.35 : 0.9) : 2.5;
-          if (active) for (const c of b.chimneys) emit('smoke', { x: b.cx + c[0], y: b.y + c[1], z: b.cz + c[2] });
+          // woonhuizen en opslag: dun en rustig; werkplaatsen: alleen bij werk (meer als ze echt produceren);
+          // smelterij: dik en donker tijdens het smelten, anders een dun pluimpje
+          let kind = null, every = 2.5;
+          if (d.recipes) { kind = b.working ? 'heavy' : 'smoulder'; every = b.working ? 0.16 : 1.6; }
+          else if (d.storage || d.housing) { kind = 'home'; every = 0.75; }
+          else if (b.working) { kind = 'work'; every = 0.32; }
+          else if (b.worker && b.worker.hidden) { kind = 'work'; every = 1.1; }
+          b.smokeT = every * (0.85 + Math.random() * 0.3);
+          if (kind) for (const c of b.chimneys) emit('smoke', { x: b.cx + c[0], y: b.y + c[1], z: b.cz + c[2], kind: kind });
         }
       }
       const s = b.worker;
@@ -1058,6 +1057,7 @@
         } else this.arriveT = 3;
       }
       this.wearT -= dt; if (this.wearT <= 0) { this.wearT = 5; this.wearDecay(); }
+      w.paths.update(dt, this);
       if (this.roadsDirty) { this.roadT -= dt; if (this.roadT <= 0) { this.roadT = 0.12; this.roadsDirty = false; w.rebuildRoads(); } }
     }
 
@@ -1109,8 +1109,7 @@
 
     /* ---------- save / load ---------- */
     serialize(cam) {
-      const w = this.world, roads = [];
-      for (let k = 0; k < N * N; k++) if (w.wear[k] >= 1 && !w.door[k] && !w.bld[k]) roads.push([k, Math.round(w.wear[k])]);
+      const w = this.world;
       return {
         v: 1, seed: this.seed, time: Math.round(this.time), stock: this.stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
         stats: this.stats, upg: this.upg, pop: this.settlers.length, speed: this.speed,
@@ -1119,7 +1118,7 @@
           d: b.built ? {} : b.delivered, inp: b.input, out: b.output, sell: b.sell, keep: b.keep, rc: b.recipe || undefined
         })),
         ore: VE.Mining ? VE.Mining.serialize(w) : undefined, wild: this.wild ? this.wild.serialize() : undefined,
-        roads: roads, nature: this.nature.serialize(), fog: w.serializeFog(), cam: cam || null, saved: Date.now()
+        trail: w.paths.serialize(), nature: this.nature.serialize(), fog: w.serializeFog(), cam: cam || null, saved: Date.now()
       };
     }
     load(sv, rand) {
@@ -1142,14 +1141,18 @@
       }
       // stats.built was re-incremented by instant completes; restore the saved values
       if (sv.stats && sv.stats.built) this.stats.built = Object.assign({}, sv.stats.built);
-      // roads: [tile, wear] pairs; older saves stored plain tile numbers of player-built roads → full paths
-      for (const e of sv.roads || []) {
-        const k = Array.isArray(e) ? e[0] : e, v = Array.isArray(e) ? e[1] : PATH_MAX;
+      // voetpaden: nieuw formaat (slijtageraster); oude saves: [tegel, slijtage] of kale tegelnummers (zelf aangelegde wegen)
+      const statsRoads = this.stats.roads;
+      if (sv.trail) w.paths.load(sv.trail);
+      else for (const e of sv.roads || []) {
+        const k = Array.isArray(e) ? e[0] : e, v = Array.isArray(e) ? e[1] : 40;
         if (w.bld[k] || w.door[k] || w.type[k] === 1) continue;
-        w.wear[k] = Math.min(PATH_MAX, v);
-        const lvl = v >= PATH_OFF ? 2 : v >= TRAIL_OFF ? 1 : 0;
-        if (lvl) { w.road[k] = lvl; w.clearDeco(k); }
+        // oud: spoor vanaf 2, pad vanaf 8, max 40 → nieuwe stadia (een pad blijft een pad)
+        const nv = v >= 8 ? VE.PATHS.stage[4] + (v - 8) * 3 : v >= 2 ? VE.PATHS.stage[3] + (v - 2) * 6 : v * 15;
+        w.paths.setTile(k, Math.min(VE.PATHS.max, nv));
       }
+      w.paths.syncTiles(this);
+      this.stats.roads = statsRoads;
       const nat = sv.nature || { t: [], r: [], f: [] };
       for (const t of nat.t) { const k = t[0]; if (!w.bld[k] && !w.road[k]) this.nature.addTree(k % N, (k / N) | 0, t[1], t[2], rand); }
       for (const r of nat.r) { const k = r[0]; if (!w.bld[k]) { this.nature.addRock(k % N, (k / N) | 0, r[1], rand); w.clearDeco(k); } }

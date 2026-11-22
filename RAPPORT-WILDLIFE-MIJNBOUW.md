@@ -1,5 +1,8 @@
 # Rapport: wilde dieren, jacht, mijnbouw en metaal
 
+> **Bijgewerkt in 1.3.0:** ertsen liggen nu ondergronds (geen zichtbare aders meer, wel een informatielaag),
+> vogels hebben drie soorten en een echte vlucht. Zie [RAPPORT-NATUUR-BESTURING.md](RAPPORT-NATUUR-BESTURING.md).
+
 ## Nieuw in het spel
 
 | Onderdeel | Wat |

@@ -1,23 +1,24 @@
 /* Village Empire — © 2026 Brakeco Games. All rights reserved.
-   Ertsaders in de bergen (steenkool, ijzer, koper, goud) en de bewegende delen van mijnen en smelterij.
+   Ondergrondse ertsvoorraden (steenkool, ijzer, koper, goud) en de bewegende delen van mijnen en smelterij.
 
-   Wereld: world.ore[k] = ader-object of null (alleen op bergtegels, type 2), world.deposits = lijst.
-   Een ader is géén obstakel (de mijnwerker staat er bovenop te hakken) en geen bouwgrond: een mijn
-   komt ernaast (bouwregel in Game.canPlace).
+   Wereld: world.ore[k] = voorraad-object of null (alleen op bergtegels, type 2), world.deposits = lijst.
+   Elke voorraad heeft een soort, een begin- en resterende hoeveelheid en daarmee een rijkdom. Ze zitten
+   ONDER de grond: in de wereld zie je niets, alleen in de mijnbouw-informatielaag (terreinshader, js/paths.js)
+   die verschijnt zodra je een mijn plaatst of selecteert, of met de knop 'Survey' in het tabblad Mining.
+   Alleen ontdekt (onder de wolken vandaan) land wordt getoond.
 
    Generatie: eigen random-reeks uit de wereldseed (los van de gedeelde `rand` van bomen/rotsen, zodat
-   de bestaande wereldgeneratie exact gelijk blijft). Aders liggen in groepjes op bergtegels zonder rotsblok.
-   Garantie tegen vastlopen: de eerste steenkool- en ijzerader liggen aan de bergrand die het dichtst bij
-   het dorp ligt, met naast elke ader een plek waar een mijn past. Gouderts is zeldzaam en ligt dieper.
-   Na het genereren worden de aders met de save opgeslagen (voorraad per tegel).
+   de bestaande wereldgeneratie exact gelijk blijft). Voorraden liggen in groepjes op bergtegels zonder rotsblok.
+   Garantie tegen vastlopen: de eerste steenkool- en ijzervoorraad liggen onder de bergrand die het dichtst bij
+   het dorp ligt, met een plek waar een mijn past. Goud is zeldzaam en ligt dieper.
+   Voorraden gaan met de save mee (zelfde formaat als de vroegere zichtbare aders: niets gaat verloren).
 
-   Weergave: per ertssoort en variant één InstancedMesh (Blender: public/models/ores.glb, anders
-   procedureel). Hoe meer er is uitgehakt, hoe kleiner de ader. */
+   Mijn: staat op een bergtegel met de juiste voorraad binnen bereik; de mijnwerker werkt ondergronds
+   en haalt er één brok per keer uit. Op = melding en status. */
 'use strict';
 (function (VE) {
   const N = VE.N;
-  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
-  const VARIANTS = 2;
+  const _c = new THREE.Color();
 
   /* aders per soort: aantal groepjes, tegels per groepje, voorraad per tegel, waar (rangorde van afstand tot het dorp, 0..1) */
   const PLAN = {
@@ -42,17 +43,14 @@
         }
       } else this.generate(w);
       // een ader ligt open en bloot: geen boom erop, geen decoratie erdoorheen
-      for (const d of w.deposits) {
-        if (w.tree[d.k] && game.nature) game.nature.removeTree(w.tree[d.k]);
-        if (w.clearDeco) w.clearDeco(d.k);
-      }
-      this.buildMeshes(game);
+      this.game = game;
+      this.paintSurvey(w);
     },
     add(w, k, type, amount, max) {
       const i = k % N, j = (k / N) | 0, h = VE.hash2 ? VE.hash2(k, type) : ((k * 2654435761) >>> 0);
       const d = { k: k, i: i, j: j, type: type, amount: amount, max: max || amount, reserved: false, dead: false,
         x: i + 0.5 + ((h % 100) / 100 - 0.5) * 0.18, z: j + 0.5 + (((h >>> 8) % 100) / 100 - 0.5) * 0.18,
-        rot: ((h >>> 12) % 628) / 100, sc: 0.9 + ((h >>> 20) % 25) / 100, v: (h >>> 4) % VARIANTS, idx: -1 };
+        rich: 0.8 + ((h >>> 12) % 41) / 100 };
       w.ore[k] = d; w.deposits.push(d);
       return d;
     },
@@ -60,7 +58,7 @@
     mineSpot(w, i, j) {
       if (!w.inb(i, j) || !w.inb(i, j + 1)) return false;
       const k = j * N + i, dk = (j + 1) * N + i;
-      if (w.type[k] !== 2 || w.ore[k] || w.rock[k]) return false;
+      if (w.type[k] !== 2 || w.rock[k]) return false;
       if (w.slope(i, j, 1) > 1.9) return false;
       if (w.type[dk] === 1 || w.rock[dk]) return false;
       return true;
@@ -151,86 +149,63 @@
     take(w, d) {
       d.amount = Math.max(0, d.amount - 1);
       if (d.amount <= 0) { d.dead = true; if (w.ore[d.k] === d) w.ore[d.k] = null; }
-      this.setM(w, d);
+      this.surveyDirty = true;
     },
     remaining(w, type) { let n = 0; for (const d of w.deposits || []) if (d.type === type) n += d.amount; return n; },
     serialize(w) { return (w.deposits || []).filter(d => d.amount > 0).map(d => [d.k, d.type, d.amount, d.max]); },
-    refreshArea(w, i0, j0, i1, j1) {
-      for (const d of w.deposits || []) if (d.i >= i0 && d.i <= i1 && d.j >= j0 && d.j <= j1) this.setM(w, d);
+    refreshArea() { /* ondergronds: niets te verplaatsen */ },
+    /* hoeveel er binnen bereik van (x, z) zit, en hoe rijk (voor de uitleg bij het plaatsen en het infopaneel) */
+    reach(w, x, z, type, r) {
+      let n = 0;
+      for (const d of w.deposits || []) if (d.type === type && d.amount > 0 && (d.x - x) ** 2 + (d.z - z) ** 2 <= r * r) n += d.amount;
+      return n;
     },
+    richness(n) { return n >= 90 ? 'rich' : n >= 35 ? 'good' : 'small'; },
 
-    /* ---------------- weergave ---------------- */
-    buildMeshes(game) {
-      const w = game.world;
-      if (w.oreMeshes) for (const m of w.oreMeshes) if (m) w.root.remove(m);
-      w.oreMeshes = [];
-      const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 18, specular: 0x333333, flatShading: false });
-      const counts = {};
-      for (const d of w.deposits) { const key = d.type * VARIANTS + d.v; counts[key] = (counts[key] || 0) + 1; }
-      for (let t = 1; t <= 4; t++) for (let v = 0; v < VARIANTS; v++) {
-        const key = t * VARIANTS + v, n = counts[key] || 0;
-        if (!n) { w.oreMeshes[key] = null; continue; }
-        const geo = (VE.oreGeo && VE.oreGeo(t, v)) || procOre(t, v);
-        const m = new THREE.InstancedMesh(geo, mat, n);
-        m.castShadow = m.receiveShadow = true; m.frustumCulled = false; m.name = 'ore_' + VE.ORES[t].key + v;
-        w.root.add(m); w.oreMeshes[key] = m; m.userData.n = 0;
+    /* ---------------- mijnbouw-informatielaag ---------------- */
+    // per tegel (RGBA): kleur van het erts, dekking naar rijkdom; ontdekte berg zonder erts: lichtgrijs ('niets gevonden')
+    paintSurvey(w, focus) {
+      if (!w.oreTex) return;
+      if (focus !== undefined) this.focus = focus;
+      const D = w.oreTex.image.data, f = this.focus || 0;
+      D.fill(0);
+      for (let k = 0; k < N * N; k++) {
+        if (w.type[k] !== 2 || w.explored[k] < 0.5) continue;
+        const ga = 40 / 255;                                          // voorvermenigvuldigd (zachte randen bij lineair filteren)
+        D[k * 4] = 205 * ga; D[k * 4 + 1] = 200 * ga; D[k * 4 + 2] = 190 * ga; D[k * 4 + 3] = 40;
       }
       for (const d of w.deposits) {
-        const m = w.oreMeshes[d.type * VARIANTS + d.v];
-        d.idx = m.userData.n++;
-        this.setM(w, d);
+        if (d.amount <= 0 || w.explored[d.k] < 0.5) continue;
+        _c.setHex(VE.ORES[d.type].color);
+        const lit = d.type === 4 ? 1 : 1.25;                         // donkere ertsen (steenkool) iets lichter, anders onzichtbaar
+        const a = (0.5 + 0.5 * Math.min(1, d.amount / 45)) * (f && d.type !== f ? 0.3 : 1);
+        D[d.k * 4] = Math.min(255, _c.r * 255 * lit + (d.type === 1 ? 40 : 0)) * a; D[d.k * 4 + 1] = Math.min(255, _c.g * 255 * lit + (d.type === 1 ? 40 : 0)) * a;
+        D[d.k * 4 + 2] = Math.min(255, _c.b * 255 * lit + (d.type === 1 ? 50 : 0)) * a; D[d.k * 4 + 3] = 255 * a;
       }
+      w.oreTex.needsUpdate = true;
+      this.surveyDirty = false;
     },
-    setM(w, d) {
-      const m = w.oreMeshes && w.oreMeshes[d.type * VARIANTS + d.v];
-      if (!m || d.idx < 0) return;
-      if (d.amount <= 0) { m.setMatrixAt(d.idx, VE.ZERO); m.instanceMatrix.needsUpdate = true; return; }
-      const f = 0.5 + 0.5 * Math.min(1, d.amount / d.max), s = d.sc * f;
-      _e.set(0, d.rot, 0); _q.setFromEuler(_e);
-      _m.compose(_p.set(d.x, w.heightAt(d.x, d.z) - 0.025, d.z), _q, _s.set(s, s, s));
-      m.setMatrixAt(d.idx, _m); m.instanceMatrix.needsUpdate = true;
-    },
-    /* tijdens het plaatsen van een mijn: aders van de gevraagde soort zachtjes laten oplichten */
+    /* informatielaag aan (met nadruk op één ertssoort) of uit; vloeiend in en uit (VE.Mining.tick) */
     highlight(game, type) {
-      const w = game && game.world; if (!w || !w.deposits) return;
-      if (!this.ring) {
-        const g = new THREE.RingGeometry(0.36, 0.46, 28); g.rotateX(-Math.PI / 2);
-        this.ring = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: 0xfff3a0, transparent: true, opacity: 0.75, depthTest: false, toneMapped: false }), 120);
-        this.ring.renderOrder = 6; this.ring.frustumCulled = false; this.ring.count = 0;
-      }
-      if (this.ring.parent !== w.root) w.root.add(this.ring);
-      let n = 0;
-      if (type) for (const d of w.deposits) {
-        if (d.type !== type || d.amount <= 0 || n >= 120) continue;
-        _m.makeTranslation(d.x, w.heightAt(d.x, d.z) + 0.06, d.z);
-        this.ring.setMatrixAt(n++, _m);
-      }
-      this.ring.count = n; this.ring.instanceMatrix.needsUpdate = true;
-      this.ring.material.color.setHex(type ? VE.ORES[type].color : 0xffffff).lerp(_c.setHex(0xffffff), 0.45);
+      this.want = type ? 1 : 0;
+      if (game && game.world) this.paintSurvey(game.world, type || 0);
+    },
+    tick(game, dt, on) {
+      const w = game && game.world; if (!w || !w.surveyU) return;
+      const target = on ? 1 : 0, u = w.surveyU;
+      if ((on || u.value > 0) && (this.surveyDirty || w.fogDirtyForSurvey)) { this.paintSurvey(w); w.fogDirtyForSurvey = false; }
+      u.value += (target - u.value) * Math.min(1, dt * 6);
+      if (u.value < 0.002) u.value = 0;
     }
   };
   VE.Mining = Mining;
-
-  /* procedurele reserve-ader: brokken rots met gekleurde stukken */
-  function procOre(t, v) {
-    const m = new VE.Model(600 + t * 7 + v);
-    const rock = t === 1 ? 0x4a4a50 : t === 4 ? 0x8f8a82 : t === 3 ? 0x8a6a50 : 0x6e5a4c;
-    const ore = VE.ORES[t].color;
-    m.add(new THREE.DodecahedronGeometry(0.2, 0), rock, { y: 0.08, sy: 0.6, j: 0.06 });
-    m.add(new THREE.DodecahedronGeometry(0.12, 0), rock, { x: 0.16, y: 0.05, z: 0.06, sy: 0.7, j: 0.06 });
-    for (let i = 0; i < 5 + v * 2; i++) {
-      const a = i * 2.4 + v;
-      m.add(new THREE.OctahedronGeometry(0.035 + (i % 3) * 0.012, 0), ore, { x: Math.cos(a) * 0.13, y: 0.1 + (i % 2) * 0.05, z: Math.sin(a) * 0.12, j: 0.04 });
-    }
-    return m.build();
-  }
 
   /* ---------------- bewegende delen van mijnen en smelterij ---------------- */
   // kind: 'cart' (karretje rijdt over de rails naar buiten en terug), 'wheel' (katrol), 'bellows', 'glow' (ovenmond)
   VE.animPart = function (game, b, a, dt) {
     const s = b.worker;
     // mijn actief: de mijnwerker is buiten aan het hakken, of heeft net iets opgeleverd
-    const busy = b.def.gather === 'ore' ? !!(s && s.mode === 'work' && s.wstate !== 'inside') : !!b.working;
+    const busy = !!b.working;
     a.v = VE.lerp(a.v || 0, busy ? 1 : 0, Math.min(1, dt * 2));
     if (!a.base) a.base = a.mesh.position.clone();
     if (a.kind === 'cart') {
@@ -259,27 +234,4 @@
   /* ovengloed: eigen materiaal per gebouw (de rest deelt het gebouwmateriaal) */
   VE.glowMat = function () { return new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }); };
 
-  /* ---------------- ertsaders uit Blender (public/models/ores.glb, nodes ore_<soort>_<v>) ---------------- */
-  VE.oreSource = 'loading';
-  const oreGeos = {};
-  VE.oreGeo = (t, v) => oreGeos[t * VARIANTS + v] || null;
-  const URL = 'public/models/ores.glb' + (VE.VERSION ? '?v=' + VE.VERSION : '');
-  const load = (VE.loadGlb ? VE.loadGlb(URL) : Promise.reject(new Error('GLTFLoader niet beschikbaar')))
-    .then(gltf => {
-      for (let t = 1; t <= 4; t++) for (let v = 0; v < VARIANTS; v++) {
-        const node = gltf.scene.getObjectByName('ore_' + VE.ORES[t].key + '_' + v);
-        if (!node) throw new Error('node ore_' + VE.ORES[t].key + '_' + v + ' ontbreekt');
-        oreGeos[t * VARIANTS + v] = VE.bakeGlbNode(node, 700 + t * 10 + v);
-      }
-      VE.oreSource = 'glb';
-      const g = VE.game;                                              // spel al bezig: aders opnieuw opbouwen
-      if (g && g.world && g.world.deposits) Mining.buildMeshes(g);
-    })
-    .catch(e => {
-      for (const k in oreGeos) delete oreGeos[k];
-      VE.oreSource = 'procedural';
-      console.warn('[Village Empire] ertsaders: GLB niet geladen, eenvoudige aders worden gebruikt.', e && e.message || e);
-    });
-  const prev = VE.glbReady || Promise.resolve();
-  VE.glbReady = Promise.race([Promise.all([prev, load]), new Promise(r => setTimeout(r, 10000))]);
 })(window.VE);

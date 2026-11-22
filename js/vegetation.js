@@ -122,6 +122,7 @@
   class Vegetation {
     constructor(world, geos) {
       this.w = world;
+      this.tr = new Float32Array(N * N);                // platgetrapt per tegel (0 = ongerept, 1 = weg), zie js/paths.js
       const mob = VE.isMobile ? 1 : 0;
       this.kinds = NAMES.map((name, id) => {
         const def = KINDS[name], cap = def.cap[mob];
@@ -132,7 +133,7 @@
         mesh.name = 'veg_' + name;
         world.root.add(mesh);
         const inst = new Instancer(mesh, cap, name.startsWith('bush') || name === 'hedge' || name === 'd_mossrock' ? 0.5 : 0.3);
-        return { id: id, name: name, def: def, mesh: mesh, inst: inst, cap: cap, used: 0, free: [], pos: [], dirty: false };
+        return { id: id, name: name, def: def, mesh: mesh, inst: inst, cap: cap, used: 0, free: [], pos: [], dirty: false, trample: /^(grass_|weed|fl_)/.test(name) };
       });
       this.byName = {}; for (const k of this.kinds) this.byName[k.name] = k;
       this.items = new Array(N * N).fill(null);   // natuurlijke decoratie per tegel: [kind<<16 | idx]
@@ -160,7 +161,13 @@
     place(K, idx) {
       const p = K.pos[idx], w = this.w;
       _q.setFromAxisAngle(_y, p[3]);
-      _m.compose(_p.set(p[0], w.heightAt(p[0], p[1]) - 0.006, p[1]), _q, _s.set(p[2], p[2] * p[4], p[2]));
+      // gras en bloemen op belopen plekken: eerst lager, dan weg (en terug als het pad herstelt)
+      let h = 1, s = 1;
+      if (K.trample) {
+        const t = this.tr[Math.floor(p[1]) * N + Math.floor(p[0])] || 0;
+        if (t > 0) { h = t >= 0.98 ? 0 : 1 - t * 0.85; s = t >= 0.98 ? 0 : 1 - t * 0.35; }
+      }
+      _m.compose(_p.set(p[0], w.heightAt(p[0], p[1]) - 0.006, p[1]), _q, _s.set(p[2] * s, p[2] * p[4] * h, p[2] * s));
       K.inst.set(idx, _m);
     }
     drop(code) {
@@ -180,6 +187,11 @@
         const k = j * N + i;
         for (const arr of [this.items[k], this.edge[k]]) if (arr) for (const c of arr) this.place(this.kinds[c >> 16], c & 0xffff);
       }
+    }
+    setTrample(k, f) {
+      if (Math.abs((this.tr[k] || 0) - f) < 0.03 && !(f === 0 && this.tr[k] > 0)) return;
+      this.tr[k] = f;
+      for (const arr of [this.items[k], this.edge[k]]) if (arr) for (const c of arr) { const K = this.kinds[c >> 16]; if (K.trample) this.place(K, c & 0xffff); }
     }
     flush() { /* de Instancers werken zichzelf bij in VE.natureSync (per frame, alleen wat zichtbaar is) */ }
 

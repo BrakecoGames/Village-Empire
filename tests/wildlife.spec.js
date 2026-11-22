@@ -29,7 +29,13 @@ async function demo(page) {
     const sm = find('smelter', [g.hq.cx + 4, g.hq.cz + 1], 9);
     if (sm) { const b = g.placeBuilding('smelter', sm[0], sm[1], true); out.smelter = [b.cx, b.cz]; window._sm = b; }
     // jagershut bij een bosrand met wild
-    const hu = find('hunter', [g.hq.cx - 6, g.hq.cz - 4], 12);
+    // jagershut waar het meeste wild zit (binnen bereik van het dorp)
+    let hu = null, hs = -1;
+    for (let j = 2; j < N - 2; j++) for (let i = 2; i < N - 2; i++) {
+      if (Math.hypot(i - g.hq.cx, j - g.hq.cz) > 16 || !g.canPlace('hunter', i, j).ok) continue;
+      const sc = g.wild.list.filter(a => !a.dead && a.sp.hunt && Math.hypot(a.x - i - 0.5, a.z - j - 0.5) < 7).length;
+      if (sc > hs) { hs = sc; hu = [i, j]; }
+    }
     if (hu) { const b = g.placeBuilding('hunter', hu[0], hu[1], true); out.hunter = [b.cx, b.cz]; }
     for (let n = 0; n < 20; n++) g.spawnSettler();
     document.querySelectorAll('.toast').forEach(t => t.remove());
@@ -111,8 +117,8 @@ test.describe('wildlife & mijnbouw: logica', () => {
       g.rank = 2; w.owned.fill(1);
       const why = (t, i, j) => g.canPlace(t, i, j);
       out.onGrass = why('coalmine', g.hq.i + 3, g.hq.j + 3).why;
-      const dep = w.deposits.find(d => d.type === 1);
-      out.onVein = why('coalmine', dep.i, dep.j).why;
+      // ondergronds: niets zichtbaars in de wereld; bouwen bóven een voorraad mag
+      out.oreMeshes = 0; g.root.traverse(o => { if (/^ore_/.test(o.name || '')) out.oreMeshes++; });
       out.good = why('coalmine', out.coalSpot[0], out.coalSpot[1]);
       // een steenkoolplek zonder ijzer in de buurt: een ijzermijn mag daar niet, met een tip
       let cs = null;
@@ -120,7 +126,7 @@ test.describe('wildlife & mijnbouw: logica', () => {
         const i = d.i + di, j = d.j + dj;
         if (M.mineSpot(w, i, j) && g.canPlace('coalmine', i, j).ok && !M.near(w, i + 0.5, j + 0.5, 2, 2.6)) cs = [i, j];
       }
-      out.wrongOre = cs ? why('ironmine', cs[0], cs[1]) : { ok: false, why: 'No iron here, but coal (geen losse plek)' };
+      out.wrongOre = cs ? why('ironmine', cs[0], cs[1]) : { ok: false, why: 'No iron below this spot, but coal (geen losse plek)' };
       // berg zonder erts in de buurt
       let bare = null;
       for (let j = 1; j < N - 2 && !bare; j++) for (let i = 1; i < N - 1 && !bare; i++) {
@@ -152,12 +158,12 @@ test.describe('wildlife & mijnbouw: logica', () => {
     console.log('mijnplek steenkool+ijzer over 30 seeds (max afstand):', JSON.stringify(r.seeds));
     expect(Math.max(...r.seeds), 'elke wereld: steenkool en ijzer met mijnplek binnen bereik').toBeLessThan(28);
     expect(r.onGrass).toBe('Mines can only be built on the mountain');
-    expect(r.onVein).toMatch(/vein itself/);
+    expect(r.oreMeshes, 'geen zichtbare ertsaders').toBe(0);
     expect(r.good.ok).toBe(true);
-    expect(r.good.why).toMatch(/coal vein is within reach/);
+    expect(r.good.why).toMatch(/(small|good|rich) coal deposit below \(about \d+\)/);
     expect(r.wrongOre.ok).toBe(false);
-    expect(r.wrongOre.why).toMatch(/No iron here, but coal/);
-    expect(r.bare).toMatch(/No coal vein within reach|geen/);
+    expect(r.wrongOre.why).toMatch(/No iron below this spot, but coal/);
+    expect(r.bare).toMatch(/No coal found below this spot|geen/);
     expect(r.houseOnMountain).toBe('Too rocky here');
     expect(r.sameOre && r.sameWild, 'deterministisch').toBe(true);
     expect(r.oreLen).toBeGreaterThan(10);
@@ -298,7 +304,8 @@ test.describe('wildlife & mijnbouw: logica', () => {
       const dep = w.deposits.find(d => d.type === 2);
       VE.ui.updateGhost({ i: g.hq.i + 2, j: g.hq.j + 2, x: g.hq.i + 2.5, z: g.hq.j + 2.5 });
       const whyBad = document.getElementById('toolHintWhy').textContent, clsBad = document.getElementById('toolHintWhy').className;
-      const rings = VE.Mining.ring ? VE.Mining.ring.count : 0;
+      VE.ui.update(0.5); VE.ui.update(0.5);
+      const rings = w.surveyU.value;                                 // informatielaag zichtbaar tijdens het plaatsen
       VE.ui.setTool(null);
       // opslaan en laden
       const save = JSON.parse(JSON.stringify(g.serialize()));
@@ -335,7 +342,7 @@ test.describe('wildlife & mijnbouw: logica', () => {
     expect(r.recipeAfterClick).toBe('copperbar');
     expect(r.whyBad).toBe('Mines can only be built on the mountain');
     expect(r.clsBad).toBe('bad');
-    expect(r.rings, 'ijzeraders lichten op').toBeGreaterThan(0);
+    expect(r.rings, 'mijnbouw-informatielaag zichtbaar').toBeGreaterThan(0.5);
     expect(r.same.ore && r.same.wild && r.same.stock).toBe(true);
     expect(r.same.recipe).toBe('copperbar');
     expect(r.same.mines).toBe(4);
@@ -370,11 +377,10 @@ test.describe('wildlife & mijnbouw: logica', () => {
       R.render(VE.view.scene, VE.view.camera);
       const calls = R.info.render.calls; R.info.autoReset = true;
       let animalCalls = 0; g.root.traverse(o => { if (o.isInstancedMesh && /^animal_/.test(o.name) && o.visible && o.count) animalCalls++; });
-      return { simMs, renderMs, calls, animalCalls, animals: g.wild.list.length, src: VE.animalSource, ores: VE.oreSource, drawn: g.wr.stats };
+      return { simMs, renderMs, calls, animalCalls, animals: g.wild.list.length, src: VE.animalSource, drawn: g.wr.stats };
     });
     console.log('prestaties dieren:', JSON.stringify(r));
     expect(r.src).toBe('glb');
-    expect(r.ores).toBe('glb');
     expect(r.simMs, 'dier-AI per update').toBeLessThan(2.5);
     expect(r.renderMs, 'dieren tekenen per frame').toBeLessThan(4);
     expect(r.animalCalls, 'draw calls dieren').toBeLessThanOrEqual(40);
@@ -384,14 +390,13 @@ test.describe('wildlife & mijnbouw: logica', () => {
   test('fallback: zonder animals.glb en ores.glb werken dieren en aders ook', async ({ page }, info) => {
     test.skip(info.project.name !== 'desktop', 'logica: alleen desktop');
     const errors = trackErrors(page);
-    await page.route(/animals\.glb|ores\.glb|mine\.glb|hunter\.glb|smelter\.glb/, r => r.abort());
+    await page.route(/animals\.glb|mine\.glb|hunter\.glb|smelter\.glb/, r => r.abort());
     await openGame(page);
     await startNewVillage(page);
     await demo(page);
     await run(page, 30);
-    const r = await page.evaluate(() => ({ a: VE.animalSource, o: VE.oreSource, m: VE.modelSource.coalmine, n: VE.game.wild.list.length, drawn: VE.game.wr.stats.src }));
+    const r = await page.evaluate(() => ({ a: VE.animalSource, m: VE.modelSource.coalmine, n: VE.game.wild.list.length, drawn: VE.game.wr.stats.src }));
     expect(r.a).toBe('procedural');
-    expect(r.o).toBe('procedural');
     expect(r.m).toBe('procedural');
     expect(r.n).toBeGreaterThan(20);
     const unknown = checkErrors(errors, info).filter(e => !/GLB niet geladen|Failed to load resource|ERR_FAILED|net::/.test(e));

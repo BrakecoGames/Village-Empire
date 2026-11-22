@@ -79,12 +79,14 @@ test.describe('Paden', () => {
       for (let t = 0; t < 360; t += 0.1) g.update(0.1);
       g.speed = saved;
       w.rebuildRoads();
-      return { before, after: count(), roads: g.stats.roads, verts: w.roadMesh.geometry.attributes.position.count };
+      w.paths.upload();
+      let lit = 0; for (const b of w.paths.data) if (b > 0) lit++;
+      return { before, after: count(), roads: g.stats.roads, lit };
     });
     expect(r.before.path).toBeLessThan(4); // aan het begin alleen de ingangen van grote gebouwen
-    expect(r.after.path).toBeGreaterThan(r.before.path + 3);
+    expect(r.after.trail + r.after.path).toBeGreaterThan(r.before.trail + r.before.path + 3);
     expect(r.roads).toBeGreaterThan(3);
-    expect(r.verts).toBeGreaterThan(0);
+    expect(r.lit, 'slijtage zichtbaar in het terrein').toBeGreaterThan(100);
     expect(checkErrors(errors, info)).toEqual([]);
   });
 
@@ -100,9 +102,9 @@ test.describe('Paden', () => {
       return { k };
     }, FREE_TILE);
     const saved = JSON.parse(await page.evaluate(k => localStorage.getItem(k), SAVE_KEY));
-    expect(saved.roads.some(e => Array.isArray(e) && e[0] === r.k)).toBe(true);
+    expect(Array.isArray(saved.trail) && saved.trail.length > 0).toBe(true);
     // oud formaat: een kale lijst tegelnummers van zelf aangelegde wegen
-    saved.roads = [r.k];
+    delete saved.trail; saved.roads = [r.k];
     await page.evaluate(([key, s]) => { window.VE.playing = false; localStorage.setItem(key, JSON.stringify(s)); }, [SAVE_KEY, saved]);
     await page.reload();
     await page.locator('#btnContinue').click();

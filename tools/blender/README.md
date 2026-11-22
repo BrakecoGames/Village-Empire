@@ -123,4 +123,4 @@ In de game (`js/wildlife.js`) is elk deel één InstancedMesh voor alle dieren v
 - `models/mine.py`: één mijnschacht, `mine_l1..l3`, gedeeld door alle vier de mijnen. De materialen `Vein`
   en `Vein2` krijgen per mijntype de kleur van het erts (`TYPES.<mijn>.tint` in `js/glb-models.js`). Het
   karretje (`anim_cart`) rijdt over de rails en de katrol (`anim_wheel`) draait.
-- `models/ores.py`: ertsaders `ore_<coal|iron|copper|gold>_<0|1>`, geladen door `js/mining.js`.
+- Ertsen zitten ondergronds (geen model): de mijnbouw-informatielaag zit in de terreinshader (`js/paths.js`).

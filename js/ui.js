@@ -17,6 +17,7 @@
   };
 
   /* ================= Camera controller ================= */
+  const _ndc = new THREE.Vector2(), _ray = new THREE.Raycaster(), _plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), _g = new THREE.Vector3();
   class CameraCtl {
     constructor(camera) {
       this.camera = camera;
@@ -42,6 +43,24 @@
       this.tz += -rz * dx * s + fz * dy * s * 1.25;
     }
     zoom(f) { this.tdist = VE.clamp(this.tdist * f, 6.5, 42); }
+    /* punt op het maaiveld (vlak y = ty) onder schermpositie (clientX, clientY); null als je boven de horizon wijst */
+    groundAt(cx, cy, out, planeY) {
+      const el = VE.view && VE.view.renderer.domElement; if (!el) return null;
+      const r = el.getBoundingClientRect();
+      _ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+      this.camera.updateMatrixWorld();
+      _ray.setFromCamera(_ndc, this.camera);
+      _plane.constant = -(planeY === undefined ? this.ty : planeY);
+      return _ray.ray.intersectPlane(_plane, out) ? out : null;
+    }
+    /* slepen: het vastgepakte punt blijft onder de muis (camerahoek en draaiing veranderen niet) */
+    dragTo(anchor, cx, cy) {
+      this.update(0);
+      if (!this.groundAt(cx, cy, _g, anchor.y)) return;          // zelfde hoogte als bij het vastpakken: geen drift over heuvels
+      this.tx += anchor.x - _g.x; this.tz += anchor.z - _g.z;
+      this.tx = VE.clamp(this.tx, 1, N - 1); this.tz = VE.clamp(this.tz, 1, N - 1);
+      this.update(0);
+    }
     rotate(a) { this.tyaw += a; }
     /* tilt up/down (radians, positive = more top-down), 20°–82° like the other Brakeco games */
     tilt(a) { this.pitch = VE.clamp(this.pitch + a, 0.42, 1.36); }
@@ -120,7 +139,10 @@
         if (!VE.playing) return;
         if (e.button === 1) e.preventDefault();
         el.setPointerCapture(e.pointerId);
-        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, b: e.button, type: e.pointerType });
+        const pt = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, b: e.button, type: e.pointerType, drag: false, anchor: null };
+        // linkerknop / één vinger: het punt op de grond onthouden waar je de wereld 'vastpakt'
+        if (e.button === 0) { const a = new THREE.Vector3(); if (this.view.cam.groundAt(e.clientX, e.clientY, a)) pt.anchor = a; }
+        this.pointers.set(e.pointerId, pt);
         this.moved = 0;
         if (this.pointers.size > 1) this.pinch = null;
       });
@@ -140,13 +162,19 @@
             this.view.cam.pan(mx - this.pinch.mx, my - this.pinch.my);
           }
           this.pinch = { d: d, a: ang, mx: mx, my: my };
+          for (const q of this.pointers.values()) { q.drag = true; q.anchor = null; }   // na knijpen geen tik of sprong
           this.moved += 99;
           return;
         }
         this.moved += Math.abs(dx) + Math.abs(dy);
         if (p.b === 1) { this.view.cam.rotate(-dx * 0.008); this.view.cam.tilt(dy * 0.006); return; } // middle drag: orbit + tilt
         if (p.b === 2) { this.view.cam.rotate(-dx * 0.006); return; }
-        if (Math.hypot(p.x - p.sx, p.y - p.sy) > 6) this.view.cam.pan(dx, dy);
+        // linkerknop / één vinger: pas na een kleine drempel slepen (klikken blijft klikken)
+        if (!p.drag && Math.hypot(p.x - p.sx, p.y - p.sy) > (e.pointerType === 'mouse' ? 6 : 10)) { p.drag = true; this.ghost.visible = false; }
+        if (p.drag) {
+          if (p.anchor) this.view.cam.dragTo(p.anchor, e.clientX, e.clientY); else this.view.cam.pan(dx, dy);
+          return;
+        }
         if (e.pointerType === 'mouse') this.hover(e.clientX, e.clientY);
       });
       const up = e => {
@@ -154,7 +182,8 @@
         if (!p) return;
         this.pointers.delete(e.pointerId);
         if (this.pointers.size === 0) {
-          if (this.moved < 9 && p.b === 0) this.tap(e.clientX, e.clientY, p.type);
+          if (!p.drag && this.moved < 9 && p.b === 0) this.tap(e.clientX, e.clientY, p.type);
+          if (p.drag && p.type === 'mouse') this.hover(e.clientX, e.clientY);
           if (this.moved < 9 && p.b === 2) this.setTool(null);
           this.pinch = null;
         } else this.pinch = null;
@@ -295,6 +324,9 @@
           '<div class="c-icon">' + d.icon + '</div><div class="c-name">' + d.name + '</div>' +
           (un ? '<div class="c-cost">' + costHtml(cost, g) + '</div>' : '<div class="c-lock">🔒 ' + VE.RANKS[d.rank].name + '</div>') + '</button>';
       }
+      // Mining: schakelaar voor de mijnbouw-informatielaag (welk erts ligt waar onder de berg)
+      if (this.cat === 'metal') cards = '<button class="card survey ' + (this.survey ? 'on' : '') + '" data-survey="1" title="Show which ore lies below the mountains you have explored">' +
+        '<div class="c-icon">🔍</div><div class="c-name">Survey</div><div class="c-cost"><span class="cost">' + (this.survey ? 'on' : 'off') + '</span></div></button>' + cards;
       $('cards').innerHTML = cards;
       this.lastSig.barStruct = g.rank + '|' + this.cat;
     }
@@ -302,6 +334,7 @@
       const g = this.game;
       document.querySelectorAll('#cards .card').forEach(c => {
         const k = c.dataset.b, d = VE.DEFS[k];
+        if (!d) return;                                           // Survey-knop e.d.: geen bouwkosten
         c.classList.toggle('on', this.tool === k);
         if (c.classList.contains('locked')) return;
         const cost = Object.assign({}, d.cost || {}); if (d.gold) cost.gold = d.gold;
@@ -318,6 +351,13 @@
       $('tabs').addEventListener('click', e => { const t = e.target.closest('.tab'); if (!t) return; this.cat = t.dataset.cat; VE.audio.play('click'); this.renderBuildBar(); });
       $('cards').addEventListener('click', e => {
         const c = e.target.closest('.card'); if (!c) return;
+        if (c.dataset.survey) {
+          this.survey = !this.survey; VE.audio.play('click');
+          if (VE.Mining) VE.Mining.highlight(this.game, 0);
+          this.renderBuildBar();
+          if (this.survey) this.toast('🔍 Survey: coloured stripes show the ore below explored mountains');
+          return;
+        }
         const k = c.dataset.b, g = this.game;
         if (!g.unlocked(k)) { this.toast('🔒 Unlocks at rank ' + VE.RANKS[VE.DEFS[k].rank].name); VE.audio.play('error'); return; }
         VE.audio.play('click');
@@ -450,8 +490,8 @@
           if (b.working && b.wt0) { const pct = Math.round(100 * (1 - b.wt / b.wt0)); h += '<div class="bar"><i style="width:' + pct + '%"></i><span>' + pct + '%</span></div>'; }
         }
         if (d.gather === 'ore' && VE.Mining) {
-          const left = g.world.deposits.filter(o => o.type === d.ore && o.amount > 0 && (o.x - b.cx) ** 2 + (o.z - b.cz) ** 2 <= (d.radius + (b.level - 1) * 0.5) ** 2).reduce((n, o) => n + o.amount, 0);
-          h += '<div class="ip-row"><b>Vein</b> ' + (left ? left + ' ' + VE.RES[d.out].name.toLowerCase() + ' left' : '<span class="short">exhausted: build a new mine at another vein</span>') + '</div>';
+          const left = VE.Mining.reach(g.world, b.cx, b.cz, d.ore, d.radius + (b.level - 1) * 0.5);
+          h += '<div class="ip-row"><b>Deposit</b> ' + (left ? VE.Mining.richness(left) + ', about ' + (Math.round(left / 5) * 5 || left) + ' ' + VE.RES[d.out].name.toLowerCase() + ' left' : '<span class="short">used up: build a new mine above another deposit</span>') + '</div>';
         }
         if (d.gather === 'hunt' && g.wild) {
           const r = d.radius + (b.level - 1), c = {};
@@ -617,11 +657,11 @@
         '<p>🛤️ <b>Paths</b> are not built: they wear in by themselves where settlers walk back and forth a lot. A trampled trail turns into a real path, and settlers walk faster on it. Paths that nobody uses grow over again.</p>' +
         '<p>🔗 <b>Production chains</b>: trees ➜ logs ➜ planks · wheat ➜ flour ➜ bread · grapes ➜ wine · game ➜ meat · ore + coal ➜ metal bars.</p>' +
         '<p>🦌 <b>Hunters</b> sneak up on rabbits, roe, deer and wild boar. They always leave enough animals to breed, so game recovers over time.</p>' +
-        '<p>⛏️ <b>Mines</b> can only be built on the mountain, right beside a vein of their ore: coal (black), iron (rust-red), copper (green) or gold. The matching veins light up while you place a mine. A <b>Smelter</b> turns ore and coal into bars.</p>' +
+        '<p>⛏️ <b>Mines</b> can only be built on the mountain, above a deposit of their ore: coal, iron, copper or gold. The ore lies underground: while you place a mine, or with <b>🔍 Survey</b> in the Mining tab, coloured stripes show what lies below explored mountains (grey = nothing found). A <b>Smelter</b> turns ore and coal into bars.</p>' +
         '<p>👥 <b>Cottages</b> give room for new settlers. They arrive much faster when bread or fish is in storage.</p>' +
         '<p>⚖️ <b>Marketplace</b>: choose which goods to sell for gold. Gold buys upgrades and watchtowers.</p>' +
         '<p>📜 Complete the <b>Village Charter</b> to rise in rank and unlock new buildings.</p>' +
-        '<p>🖱️ Drag to move · scroll or pinch to zoom · Q/E or two fingers to rotate · Space: game speed</p></div>' +
+        '<p>🖱️ <b>Left-drag</b> to move the view · <b>right-drag</b> (or Q/E, two fingers) to rotate · scroll or pinch to zoom · click to select or build · Space: game speed</p></div>' +
         '<div class="mbtns"><button class="btn good" data-act="closeModal">Got it</button></div>');
     }
     confirmNew() {
@@ -690,6 +730,10 @@
       this.keyPan(dt);
       this.updateFloaters(dt);
       if (this.selRing.visible) { const s = 1 + Math.sin(performance.now() * 0.005) * 0.04; this.selRing.material.opacity = 0.65 + Math.sin(performance.now() * 0.006) * 0.25; void s; }
+      if (VE.Mining) {
+        const mineTool = this.tool && VE.DEFS[this.tool] && VE.DEFS[this.tool].mountain, mineSel = this.sel && this.sel.def.mountain;
+        VE.Mining.tick(this.game, dt, !!(mineTool || mineSel || this.survey));
+      }
       this.hudT = (this.hudT || 0) - dt;
       if (this.hudT <= 0) { this.hudT = 0.3; this.refreshHud(); }
     }

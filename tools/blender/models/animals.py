@@ -42,6 +42,9 @@ setup(seed=4401, extra_palette={
     "Sq": (0xB4542A, 0.03), "SqL": (0xF0DDBE, 0.02), "Nut": (0x8A5A2B, 0.03),
     # vogel
     "Bird": (0x8A6A4A, 0.03), "BirdL": (0xE6D2B2, 0.02), "BirdD": (0x5E4632, 0.03), "Beak": (0xF0A23A, 0.0), "Robin": (0xE07A3A, 0.02),
+    "TitG": (0x8FA65A, 0.03), "TitY": (0xF2D24A, 0.02), "TitB": (0x3F7FD0, 0.02), "TitW": (0x5A8AC8, 0.03), "TitBk": (0x2A2A30, 0.0),
+    "Black": (0x2A2826, 0.03), "BlackL": (0x3A3632, 0.03), "BlackW": (0x1F1D1C, 0.02),
+    "Tint": (0xFFFFFF, 0.0), "BflyB": (0x2E2622, 0.0), "BflySpot": (0xFFF6E0, 0.0),
 })
 
 RIGS = {}        # soort -> {node: object}
@@ -485,43 +488,120 @@ def squirrel():
 
 
 # ================================================================== zangvogel
-def bird():
-    sp, hb = "bird", 0.025
+BIRDS = {   # soort: (lijf, borst, kop, vleugel, snavel)
+    "bird": ("Bird", "Robin", "BirdD", "BirdD", "Beak"),           # roodborstje
+    "tit": ("TitG", "TitY", "TitB", "TitW", "TitBk"),                # pimpelmees: blauw petje, gele borst
+    "blackbird": ("Black", "BlackL", "Black", "BlackW", "Beak"),     # merel: zwart met oranje snavel
+}
+
+
+def bird(sp="bird"):
+    """Zangvogel met gevederde vleugels (waaier van platte veren) en clips voor pikken, hupjes, fladderen en zweven."""
+    cb, cc, ch, cw, ck = BIRDS[sp]
+    sz = 1.12 if sp == "blackbird" else 0.92 if sp == "tit" else 1.0
+    hb = 0.025 * sz
     make_rig(sp, {
-        "root": (None, (0, 0, 0)), "body": ("root", (0, hb, 0)), "head": ("body", (0, hb + 0.018, 0.012)),
-        "tail": ("body", (0, hb + 0.004, -0.018)),
-        "wingL": ("body", (-0.014, hb + 0.01, 0.002)), "wingR": ("body", (0.014, hb + 0.01, 0.002)),
+        "root": (None, (0, 0, 0)), "body": ("root", (0, hb, 0)), "head": ("body", (0, hb + 0.018 * sz, 0.012 * sz)),
+        "tail": ("body", (0, hb + 0.004 * sz, -0.018 * sz)),
+        "wingL": ("body", (-0.012 * sz, hb + 0.012 * sz, 0.004 * sz)), "wingR": ("body", (0.012 * sz, hb + 0.012 * sz, 0.004 * sz)),
     })
     part(sp, "body", "body", lambda: (
-        blob(0.021, "Bird", (0, hb + 0.004, -0.002), scale=(0.85, 0.85, 1.15), sub=2),
-        blob(0.016, "Robin", (0, hb + 0.002, 0.009), scale=(0.85, 0.85, 0.7), sub=1),
-        limb((-0.006, hb - 0.012, 0.0), (-0.006, 0.0, 0.002), 0.0016, 0.0012, "Beak", seg=4),
-        limb((0.006, hb - 0.012, 0.0), (0.006, 0.0, 0.002), 0.0016, 0.0012, "Beak", seg=4)))
+        blob(0.021 * sz, cb, (0, hb + 0.004 * sz, -0.002 * sz), scale=(0.85, 0.85, 1.2), sub=2),
+        blob(0.016 * sz, cc, (0, hb + 0.001 * sz, 0.009 * sz), scale=(0.85, 0.85, 0.7), sub=1),
+        limb((-0.006 * sz, hb - 0.012 * sz, 0.0), (-0.006 * sz, 0.0, 0.002), 0.0016, 0.0012, "Beak", seg=4),
+        limb((0.006 * sz, hb - 0.012 * sz, 0.0), (0.006 * sz, 0.0, 0.002), 0.0016, 0.0012, "Beak", seg=4)))
     def head():
-        y, z = hb + 0.024, 0.016
-        blob(0.014, "BirdD", (0, y, z), sub=2)
-        cyl(0.0, 0.005, 0.012, 6, "Beak", pos=(0, y - 0.002, z + 0.011), rot=(math.pi / 2, 0, 0), smooth=False)
-        eyes(0, y + 0.003, z + 0.004, 0.011, 0.004, fwd=0.002)
+        y, z = hb + 0.024 * sz, 0.016 * sz
+        blob(0.014 * sz, ch, (0, y, z), sub=2)
+        if sp == "tit":
+            blob(0.0145 * sz, "TitW", (0, y - 0.004 * sz, z + 0.002 * sz), scale=(1.02, 0.6, 0.95), sub=1)   # witte wangen
+            blob(0.009 * sz, "TitB", (0, y + 0.008 * sz, z), scale=(1.2, 0.6, 1.2), sub=1)                  # blauw petje
+        cyl(0.0, 0.005 * sz, 0.012 * sz, 6, ck, pos=(0, y - 0.002 * sz, z + 0.011 * sz), rot=(math.pi / 2, 0, 0), smooth=False)
+        eyes(0, y + 0.003 * sz, z + 0.004 * sz, 0.011 * sz, 0.004 * sz, fwd=0.002)
     part(sp, "head", "head", head)
-    part(sp, "tail", "tail", lambda: box(0.014, 0.004, 0.022, "BirdD", pos=(0, hb + 0.006, -0.026), rot=(-0.4, 0, 0)))
-    part(sp, "wingL", "wing", lambda: blob(0.016, "BirdD", (-0.018, hb + 0.006, -0.004), scale=(0.35, 0.6, 1.1), sub=1))
-    part(sp, "wingR", "wing", lambda: blob(0.016, "BirdD", (0.018, hb + 0.006, -0.004), scale=(0.35, 0.6, 1.1), sub=1))
+    def tail():
+        for i, off in enumerate((-0.006, 0.0, 0.006)):
+            box(0.007 * sz, 0.003, 0.026 * sz, cw, pos=(off * sz, hb + 0.006 * sz, -0.028 * sz), rot=(-0.35, off * 6, 0))
+    part(sp, "tail", "tail", tail)
+    def wing(side):
+        def f():
+            # vleugel: waaier van platte veren vanaf de schouder naar buiten en iets naar achteren
+            x0 = side * 0.012 * sz
+            for i in range(4):
+                L = (0.034 - i * 0.004) * sz
+                ang = side * (0.15 + i * 0.22)
+                cx, cz = x0 + side * L * 0.5 * math.cos(i * 0.22), -0.004 * sz - i * 0.006 * sz
+                box(L, 0.0028, 0.011 * sz, cw if i else cb, pos=(cx, hb + 0.012 * sz, cz), rot=(0, ang * 0.4, 0))
+        return f
+    part(sp, "wingL", "wing", wing(-1))
+    part(sp, "wingR", "wing", wing(1))
     clip(sp, "idle", 48, [                                                          # rondkijken en pikken
-        (0.0, {"head": k(), "body": k(), "tail": k()}),
+        (0.0, {"head": k(), "body": k(), "tail": k(), "wingL": k(ry=-1.35, rz=0.25), "wingR": k(ry=1.35, rz=-0.25)}),
         (0.15, {"head": k(ry=0.6)}), (0.3, {"head": k(ry=-0.5)}),
         (0.45, {"head": k(rx=0.9), "body": k(rx=0.35), "tail": k(rx=-0.4)}), (0.52, {"head": k(rx=0.2), "body": k(rx=0.1)}),
         (0.6, {"head": k(rx=0.9), "body": k(rx=0.35), "tail": k(rx=-0.4)}), (0.7, {"head": k(), "body": k(), "tail": k(rx=0.2)}),
-        (1.0, {"head": k(), "body": k(), "tail": k()}),
+        (1.0, {"head": k(), "body": k(), "tail": k(), "wingL": k(ry=-1.35, rz=0.25), "wingR": k(ry=1.35, rz=-0.25)}),
     ])
     clip(sp, "walk", 12, [
-        (0.0, {"body": k(), "tail": k()}), (0.4, {"body": k(dy=0.012, rx=-0.15), "tail": k(rx=0.3)}), (1.0, {"body": k(), "tail": k()}),
+        (0.0, {"body": k(), "tail": k(), "wingL": k(ry=-1.35, rz=0.25), "wingR": k(ry=1.35, rz=-0.25)}), (0.4, {"body": k(dy=0.012, rx=-0.15), "tail": k(rx=0.3)}),
+        (1.0, {"body": k(), "tail": k(), "wingL": k(ry=-1.35, rz=0.25), "wingR": k(ry=1.35, rz=-0.25)}),
     ])
-    clip(sp, "fly", 8, [
-        (0.0, {"wingL": k(rz=1.1), "wingR": k(rz=-1.1), "body": k(rx=-0.1), "tail": k(rx=0.2)}),
-        (0.5, {"wingL": k(rz=-0.7), "wingR": k(rz=0.7), "body": k(rx=-0.1, dy=0.003)}),
-        (1.0, {"wingL": k(rz=1.1), "wingR": k(rz=-1.1), "body": k(rx=-0.1), "tail": k(rx=0.2)}),
+    # fladderen: vleugels ver omhoog, krachtige neerslag; lijf deint mee
+    clip(sp, "fly", 10, [
+        (0.0, {"wingL": k(rz=1.15, ry=0.1), "wingR": k(rz=-1.15, ry=-0.1), "body": k(rx=-0.12, dy=-0.002), "tail": k(rx=0.15), "head": k(rx=-0.1)}),
+        (0.45, {"wingL": k(rz=-0.75, ry=-0.15), "wingR": k(rz=0.75, ry=0.15), "body": k(rx=-0.08, dy=0.004)}),
+        (0.7, {"wingL": k(rz=-0.35), "wingR": k(rz=0.35)}),
+        (1.0, {"wingL": k(rz=1.15, ry=0.1), "wingR": k(rz=-1.15, ry=-0.1), "body": k(rx=-0.12, dy=-0.002), "tail": k(rx=0.15), "head": k(rx=-0.1)}),
     ])
-    clip(sp, "alert", 24, [(0.0, {"head": k(rx=-0.2, ry=0.5), "tail": k(rx=0.4)}), (0.5, {"head": k(rx=-0.2, ry=-0.5)}), (1.0, {"head": k(rx=-0.2, ry=0.5), "tail": k(rx=0.4)})])
+    # zweven: vleugels gestrekt, licht wiegend, staart gespreid
+    clip(sp, "glide", 36, [
+        (0.0, {"wingL": k(rz=0.12), "wingR": k(rz=-0.12), "body": k(rx=-0.05), "tail": k(rx=0.1), "head": k(rx=-0.15)}),
+        (0.5, {"wingL": k(rz=0.2), "wingR": k(rz=-0.2), "body": k(rx=-0.02, dy=0.002), "tail": k(rx=0.05), "head": k(rx=-0.1, ry=0.15)}),
+        (1.0, {"wingL": k(rz=0.12), "wingR": k(rz=-0.12), "body": k(rx=-0.05), "tail": k(rx=0.1), "head": k(rx=-0.15)}),
+    ])
+    clip(sp, "alert", 24, [(0.0, {"head": k(rx=-0.2, ry=0.5), "tail": k(rx=0.4), "wingL": k(ry=-1.35, rz=0.25), "wingR": k(ry=1.35, rz=-0.25)}), (0.5, {"head": k(rx=-0.2, ry=-0.5)}),
+                           (1.0, {"head": k(rx=-0.2, ry=0.5), "tail": k(rx=0.4), "wingL": k(ry=-1.35, rz=0.25), "wingR": k(ry=1.35, rz=-0.25)})])
+
+
+def butterfly():
+    """Vlinder (geen rig): lijfje en twee vleugels. De vleugels zijn wit (de game kleurt ze per vlinder) met
+    donkere randen en lichte vlekjes; ze scharnieren langs het lijf (de game laat ze open en dicht gaan)."""
+    def body():
+        limb((0, 0.0, -0.012), (0, 0.002, 0.012), 0.0035, 0.003, "BflyB", seg=6)
+        blob(0.0042, "BflyB", (0, 0.002, 0.014), sub=1)
+        for s_ in (-1, 1):
+            limb((s_ * 0.0015, 0.004, 0.016), (s_ * 0.007, 0.012, 0.026), 0.0006, 0.0005, "BflyB", seg=3)
+            blob(0.0012, "BflyB", (s_ * 0.007, 0.012, 0.026), sub=0)
+    part_free("butterfly__body", body)
+    def wing(side):
+        def f():
+            blob(0.018, "Tint", (side * 0.017, 0.0, 0.006), scale=(1.0, 0.06, 0.8), sub=1)          # voorvleugel
+            blob(0.013, "Tint", (side * 0.013, 0.0, -0.011), scale=(1.0, 0.06, 0.85), sub=1)        # achtervleugel
+            blob(0.008, "BflyB", (side * 0.03, 0.0012, 0.011), scale=(1.0, 0.08, 0.9), sub=1)      # donkere vleugelpunt
+            blob(0.0035, "BflySpot", (side * 0.019, 0.0016, 0.006), scale=(1.0, 0.12, 1.0), sub=0)  # lichte vlek
+            blob(0.003, "BflySpot", (side * 0.014, 0.0016, -0.012), scale=(1.0, 0.12, 1.0), sub=0)
+        return f
+    part_free("butterfly__wingL", wing(-1))
+    part_free("butterfly__wingR", wing(1))
+
+
+def part_free(name, fn):
+    LEVEL.clear()
+    fn()
+    objs = list(LEVEL)
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    if len(objs) > 1:
+        bpy.ops.object.join()
+    obj = bpy.context.view_layer.objects.active
+    obj.data.transform(obj.matrix_world)
+    obj.matrix_world = Matrix.Identity(4)
+    obj.name = obj.data.name = name
+    LEVEL.clear()
+    PARTS.append(obj)
+    return obj
 
 
 # ================================================================== bouwen
@@ -531,7 +611,10 @@ cervid("deer", 1.12, "Deer", "DeerL", "DeerD", antlers=True)
 boar()
 fox()
 squirrel()
-bird()
+bird("bird")
+bird("tit")
+bird("blackbird")
+butterfly()
 
 
 def bake_clips():

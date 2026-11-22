@@ -294,10 +294,239 @@
     }
   }
 
+  /* ---------------- Schoorsteenrook ----------------
+     Zachte rookwolkjes als camera-gerichte vlakjes met een wolkige alfa-textuur, allemaal in één
+     InstancedMesh (één draw call). Elk wolkje stijgt eerst rustig op, wordt dan door een zachte, langzaam
+     draaiende wind meegenomen (met wat turbulentie), groeit, draait een beetje en vervaagt vloeiend.
+     Soorten: 'home' (dun en licht), 'work' (werkplaats aan het werk), 'heavy' (smelterij, dik en donker),
+     'smoulder' (smelterij in rust: af en toe een dun pluimpje). */
+  const SMOKE_KIND = {
+    home: { s0: 0.08, s1: 0.46, life: 4.6, vy: 0.2, a: 0.62, tint: [0.93, 0.92, 0.9], jitter: 0.015 },
+    work: { s0: 0.09, s1: 0.52, life: 4.0, vy: 0.26, a: 0.7, tint: [0.88, 0.87, 0.85], jitter: 0.02 },
+    heavy: { s0: 0.13, s1: 0.78, life: 5.2, vy: 0.34, a: 0.85, tint: [0.5, 0.48, 0.46], jitter: 0.03 },
+    smoulder: { s0: 0.07, s1: 0.4, life: 3.8, vy: 0.18, a: 0.45, tint: [0.66, 0.64, 0.62], jitter: 0.015 }
+  };
+  VE.SMOKE_KIND = SMOKE_KIND;
+  class Smoke {
+    constructor(root, cap) {
+      this.cap = cap; this.list = [];
+      const geo = new THREE.PlaneGeometry(1, 1);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { fogColor: { value: new THREE.Color(0xcfe0e2) }, fogNear: { value: 50 }, fogFar: { value: 115 } },
+        transparent: true, depthWrite: false,
+        vertexShader: [
+          // per wolkje in de instance-matrix: kolom 0 = (schaal, alfa, draaiing, -), kolom 1 = tint, kolom 3 = positie
+          'varying vec2 vUv; varying float vA; varying vec3 vT; varying float vDepth; varying float vSeed;',
+          'void main() {',
+          '  vUv = uv; vA = instanceMatrix[0].y; vT = instanceMatrix[1].xyz; vSeed = instanceMatrix[1].w;',
+          '  vec3 c = (modelMatrix * vec4(instanceMatrix[3].xyz, 1.0)).xyz;',
+          '  float sc = instanceMatrix[0].x, rot = instanceMatrix[0].z;',
+          '  float cs = cos(rot), sn = sin(rot);',
+          '  vec2 p = vec2(position.x * cs - position.y * sn, position.x * sn + position.y * cs) * sc;',
+          '  vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);',
+          '  vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);',
+          '  vec4 mv = viewMatrix * vec4(c + right * p.x + up * p.y, 1.0);',
+          '  vDepth = -mv.z;',
+          '  gl_Position = projectionMatrix * mv;',
+          '}'
+        ].join('\n'),
+        fragmentShader: [
+          'uniform vec3 fogColor; uniform float fogNear; uniform float fogFar;',
+          'varying vec2 vUv; varying float vA; varying vec3 vT; varying float vDepth; varying float vSeed;',
+          'void main() {',
+          // wolkje uit een paar zachte bolletjes (per wolkje anders gelegen): geen harde, identieke ballen
+          '  vec2 q = vUv - 0.5; float d = 0.0;',
+          '  for (int i = 0; i < 4; i++) {',
+          '    float fi = float(i);',
+          '    vec2 c = vec2(cos(fi * 2.3 + vSeed), sin(fi * 1.9 + vSeed * 1.3)) * 0.17;',
+          '    float r = 0.27 - fi * 0.025;',
+          '    d = max(d, smoothstep(r, r * 0.15, length(q - c)));',
+          '  }',
+          '  float a = d * smoothstep(0.5, 0.3, length(q)) * vA;',
+          '  if (a < 0.004) discard;',
+          '  vec3 col = vT * (0.86 + 0.14 * vUv.y);',                          // bovenkant iets lichter (zonlicht)
+          '  col = mix(col, fogColor, smoothstep(fogNear, fogFar, vDepth));',
+          '  gl_FragColor = vec4(col, a);',
+          '}'
+        ].join('\n')
+      });
+      this.mesh = new THREE.InstancedMesh(geo, mat, cap);
+      this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.renderOrder = 4; this.mesh.name = 'smoke';
+      root.add(this.mesh);
+      this.windA = Math.random() * 6.28; this.t = 0;
+    }
+    emit(e) {
+      const K = SMOKE_KIND[e.kind] || SMOKE_KIND.home;
+      if (this.list.length >= this.cap) this.list.shift();
+      const r = Math.random;
+      this.list.push({ x: e.x + (r() - 0.5) * K.jitter, y: e.y + 0.02, z: e.z + (r() - 0.5) * K.jitter, vx: 0, vy: K.vy * (0.8 + r() * 0.4), vz: 0,
+        age: 0, life: K.life * (0.8 + r() * 0.4), s0: K.s0 * (0.8 + r() * 0.4), s1: K.s1 * (0.75 + r() * 0.5), a: K.a * (0.8 + r() * 0.35),
+        rot: r() * 6.28, rv: (r() - 0.5) * 0.5, tint: K.tint, ph: r() * 6.28 });
+    }
+    update(dt) {
+      this.t += dt;
+      // zachte, langzaam van richting veranderende wind
+      this.windA += dt * 0.05 * Math.sin(this.t * 0.07);
+      const wx = Math.cos(this.windA) * 0.16, wz = Math.sin(this.windA) * 0.16;
+      let n = 0;
+      const keep = [];
+      for (const p of this.list) {
+        p.age += dt; if (p.age >= p.life) continue;
+        keep.push(p);
+        const t = p.age / p.life;
+        // stijgen vertraagt; de wind neemt het geleidelijk over (eerst bijna recht omhoog)
+        p.vy *= Math.max(0, 1 - dt * 0.32);
+        const pull = Math.min(1, t * 2.2);
+        p.vx += (wx * pull - p.vx) * Math.min(1, dt * 0.9) + Math.sin(this.t * 1.3 + p.ph) * 0.012 * dt;
+        p.vz += (wz * pull - p.vz) * Math.min(1, dt * 0.9) + Math.cos(this.t * 1.1 + p.ph) * 0.012 * dt;
+        p.x += p.vx * dt; p.y += p.vy * dt + 0.03 * dt; p.z += p.vz * dt;
+        p.rot += p.rv * dt;
+        const s = p.s0 + (p.s1 - p.s0) * Math.sqrt(t);
+        const a = p.a * Math.min(1, t / 0.12) * Math.pow(1 - t, 1.4);
+        const e = this.mesh.instanceMatrix.array, o = n * 16;
+        e[o] = s; e[o + 1] = a; e[o + 2] = p.rot; e[o + 3] = 0;
+        e[o + 4] = p.tint[0]; e[o + 5] = p.tint[1]; e[o + 6] = p.tint[2]; e[o + 7] = p.ph;
+        e[o + 8] = 0; e[o + 9] = 0; e[o + 10] = 0; e[o + 11] = 0;
+        e[o + 12] = p.x; e[o + 13] = p.y; e[o + 14] = p.z; e[o + 15] = 1;
+        n++;
+      }
+      this.list = keep;
+      this.mesh.count = n;
+      this.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+  VE.Smoke = Smoke;
+
+  /* ---------------- Vlinders ----------------
+     Kleurrijke maar bescheiden vlinders uit Blender (animals.glb: lijfje + twee vleugels; anders eenvoudig).
+     Gedrag: onregelmatig fladderen (zachte ruis in de koers, op-en-neer deinen), af en toe landen op een
+     bloem (vleugels langzaam open en dicht), meer rond bloemenvelden en struiken, weg van drukke gebouwen
+     en opvliegen als er iemand langs loopt. Drie InstancedMeshes (lijf, linker- en rechtervleugel). */
+  const BF_COLORS = [0xffd84a, 0xff9f43, 0xfff3de, 0x8fc8ff, 0xd99ae0, 0xe9f06a, 0xffb0a0];
+  class Butterflies {
+    constructor(root, game) {
+      this.game = game; this.root = root;
+      const n = this.n = VE.isMobile ? 18 : 40;
+      const G = VE.butterflyGeo || simpleButterfly();
+      const mat = new THREE.MeshPhongMaterial({ vertexColors: true, side: THREE.DoubleSide, shininess: 10, specular: 0x222222 });
+      const mk = (geo) => {
+        const m = new THREE.InstancedMesh(geo, mat, n);
+        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3);   // zie VE-001
+        m.count = 0; m.frustumCulled = false; m.castShadow = false; m.name = 'butterfly'; root.add(m);
+        return m;
+      };
+      this.body = mk(G.body); this.wL = mk(G.wingL); this.wR = mk(G.wingR);
+      this.list = []; this.ready = false; this.t = 0;
+    }
+    /* bloemtegels (en struiken) in de buurt van het dorp, rustige plekken eerst */
+    flowerTiles() {
+      const w = this.game.world, N = VE.N, out = [];
+      for (let k = 0; k < N * N; k++) if (w.decoF[k] && !w.bld[k]) out.push(k);
+      return out;
+    }
+    place() {
+      const tiles = this.flowerTiles(), w = this.game.world, N = VE.N, hq = this.game.hq;
+      if (!tiles.length || !hq) return;
+      // het meest rond bloemenvelden die je kunt zien: dichtbij het dorp, maar ook verder weg
+      tiles.sort((a, b) => Math.hypot(a % N - hq.cx, ((a / N) | 0) - hq.cz) - Math.hypot(b % N - hq.cx, ((b / N) | 0) - hq.cz));
+      const near = tiles.slice(0, Math.max(30, Math.floor(tiles.length * 0.35)));
+      for (let i = 0; i < this.n; i++) {
+        const pool = i % 3 === 2 ? tiles : near;
+        const k = pool[Math.floor(Math.random() * pool.length)];
+        const x = k % N + 0.5, z = ((k / N) | 0) + 0.5;
+        const col = new THREE.Color(BF_COLORS[i % BF_COLORS.length]);
+        this.wL.setColorAt(i, col); this.wR.setColorAt(i, col);
+        this.list.push({ x: x, z: z, hx: x, hz: z, y: 0.35, by: 0.3 + Math.random() * 0.35, h: Math.random() * 6.28, sp: 0.22 + Math.random() * 0.16,
+          ph: Math.random() * 6.28, fr: 15 + Math.random() * 6, sc: 1.45 + Math.random() * 0.75, state: 'fly', t: 2 + Math.random() * 6,
+          tx: x, tz: z, seed: Math.random() * 100, acc: 0, vis: true });
+      }
+      this.wL.instanceColor.needsUpdate = this.wR.instanceColor.needsUpdate = true;
+      this.ready = true;
+    }
+    /* een bloem in de buurt van de thuisplek, niet bij drukke gebouwen */
+    pickFlower(b) {
+      const w = this.game.world, N = VE.N, busy = this.game.wild && this.game.wild.busy;
+      for (let t = 0; t < 14; t++) {
+        const i = Math.floor(b.hx + (Math.random() - 0.5) * 6), j = Math.floor(b.hz + (Math.random() - 0.5) * 6);
+        if (!w.inb(i, j)) continue;
+        const k = j * N + i;
+        if (!w.decoF[k] || (busy && busy[k] > 0.7)) continue;
+        return [i + 0.2 + Math.random() * 0.6, j + 0.2 + Math.random() * 0.6];
+      }
+      return null;
+    }
+    update(dt, T) {
+      if (!this.ready) { if (this.game.hq && this.game.world.veg !== undefined) this.place(); if (!this.ready) return; }
+      this.t += dt;
+      const w = this.game.world, N = VE.N, busy = this.game.wild && this.game.wild.busy, settlers = this.game.settlers;
+      const cam = VE.view && VE.view.camera; const cx = cam ? cam.position.x : 0, cz = cam ? cam.position.z : 0;
+      let n = 0;
+      for (const b of this.list) {
+        const far = (b.x - cx) ** 2 + (b.z - cz) ** 2 > 900;
+        // ver weg: minder vaak bijwerken (opgeteld)
+        b.acc += dt; if (far && b.acc < 0.15) { } else { const st = b.acc; b.acc = 0; this.step(b, st, w, N, busy, settlers); }
+        const gy = w.heightAt(b.x, b.z);
+        // vleugels: snel fladderen in de vlucht, rustig open/dicht als hij zit
+        const flap = b.state === 'sit' ? 0.25 + (Math.sin(this.t * 1.6 + b.seed) * 0.5 + 0.5) * 1.05 : 0.15 + (Math.sin(b.ph) * 0.5 + 0.5) * 1.25;
+        _q.setFromAxisAngle(UP, b.h);
+        if (b.state !== 'sit') { _e2.set(-0.25 + Math.sin(b.ph * 0.5) * 0.08, 0, Math.sin(this.t * 2 + b.seed) * 0.15); _q2.setFromEuler(_e2); _q.multiply(_q2); }
+        _m.compose(_p.set(b.x, gy + b.y, b.z), _q, _s.set(b.sc, b.sc, b.sc));
+        this.body.setMatrixAt(n, _m);
+        _l.makeRotationZ(-flap); _o.multiplyMatrices(_m, _l); this.wL.setMatrixAt(n, _o);
+        _l.makeRotationZ(flap); _o.multiplyMatrices(_m, _l); this.wR.setMatrixAt(n, _o);
+        n++;
+      }
+      for (const m of [this.body, this.wL, this.wR]) { m.count = n; m.instanceMatrix.needsUpdate = true; }
+    }
+    step(b, dt, w, N, busy, settlers) {
+      if (dt <= 0) return;
+      const k = Math.floor(b.z) * N + Math.floor(b.x);
+      // iemand loopt vlakbij: opfladderen
+      if (b.state === 'sit') {
+        b.t -= dt;
+        for (let i = 0; i < settlers.length; i += 3) { const s = settlers[i]; if (!s.hidden && (s.x - b.x) ** 2 + (s.z - b.z) ** 2 < 0.36) { b.t = 0; break; } }
+        if (b.t <= 0) { b.state = 'fly'; b.t = 3 + Math.random() * 6; }
+        return;
+      }
+      b.ph += dt * b.fr;
+      b.t -= dt;
+      // koers: zachte ruis + trek naar het doel (een bloem) + weg van drukte
+      const wob = Math.sin(this.t * 0.9 + b.seed) * 1.4 + Math.sin(this.t * 2.3 + b.seed * 1.7) * 0.8;
+      const dGoal = Math.hypot(b.tx - b.x, b.tz - b.z);
+      let want = Math.atan2(b.tx - b.x, b.tz - b.z) + wob * 0.6 * (b.landing ? Math.min(1, dGoal / 0.7) : 1);   // vlak bij de bloem: recht erop af
+      if (busy && busy[k] > 0.7) want = Math.atan2(b.x - (b.hx + 0.01), b.z - b.hz) + Math.PI;    // terug naar de rustige bloemen
+      let dr = want - b.h; while (dr > Math.PI) dr -= 6.283; while (dr < -Math.PI) dr += 6.283;
+      b.h += dr * Math.min(1, dt * (b.landing && dGoal < 0.7 ? 6 : 2.2));
+      const d = Math.hypot(b.tx - b.x, b.tz - b.z);
+      const v = b.sp * (0.75 + 0.25 * Math.sin(this.t * 3 + b.seed));
+      b.x = Math.max(0.5, Math.min(N - 0.5, b.x + Math.sin(b.h) * v * dt));
+      b.z = Math.max(0.5, Math.min(N - 0.5, b.z + Math.cos(b.h) * v * dt));
+      // hoogte: deinen; bij het doel omlaag naar de bloem
+      const land = b.landing && d < 0.5;
+      const ty = land ? 0.13 + d * 0.35 : b.by + Math.sin(this.t * 2.6 + b.seed) * 0.07 + Math.sin(this.t * 0.7 + b.seed) * 0.08;
+      b.y += (ty - b.y) * Math.min(1, dt * 2.5);
+      if (b.landing && d < 0.12) { b.state = 'sit'; b.t = 2 + Math.random() * 5; b.y = 0.13; b.landing = false; b.sits = (b.sits || 0) + 1; return; }
+      // nieuw doel
+      if (b.t <= 0 || (d < 0.2 && !b.landing)) {            // op weg om te landen: niet halverwege een ander doel kiezen
+        const f = this.pickFlower(b);
+        if (f) { b.tx = f[0]; b.tz = f[1]; b.landing = Math.random() < 0.55; }
+        else { b.tx = b.hx + (Math.random() - 0.5) * 4; b.tz = b.hz + (Math.random() - 0.5) * 4; b.landing = false; }
+        b.t = 4 + Math.random() * 6;
+      }
+    }
+  }
+  function simpleButterfly() {
+    const body = new VE.Model(81); body.cyl(0.004, 0.004, 0.026, 5, 0x2e2622, { rx: Math.PI / 2, z: -0.013 });
+    const wl = new VE.Model(82); wl.ball(0.018, 0xffffff, { x: -0.017, sy: 0.06, sz: 0.8 }, 1); wl.ball(0.013, 0xffffff, { x: -0.013, z: -0.012, sy: 0.06 }, 1);
+    const wr = new VE.Model(83); wr.ball(0.018, 0xffffff, { x: 0.017, sy: 0.06, sz: 0.8 }, 1); wr.ball(0.013, 0xffffff, { x: 0.013, z: -0.012, sy: 0.06 }, 1);
+    return { body: body.build(), wingL: wl.build(), wingR: wr.build() };
+  }
+  const _e2 = new THREE.Euler(0, 0, 0, 'XYZ'), _q2 = new THREE.Quaternion();
+
   class FX {
     constructor(root, game) {
       this.root = root; this.game = game;
-      this.smoke = new Puffs(root, 0xf3f1ec, 260, 0.6, 2);
+      this.smoke = new Smoke(root, VE.isMobile ? 220 : 420);
       this.dust = new Puffs(root, 0xcdb88e, 160, 0.7, 1);
       this.leaves = new Puffs(root, 0x5aa83a, 120, 1.0, 0);
       this.splash = new Puffs(root, 0xe8f6ff, 80, 0.85, 0);
@@ -307,7 +536,7 @@
       this.poofs.mesh.material.emissive.setHex(0x555046);
       const bus = VE.bus;
       this.handlers = {
-        smoke: e => this.smoke.emit({ x: e.x + (Math.random() - 0.5) * 0.03, y: e.y, z: e.z, vx: 0.12 + Math.random() * 0.05, vy: 0.32 + Math.random() * 0.1, vz: -0.05, life: 3.2, s0: 0.05, s1: 0.2 }),
+        smoke: e => this.smoke.emit(e),
         dust: e => { for (let i = 0; i < (e.n || 8); i++) { const a = Math.random() * 6.28, sp = 0.4 + Math.random() * 0.6; this.dust.emit({ x: e.x + Math.cos(a) * 0.3, y: e.y + 0.1, z: e.z + Math.sin(a) * 0.3, vx: Math.cos(a) * sp, vy: 0.25 + Math.random() * 0.3, vz: Math.sin(a) * sp, life: 1.1 + Math.random() * 0.5, s0: 0.06, s1: 0.2 }); } },
         leaves: e => { for (let i = 0; i < 10; i++) { const a = Math.random() * 6.28; this.leaves.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.6, vy: 0.6 + Math.random() * 0.5, vz: Math.sin(a) * 0.6, g: 1.4, life: 1.4, s0: 0.03, s1: 0.035, sy: 0.4 }); } },
         sparks: e => { for (let i = 0; i < 2; i++) { const a = Math.random() * 6.28; this.sparks.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.35, vy: 0.7 + Math.random() * 0.6, vz: Math.sin(a) * 0.35 + 0.15, g: 2.2, life: 0.5 + Math.random() * 0.3, s0: 0.012, s1: 0.004 }); } },
@@ -315,24 +544,8 @@
         splash: e => { for (let i = 0; i < 8; i++) { const a = Math.random() * 6.28; this.splash.emit({ x: e.x, y: 0.03, z: e.z, vx: Math.cos(a) * 0.4, vy: 0.9 + Math.random() * 0.5, vz: Math.sin(a) * 0.4, g: 4, life: 0.6, s0: 0.025, s1: 0.03 }); } }
       };
       for (const k in this.handlers) bus.on(k, a => { if (this.game === VE.game) this.handlers[k](a); });
-      this.makeBirds(); this.makeClouds(); this.makeButterflies();
-    }
-    makeBirds() {
-      const g = VE.birdGeo();
-      const mat = new THREE.MeshPhongMaterial({ vertexColors: true });
-      const n = 14;
-      this.birdBody = new THREE.InstancedMesh(g.body, mat, n);
-      this.birdWing = new THREE.InstancedMesh(g.wing, mat, n * 2);
-      this.birdBody.frustumCulled = this.birdWing.frustumCulled = false;
-      this.birdBody.castShadow = this.birdWing.castShadow = true;
-      this.root.add(this.birdBody); this.root.add(this.birdWing);
-      this.birds = [];
-      const N = VE.N;
-      for (let f = 0; f < 3; f++) {
-        const cx = 12 + Math.random() * (N - 24), cz = 12 + Math.random() * (N - 24), r = 6 + Math.random() * 8, h = 5 + Math.random() * 3, sp = (0.12 + Math.random() * 0.08) * (Math.random() < 0.5 ? 1 : -1);
-        for (let i = 0; i < 4 + f; i++) this.birds.push({ cx: cx, cz: cz, r: r + (Math.random() - 0.5) * 1.2, h: h + (Math.random() - 0.5) * 0.8, a: Math.random() * 0.8 + f, sp: sp, fl: Math.random() * 6, drift: Math.random() * 6 });
-      }
-      this.birdBody.count = this.birds.length; this.birdWing.count = this.birds.length * 2;
+      this.makeClouds();
+      this.butterflies = new Butterflies(this.root, this.game);   // vogels: zie js/wildlife.js (zangvogels met echte vlucht)
     }
     makeClouds() {
       this.clouds = [];
@@ -349,73 +562,14 @@
         this.clouds.push({ mesh: mesh, sp: 0.25 + Math.random() * 0.2 });
       }
     }
-    makeButterflies() {
-      const geo = new THREE.PlaneGeometry(0.075, 0.06); geo.translate(0.0375, 0, 0); geo.rotateX(-Math.PI / 2);
-      const mat = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
-      const n = 14;
-      this.bfL = new THREE.InstancedMesh(geo, mat, n); this.bfR = new THREE.InstancedMesh(geo, mat, n);
-      const cols = [0xffd84a, 0xffffff, 0xff9f43, 0x9ad0ff, 0xf78fb3];
-      this.bf = [];
-      for (let i = 0; i < n; i++) {
-        const c = _c.setHex(cols[i % cols.length]); this.bfL.setColorAt(i, c); this.bfR.setColorAt(i, c);
-        this.bf.push({ x: 0, z: 0, y: 0.4, tx: 0, tz: 0, hx: 0, hz: 0, ph: Math.random() * 6, rot: 0, t: 0 });
-      }
-      this.bfL.frustumCulled = this.bfR.frustumCulled = false;
-      this.root.add(this.bfL); this.root.add(this.bfR);
-      this.bfReady = false;
-    }
-    placeButterflies() {
-      const w = this.game.world, N = VE.N, hq = this.game.hq;
-      for (const b of this.bf) {
-        for (let t = 0; t < 30; t++) {
-          const i = Math.floor(hq.cx + (Math.random() - 0.5) * 18), j = Math.floor(hq.cz + (Math.random() - 0.5) * 18);
-          if (!w.inb(i, j)) continue;
-          if (w.decoF[j * N + i] || t > 25) { b.hx = b.x = b.tx = i + 0.5; b.hz = b.z = b.tz = j + 0.5; break; }
-        }
-      }
-      this.bfReady = true;
-    }
     update(dt, t) {
       this.smoke.update(dt); this.dust.update(dt); this.leaves.update(dt); this.splash.update(dt); this.sparks.update(dt); this.poofs.update(dt);
-      // birds
-      let n = 0;
-      for (const b of this.birds) {
-        b.a += b.sp * dt; b.fl += dt * (9 + Math.sin(t * 0.7 + b.drift) * 3);
-        const x = b.cx + Math.cos(b.a) * b.r, z = b.cz + Math.sin(b.a) * b.r, y = b.h + Math.sin(t * 0.5 + b.drift) * 0.4;
-        const heading = Math.atan2(-Math.sin(b.a) * Math.sign(b.sp), Math.cos(b.a) * Math.sign(b.sp));
-        _q.setFromAxisAngle(UP, heading);
-        _m.compose(_p.set(x, y, z), _q, _s.set(1.3, 1.3, 1.3));
-        this.birdBody.setMatrixAt(n, _m);
-        const fl = Math.sin(b.fl) * 0.7;
-        _l.makeRotationZ(fl); _l.setPosition(0.02, 0.0, 0); _o.multiplyMatrices(_m, _l); this.birdWing.setMatrixAt(n * 2, _o);
-        _l.makeRotationY(Math.PI); const r2 = new THREE.Matrix4().makeRotationZ(-fl); _l.premultiply(r2); _l.setPosition(-0.02, 0.0, 0); _o.multiplyMatrices(_m, _l); this.birdWing.setMatrixAt(n * 2 + 1, _o);
-        n++;
-      }
-      this.birdBody.instanceMatrix.needsUpdate = true; this.birdWing.instanceMatrix.needsUpdate = true;
       // clouds
       for (const c of this.clouds) {
         c.mesh.position.x += c.sp * dt;
         if (c.mesh.position.x > VE.N + 18) c.mesh.position.x = -18;
       }
-      // butterflies
-      if (!this.bfReady && this.game.hq) this.placeButterflies();
-      const w = this.game.world;
-      n = 0;
-      for (const b of this.bf) {
-        b.t -= dt;
-        if (b.t <= 0) { b.t = 1.5 + Math.random() * 3; b.tx = b.hx + (Math.random() - 0.5) * 3; b.tz = b.hz + (Math.random() - 0.5) * 3; }
-        const dx = b.tx - b.x, dz = b.tz - b.z, d = Math.hypot(dx, dz);
-        if (d > 0.05) { b.x += dx / d * dt * 0.45; b.z += dz / d * dt * 0.45; b.rot = Math.atan2(dx, dz); }
-        b.ph += dt * 18;
-        const y = w.heightAt(b.x, b.z) + 0.35 + Math.sin(t * 2 + b.hx) * 0.12;
-        _q.setFromAxisAngle(UP, b.rot);
-        _m.compose(_p.set(b.x, y, b.z), _q, _s.set(1, 1, 1));
-        const f = Math.sin(b.ph) * 1.1;
-        _l.makeRotationZ(f); _o.multiplyMatrices(_m, _l); this.bfL.setMatrixAt(n, _o);
-        _l.makeRotationZ(Math.PI - f); _o.multiplyMatrices(_m, _l); this.bfR.setMatrixAt(n, _o);
-        n++;
-      }
-      this.bfL.instanceMatrix.needsUpdate = true; this.bfR.instanceMatrix.needsUpdate = true;
+      this.butterflies.update(dt, t);
     }
   }
   VE.FX = FX;

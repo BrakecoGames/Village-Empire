@@ -13,10 +13,10 @@
     wine: { name: 'Wine', price: 15 },
     // jacht, mijnbouw en metaal. rank: vanaf die rang staat het goed in de grondstoffenbalk (eerder alleen als je het al hebt)
     meat: { name: 'Meat', price: 6, rank: 1, tip: 'Game from the hunter. Feeds newcomers, just like bread and fish.' },
-    coal: { name: 'Coal', price: 4, rank: 2, tip: 'Dug from black veins in the mountains. Fuel for the smelter.' },
-    ironore: { name: 'Iron Ore', price: 4, rank: 2, tip: 'Rust-veined rock from an iron mine. Smelted into iron bars.' },
+    coal: { name: 'Coal', price: 4, rank: 2, tip: 'Mined from deposits deep below the mountains. Fuel for the smelter.' },
+    ironore: { name: 'Iron Ore', price: 4, rank: 2, tip: 'Rust-red rock from an iron mine. Smelted into iron bars.' },
     copperore: { name: 'Copper Ore', price: 5, rank: 2, tip: 'Green-flecked rock from a copper mine. Smelted into copper bars.' },
-    goldore: { name: 'Gold Ore', price: 9, rank: 3, tip: 'Rare rock with golden veins. Smelted into gold bars.' },
+    goldore: { name: 'Gold Ore', price: 9, rank: 3, tip: 'Rare rock from a gold mine. Smelted into gold bars.' },
     ironbar: { name: 'Iron Bars', price: 16, rank: 2, tip: 'Smelted iron. Needed for gold mines, level 3 buildings and the cathedral.' },
     copperbar: { name: 'Copper Bars', price: 18, rank: 2, tip: 'Smelted copper. A sought-after trade good.' },
     goldbar: { name: 'Gold Bars', price: 60, rank: 3, tip: 'Pure gold. The most valuable trade good, and needed for the cathedral.' }
@@ -94,13 +94,13 @@
       desc: 'A hunter sneaks up on rabbits, roe, deer and wild boar and brings home meat. Build it near woods and meadows full of game.' },
     // mijnen: alleen op een vrije bergtegel met de juiste ertsader binnen bereik (mountain: echte bouwregel in canPlace)
     coalmine: { name: 'Coal Mine', icon: '⚫', cat: 'metal', rank: 2, cost: { plank: 5, stone: 2 }, worker: 'miner', gather: 'ore', ore: 1, mountain: true, radius: 2.6, out: 'coal', time: 4.4, tool: 'pick',
-      desc: 'Digs coal from a black vein. Build it on the mountain, right beside a coal vein.' },
+      desc: 'Digs coal from a deposit deep below the mountain. Build it above a coal deposit (use Survey to find one).' },
     ironmine: { name: 'Iron Mine', icon: '🔩', cat: 'metal', rank: 2, cost: { plank: 5, stone: 3 }, worker: 'miner', gather: 'ore', ore: 2, mountain: true, radius: 2.6, out: 'ironore', time: 5.2, tool: 'pick',
-      desc: 'Digs iron ore from a rust-red vein. Build it on the mountain, right beside an iron vein.' },
+      desc: 'Digs iron ore from below the mountain. Build it above an iron deposit (use Survey to find one).' },
     coppermine: { name: 'Copper Mine', icon: '🟢', cat: 'metal', rank: 2, cost: { plank: 6, stone: 3 }, worker: 'miner', gather: 'ore', ore: 3, mountain: true, radius: 2.6, out: 'copperore', time: 5.6, tool: 'pick',
-      desc: 'Digs copper ore from a green vein. Build it on the mountain, right beside a copper vein.' },
+      desc: 'Digs copper ore from below the mountain. Build it above a copper deposit (use Survey to find one).' },
     goldmine: { name: 'Gold Mine', icon: '⭐', cat: 'metal', rank: 3, cost: { plank: 8, stone: 4, ironbar: 2 }, worker: 'miner', gather: 'ore', ore: 4, mountain: true, radius: 2.6, out: 'goldore', time: 7.2, tool: 'pick',
-      desc: 'Digs precious gold ore from a rare golden vein. Build it on the mountain, right beside a gold vein.' },
+      desc: 'Digs precious gold ore from a rare deposit deep below the mountain. Build it above a gold deposit.' },
     smelter: { name: 'Smelter', icon: '🔥', cat: 'metal', rank: 2, cost: { plank: 4, stone: 8 }, worker: 'smelter', recipes: VE.RECIPES, recipe: 'ironbar',
       inp: VE.RECIPES.ironbar.inp, out: VE.RECIPES.ironbar.out, time: VE.RECIPES.ironbar.time, smoke: true,
       desc: 'Melts ore with coal into metal bars. Choose which metal it makes.' }
