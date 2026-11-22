@@ -270,3 +270,8 @@ select { font-family: inherit; font-weight: 800; border-radius: 8px; border: 2px
 .pm { position: relative; font-size: 16px; }
 .pm.none { filter: grayscale(1); opacity: .45; }
 .pm small { position: absolute; right: -5px; bottom: -4px; font-size: 9px; background: var(--gold); border-radius: 6px; padding: 0 3px; color: #3b2a1a; }
+
+/* Storehouse: capaciteit en welke goederen erin mogen */
+.bar.store i { background: linear-gradient(90deg, #8a6a45, #c89a5e); }
+.sellgrid.accept .sell:not(.on) { opacity: .45; filter: grayscale(.7); }
+.ip-row .cost.dim { opacity: .55; }

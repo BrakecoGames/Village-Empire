@@ -143,7 +143,7 @@ Het testbestand is `tests/wildlife.spec.js`. Het controleert:
 Screenshots staan in `tests/screenshots/<desktop|mobile>/` onder `dieren-parade-*`, `dier-*` en `metaal-*`.
 
 ## Bewust (nog) niet gedaan
-- De stockyard toont alleen stapels van de oorspronkelijke negen goederen. Er is geen ruimte voor
-  zeventien stapels. Nieuwe goederen zie je wel bij de mijnen, de smelterij en de jagershut, en in de
-  handen van dragers.
+- ~~De stockyard toont alleen stapels van de oorspronkelijke negen goederen.~~ Opgelost in 1.4.0: de
+  Stockyard is vervangen door Storehouses met vakken, en alle goederen hebben een Blender-model
+  ([RAPPORT-OPSLAG.md](RAPPORT-OPSLAG.md)).
 - Dieren hebben geen eigen geluiden.

@@ -404,6 +404,8 @@
         case 'demolish': if (this.sel) this.confirmDemolish(this.sel); break;
         case 'doDemolish': { const b = g.bmap[arg]; if (b) g.demolish(b); this.closeModal(); this.select(null); break; }
         case 'sell': if (this.sel) { this.sel.sell[arg] = !this.sel.sell[arg]; this.renderInfo(true); } break;
+        case 'accept': if (this.sel) { g.setAccept(this.sel, arg); this.renderInfo(true); } break;
+        case 'acceptAll': if (this.sel) { g.setAccept(this.sel, '*', arg === '1'); this.renderInfo(true); } break;
         case 'recipe': if (this.sel && g.setRecipe(this.sel, arg)) { this.toast(VE.DEFS.smelter.icon + ' The smelter now makes ' + VE.RECIPES[arg].name.toLowerCase()); VE.save(); } this.renderInfo(true); break;
         case 'keep': if (this.sel && e.type === 'change') { this.sel.keep = +el.value; } break;
         case 'goto': if (this.sel) this.view.cam.focus(this.sel.cx, this.sel.cz); break;
@@ -465,7 +467,7 @@
       const d = b.def;
       let h = '<div class="ip-head"><span class="ip-icon">' + d.icon + '</span><div class="ip-tt"><div class="ip-title">' + d.name +
         (d.cost ? ' <span class="lvl">' + '★'.repeat(b.level) + '<i>' + '★'.repeat(3 - b.level) + '</i></span>' : '') + '</div>';
-      let status = !b.built ? 'Under construction' : b.status || (d.storage ? 'Storing goods' : d.housing ? 'Home sweet home' : d.territory ? 'Guarding the border' : '');
+      let status = !b.built ? 'Under construction' : b.status || (d.pile ? 'Starting supplies: ' + g.storeTotal(b) + ' goods left' : d.depot ? 'Storing ' + g.storeTotal(b) + ' of ' + g.storeCap(b) + ' goods' : d.housing ? 'Home sweet home' : d.territory ? 'Guarding the border' : '');
       h += '<div class="ip-status">' + esc(status) + '</div></div><button class="x" data-act="close">✕</button></div>';
       if (!b.built) {
         const pct = Math.round(100 * b.used / Math.max(1, b.total));
@@ -502,10 +504,33 @@
         if (d.worker) h += '<div class="ip-row"><b>Worker</b> ' + (b.worker ? (b.worker.mode === 'goWork' ? 'on the way' : 'at work') : '<span class="short">waiting for a free settler</span>') + '</div>';
         if (d.inp) { const R = g.rcp(b); h += '<div class="ip-row"><b>Input</b>'; for (const r in R.inp) h += '<span class="cost">' + VE.icon(r, 15) + (b.input[r] || 0) + '/' + g.cap(b) + '</span>'; h += '</div>'; }
         const outs = Object.keys(b.output).filter(r => b.output[r] > 0);
-        if (d.out || outs.length) { h += '<div class="ip-row"><b>Output</b>'; for (const r of outs) h += '<span class="cost">' + VE.icon(r, 15) + b.output[r] + '</span>'; if (!outs.length) h += '<span class="dim">—</span>'; h += '</div>'; }
+        if (d.out || outs.length) {
+          const full = g.outTotal(b) >= VE.LOCAL_CAP;
+          h += '<div class="ip-row"><b>Stock here</b>'; for (const r of outs) h += '<span class="cost">' + VE.icon(r, 15) + b.output[r] + '</span>'; if (!outs.length) h += '<span class="dim">—</span>';
+          h += '<span class="' + (full ? 'short' : 'dim') + '">' + g.outTotal(b) + '/' + VE.LOCAL_CAP + (full ? ' full' : '') + '</span></div>';
+        }
         if (d.housing) h += '<div class="ip-row"><b>Homes</b> ' + (d.housing + (d.levelHousing || 0) * (b.level - 1)) + ' settlers</div>';
         if (d.gather === 'field') h += '<div class="ip-row"><b>Fields</b> ' + b.fields.filter(f => !f.dead).length + '/' + (d.maxFields + 2 * (b.level - 1)) + '</div>';
-        if (d.storage) { h += '<div class="ip-row wrap"><b>Stock</b>'; for (const r of VE.RES_ORDER) if (g.stock[r] > 0) h += '<span class="cost">' + VE.icon(r, 15) + VE.fmt(g.stock[r]) + '</span>'; h += '</div>'; }
+        if (b.store) {
+          const tot = g.storeTotal(b), keys = VE.RES_ORDER.filter(r => b.store[r] > 0);
+          if (d.depot) {
+            const cap = g.storeCap(b), pct = Math.round(100 * tot / cap);
+            h += '<div class="bar store"><i style="width:' + pct + '%"></i><span>' + tot + ' / ' + cap + '</span></div>';
+          }
+          if (keys.length || !d.vault) {
+            h += '<div class="ip-row wrap"><b>' + (d.vault ? 'Kept in the hall' : 'Stock') + '</b>';
+            for (const r of keys) h += '<span class="cost' + (d.depot && !b.accept[r] ? ' dim' : '') + '">' + VE.icon(r, 15) + VE.fmt(b.store[r]) + '</span>';
+            if (!keys.length) h += '<span class="dim">empty</span>';
+            h += '</div>';
+          }
+          if (d.pile) h += '<div class="ip-desc small">Nothing is ever added to this pile. Build a <b>Storehouse</b> to keep new goods.</div>';
+          if (d.vault && keys.length) h += '<div class="ip-desc small">Rewards and goods from merchants wait here until they are used.</div>';
+          if (d.depot) {
+            h += '<div class="ip-sub">Store these goods:</div><div class="sellgrid accept">';
+            for (const r of VE.RES_ORDER) if (VE.resVisible(g, r)) h += '<button class="sell ' + (b.accept[r] ? 'on' : '') + '" data-act="accept" data-arg="' + r + '" title="' + esc(VE.RES[r].name) + '">' + VE.icon(r, 16) + '<small>' + (b.store[r] || 0) + '</small></button>';
+            h += '</div><div class="ip-row"><button class="btn small" data-act="acceptAll" data-arg="1">All</button><button class="btn small" data-act="acceptAll" data-arg="0">None</button></div>';
+          }
+        }
         if (d.market) {
           h += '<div class="ip-sub">Sell automatically:</div><div class="sellgrid">';
           for (const r of VE.RES_ORDER) if (VE.resVisible(g, r)) h += '<button class="sell ' + (b.sell[r] ? 'on' : '') + '" data-act="sell" data-arg="' + r + '" title="' + esc(VE.RES[r].name) + '">' + VE.icon(r, 16) + '<small>' + g.sellPrice(r) + '</small></button>';
@@ -654,11 +679,12 @@
     openHelp() {
       this.openModal('<h2>How to play</h2><div class="help">' +
         '<p>🏗️ <b>Build</b> from the bar at the bottom. Carriers bring materials and a builder raises the building.</p>' +
+        '<p>📦 <b>Storage</b>: your starting supplies lie next to the Village Hall and are never refilled. Producers keep at most 6 of their goods; when that is full they stop working. Build <b>Storehouses</b> (60 goods each) and tick which goods each one keeps: carriers then bring them over. Without room, goods stay at the producer.</p>' +
         '<p>🛤️ <b>Paths</b> are not built: they wear in by themselves where settlers walk back and forth a lot. A trampled trail turns into a real path, and settlers walk faster on it. Paths that nobody uses grow over again.</p>' +
         '<p>🔗 <b>Production chains</b>: trees ➜ logs ➜ planks · wheat ➜ flour ➜ bread · grapes ➜ wine · game ➜ meat · ore + coal ➜ metal bars.</p>' +
         '<p>🦌 <b>Hunters</b> sneak up on rabbits, roe, deer and wild boar. They always leave enough animals to breed, so game recovers over time.</p>' +
         '<p>⛏️ <b>Mines</b> can only be built on the mountain, above a deposit of their ore: coal, iron, copper or gold. The ore lies underground: while you place a mine, or with <b>🔍 Survey</b> in the Mining tab, coloured stripes show what lies below explored mountains (grey = nothing found). A <b>Smelter</b> turns ore and coal into bars.</p>' +
-        '<p>👥 <b>Cottages</b> give room for new settlers. They arrive much faster when bread or fish is in storage.</p>' +
+        '<p>👥 <b>Cottages</b> give room for new settlers. They arrive much faster when you have bread, fish or meat.</p>' +
         '<p>⚖️ <b>Marketplace</b>: choose which goods to sell for gold. Gold buys upgrades and watchtowers.</p>' +
         '<p>📜 Complete the <b>Village Charter</b> to rise in rank and unlock new buildings.</p>' +
         '<p>🖱️ <b>Left-drag</b> to move the view · <b>right-drag</b> (or Q/E, two fingers) to rotate · scroll or pinch to zoom · click to select or build · Space: game speed</p></div>' +

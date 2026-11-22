@@ -26,6 +26,14 @@
   /* voedsel waarmee nieuwe bewoners sneller komen (in deze volgorde gebruikt) */
   VE.FOOD = ['bread', 'fish', 'meat'];
 
+  /* Opslag. Producenten houden hun eigen product bij zich, maximaal LOCAL_CAP stuks: daarna stopt de
+     productie tot dragers het ophalen. Grotere voorraden liggen in Storehouses (STORE_CAP per level,
+     gedeeld over alle goederen die de speler aanvinkt). De startvoorraad ligt op een stapel naast het
+     dorpshuis en wordt nooit aangevuld. */
+  VE.LOCAL_CAP = 6;
+  VE.STORE_CAP = [60, 80, 100];
+  VE.START_STOCK = { log: 6, stone: 14, plank: 28, bread: 8, fish: 4 };
+
   /* Smelterij: recepten (configureerbaar). De speler kiest het metaal per smelterij. */
   VE.RECIPES = {
     ironbar: { name: 'Iron bars', inp: { ironore: 2, coal: 1 }, out: { ironbar: 1 }, time: 10 },
@@ -53,10 +61,11 @@
   };
 
   VE.DEFS = {
-    hq: { name: 'Village Hall', icon: '🏰', size: 2, storage: true, housing: 12, territory: 9, buildable: false, fixed: true,
-      desc: 'Heart of your village. Stores all goods and shelters your first settlers.' },
-    yard: { name: 'Stockyard', icon: '🪵', size: 2, storage: true, buildable: false, fixed: true,
-      desc: 'Every log, stone and sack your village owns is piled up here. Carriers drop goods off at the yard, builders fetch them from it.' },
+    hq: { name: 'Village Hall', icon: '🏰', size: 2, storage: true, vault: true, housing: 12, territory: 9, buildable: false, fixed: true,
+      desc: 'Heart of your village and home of your first settlers. Rewards and goods bought from merchants are kept here until they are used.' },
+    // de startvoorraad (vroeger de Stockyard): ligt op de grond, carriers brengen er nooit iets heen
+    yard: { name: 'Starting Supplies', icon: '🪵', size: 2, storage: true, pile: true, buildable: false, fixed: true,
+      desc: 'The goods your settlers brought along, stacked on the ground. Builders and workshops take from it, but nothing is ever added: once it is used up, it is gone.' },
     house: { name: 'Cottage', icon: '🏡', cat: 'basic', rank: 0, cost: { plank: 4, stone: 2 }, housing: 5, levelHousing: 3,
       desc: 'A cosy home for 5 settlers. New settlers arrive faster when there is bread or fish in storage.' },
     woodcutter: { name: 'Woodcutter', icon: '🪓', cat: 'basic', rank: 0, cost: { plank: 3 }, worker: 'woodcutter', gather: 'tree', radius: 6, out: 'log', time: 3.2, tool: 'axe',
@@ -85,8 +94,8 @@
       desc: 'Presses grapes into fine wine — the most valuable trade good.' },
     tavern: { name: 'Tavern', icon: '🍺', cat: 'wine', rank: 2, cost: { plank: 8, stone: 6 }, worker: 'innkeeper', inp: { bread: 1, wine: 1 }, outGold: 32, time: 12, smoke: true,
       desc: 'Serves bread and wine for gold. Each tavern also attracts new settlers faster.' },
-    warehouse: { name: 'Storehouse', icon: '📦', cat: 'trade', rank: 2, cost: { plank: 8, stone: 6 }, storage: true,
-      desc: 'Extra storage point. Carriers drop goods at the nearest store, saving long walks.' },
+    warehouse: { name: 'Storehouse', icon: '📦', cat: 'basic', rank: 0, cost: { plank: 6, stone: 4 }, storage: true, depot: true,
+      desc: 'Keeps up to 60 goods (80 and 100 after upgrades). Tick which goods it stores; carriers bring them from your producers. Producers only hold 6 of their goods themselves.' },
     monument: { name: 'Grand Cathedral', icon: '⛪', cat: 'trade', rank: 4, size: 2, cost: { plank: 60, stone: 80, wine: 20, ironbar: 12, goldbar: 6 }, gold: 2500, housing: 0,
       desc: 'A wonder that crowns your empire. Visible from every corner of the realm.' },
     // jacht: de jager zoekt wild binnen bereik (js/wildlife.js) en brengt vlees thuis
@@ -115,14 +124,15 @@
 
   const R = (gold, extra) => Object.assign({ gold: gold }, extra || {});
   VE.RANKS = [
-    { name: 'Hamlet', unlock: ['house', 'woodcutter', 'forester', 'quarry', 'sawmill'], quests: [
+    { name: 'Hamlet', unlock: ['house', 'woodcutter', 'forester', 'quarry', 'sawmill', 'warehouse'], quests: [
       { id: 'h1', text: 'Let settlers wear in 8 path tiles', type: 'roads', n: 8, reward: R(15) },
       { id: 'h2', text: 'Build a Woodcutter', type: 'build', b: 'woodcutter', n: 1, reward: R(10, { plank: 4 }) },
       { id: 'h3', text: 'Build a Sawmill', type: 'build', b: 'sawmill', n: 1, reward: R(20) },
       { id: 'h4', text: 'Build a Quarry', type: 'build', b: 'quarry', n: 1, reward: R(10, { plank: 3 }) },
       { id: 'h5', text: 'Build a Forester', type: 'build', b: 'forester', n: 1, reward: R(10) },
       { id: 'h6', text: 'Produce 20 planks', type: 'produce', res: 'plank', n: 20, reward: R(30) },
-      { id: 'h7', text: 'Build 2 Cottages', type: 'build', b: 'house', n: 2, reward: R(10, { bread: 6 }) }
+      { id: 'h7', text: 'Build 2 Cottages', type: 'build', b: 'house', n: 2, reward: R(10, { bread: 6 }) },
+      { id: 'h8', text: 'Build a Storehouse', type: 'build', b: 'warehouse', n: 1, reward: R(15) }
     ] },
     { name: 'Village', unlock: ['farm', 'windmill', 'bakery', 'fisher', 'hunter', 'market', 'tower'], quests: [
       { id: 'v1', text: 'Build a Grain Farm', type: 'build', b: 'farm', n: 1, reward: R(20) },
@@ -136,7 +146,7 @@
       { id: 'v9', text: "Build a Hunter's Lodge", type: 'build', b: 'hunter', n: 1, reward: R(20) },
       { id: 'v10', text: 'Bring home 20 meat', type: 'produce', res: 'meat', n: 20, reward: R(40) }
     ] },
-    { name: 'Market Town', unlock: ['vineyard', 'winery', 'tavern', 'warehouse', 'coalmine', 'ironmine', 'coppermine', 'smelter'], quests: [
+    { name: 'Market Town', unlock: ['vineyard', 'winery', 'tavern', 'coalmine', 'ironmine', 'coppermine', 'smelter'], quests: [
       { id: 'm1', text: 'Harvest 20 grapes', type: 'produce', res: 'grape', n: 20, reward: R(60) },
       { id: 'm2', text: 'Press 12 wine', type: 'produce', res: 'wine', n: 12, reward: R(80) },
       { id: 'm3', text: 'Open a Tavern', type: 'build', b: 'tavern', n: 1, reward: R(80) },

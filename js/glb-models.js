@@ -163,7 +163,7 @@
         if (!geo) throw new Error('node ' + src.levels[lvl] + ' bevat geen meshes');
         // markers uitlezen: rookpunten en ankers voor animaties
         const chimneys = [], anchors = {}, pre = src.levels[lvl] + '_';
-        let pile = null;
+        let pile = null; const slots = [];
         gltf.scene.traverse(o => {
           if (!o.name || o.name.indexOf(pre) !== 0) return;
           const rest = o.name.slice(pre.length);
@@ -171,6 +171,7 @@
           if (/^smoke\d*$/.test(rest)) chimneys.push([_v.x, _v.y, _v.z]);
           else if (rest.indexOf('anim_') === 0) anchors[rest.slice(5)] = [_v.x, _v.y, _v.z];
           else if (rest === 'pile') pile = [_v.x, _v.y, _v.z];          // plek voor de uitvoervoorraad
+          else if (/^slot\d+$/.test(rest)) slots[+rest.slice(4)] = [_v.x, _v.y, _v.z];   // vakken van een opslag
         });
         // geanimeerde delen (vlag, wieken, zaag) blijven procedureel, op het anker uit het nieuwe model
         let anims = [];
@@ -182,7 +183,8 @@
             return p ? Object.assign({}, a, { x: p[0], y: p[1], z: p[2] }) : a;
           });
         }
-        baked[lvl] = { geo: geo, anims: anims, chimneys: chimneys, pile: pile };
+        const sl = slots.filter(Boolean); sl.g = true;
+        baked[lvl] = { geo: geo, anims: anims, chimneys: chimneys, pile: pile, slots: sl.length ? sl : null };
       }
       // pas vervangen als alle levels gelukt zijn: nooit een half GLB / half procedureel gebouw
       let replaced = false;
@@ -202,13 +204,32 @@
     }
   }
 
+  /* Goederen (items.glb, nodes item_<goed>): voor de voorraadstapels en de lading van dragers.
+     Ontbreekt een node, dan blijft voor dat goed het procedurele model in gebruik. Komt het bestand pas
+     binnen als de game al loopt, dan wisselen de renderers de geometrie (VE.itemGeoVer). */
+  VE.itemGlb = {};
+  VE.itemSource = 'loading';
+  const procItem = VE.itemGeo;
+  VE.itemGeo = res => VE.itemGlb[res] || procItem(res);
+  const itemsDone = loadGlb('public/models/items.glb' + (VE.VERSION ? '?v=' + VE.VERSION : '')).then(gltf => {
+    let n = 0;
+    for (const r of VE.RES_ORDER) {
+      const node = gltf.scene.getObjectByName('item_' + r);
+      if (!node) continue;
+      const geo = bakeNode(node, 900 + r.length * 7);
+      if (geo) { VE.itemGlb[r] = geo; n++; }
+    }
+    VE.itemSource = n ? 'glb' : 'procedural';
+    VE.itemGeoVer = (VE.itemGeoVer || 0) + 1;
+  }).catch(e => { VE.itemSource = 'procedural'; console.warn('[Village Empire] items: GLB niet geladen, procedurele goederen.', e && e.message || e); });
+
   /* Laden start direct bij het inladen van dit script (parallel aan de rest van het opstarten).
      VE.glbReady resolvet altijd (ook bij fouten of na de time-out). */
   // Eerst de gebouwen die je bij de start ziet (opstarten wacht hierop, met time-out); de rest
   // daarna op de achtergrond — tot die binnen is, tonen die gebouwen hun procedurele model.
   const first = Object.keys(SOURCES).filter(t => SOURCES[t].first);
   const later = Object.keys(SOURCES).filter(t => !SOURCES[t].first);
-  const firstDone = Promise.all(first.map(loadType));
+  const firstDone = Promise.all(first.map(loadType).concat([itemsDone]));
   VE.glbReady = Promise.race([firstDone, new Promise(r => setTimeout(r, TIMEOUT_MS))]);
   VE.glbAllReady = firstDone.then(() => Promise.all(later.map(loadType)));
 })(window.VE);

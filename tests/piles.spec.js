@@ -110,10 +110,10 @@ test.describe('Voorraadstapels', () => {
         const b = g.placeBuilding(type, spot.i, spot.j, true);
         const count = () => { piles.update(g); return piles.meshes[res].count; };
         const base = (() => { b.output = {}; return count(); })();     // andere stapels (opslagerf) tellen mee
-        const out = { type, cap: g.cap(b), glbPile: !!VE.buildModel(type, 1).pile };
+        const out = { type, cap: VE.LOCAL_CAP, glbPile: !!VE.buildModel(type, 1).pile };
         out.empty = count() - base;
         b.output = { [res]: 2 }; out.two = count() - base;
-        b.output = { [res]: g.cap(b) }; out.full = count() - base;
+        b.output = { [res]: VE.LOCAL_CAP }; out.full = count() - base;
         // vol: de werker begint niet aan nieuw werk
         out.outFull = g.outFull(b);
         // een drager haalt er één af → stapel krimpt
@@ -121,8 +121,8 @@ test.describe('Voorraadstapels', () => {
         b.output = {};
         out.cleared = count() - base;
         // levels: een level-3 bedrijf heeft een grotere voorraad (cap) en dus een hogere volle stapel
-        b.level = 3; g.makeMesh(b); out.cap3 = g.cap(b);
-        b.output = { [res]: g.cap(b) }; out.full3 = count() - base;
+        b.level = 3; g.makeMesh(b); out.cap3 = VE.LOCAL_CAP;
+        b.output = { [res]: VE.LOCAL_CAP }; out.full3 = count() - base;
         window.__last = { id: b.id, cx: b.cx, cz: b.cz };
         return out;
       }, { type, res, spot });
@@ -171,12 +171,12 @@ test.describe('Voorraadstapels', () => {
       for (let q = 0; q < 200; q++) { g.update(0.1); maxAfter = Math.max(maxAfter, Object.values(b.output).reduce((a, c) => a + c, 0)); }
       const statusFull = b.status;
       g.piles.update(g);
-      return { seen, full, cap: g.cap(b), statusFull, maxAfter, logs: g.piles.meshes.log.count, trees: trees(spot) };
+      return { seen, full, cap: VE.LOCAL_CAP, statusFull, maxAfter, logs: g.piles.meshes.log.count, trees: trees(spot) };
     }, spots);
     expect(r.full, 'stapel raakt vol').toBe(true);
     expect(r.seen[0]).toBe(0);
     expect(r.seen[r.seen.length - 1]).toBe(r.cap);
-    expect(r.statusFull).toBe('Waiting for carriers');
+    expect(r.statusFull).toMatch(/^Storage full \(6\/6\)/);
     expect(r.maxAfter, 'stopt: niet meer dan vol').toBe(r.cap);
     expect(r.logs).toBeGreaterThanOrEqual(r.cap);
   });

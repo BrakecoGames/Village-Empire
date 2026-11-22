@@ -40,6 +40,16 @@ Dat voegt per level samen, bakt **ambient occlusion** (Cycles, met grondvlak) in
 `js/glb-models.js`); grote vlakken (stuc, aarde) krijgen geen AO. Uitzetten: omgevingsvariabele
 `VE_NO_AO=1`. Stijlregels: [docs/STIJLGIDS.md](../../docs/STIJLGIDS.md).
 
+## Goederen en voorraadvakken
+
+- `models/items.py` → `items.glb`: één node per goed (`item_<goed>`), oorsprong in het midden van het item.
+  De game laadt ze in `js/glb-models.js` (`VE.itemGeo`) voor alle stapels en voor de lading van dragers.
+  De bouwsteen heeft precies de maat van `VE.STONE_BLOCK`.
+- Opslaggebouwen geven hun vakken mee: `build_fn` geeft `{"slots": [(x, y, z), ...]}` terug. Dat wordt
+  `<node>_slot0`, `_slot1`, … De game legt daar de echte inhoud als nette stapels neer
+  (`VE.StockpileRender` in `js/fx.js`). Wordt de GLB niet geladen, dan gebruikt de game `VE.STORE_SLOTS`
+  in `js/models.js`.
+
 ## Nieuw model toevoegen
 
 1. Kopieer `models/test_cube.py` naar `models/<naam>.py`.

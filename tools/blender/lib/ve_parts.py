@@ -628,6 +628,9 @@ def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
         # "pile": waar de game de werkelijke uitvoervoorraad als stapel neerlegt (y = grondniveau)
         if info.get("pile"):
             markers.append((f"{prefix}_l{lvl}_pile", info["pile"]))
+        # "slot0", "slot1", ...: vakken waar de game de inhoud van een opslag als nette stapels neerlegt
+        for i, p in enumerate(info.get("slots", [])):
+            markers.append((f"{prefix}_l{lvl}_slot{i}", p))
         for name, p in markers:
             emp = bpy.data.objects.new(name, None)
             bpy.context.collection.objects.link(emp)

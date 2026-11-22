@@ -129,23 +129,13 @@
   };
   /* Stockyard: fenced, trampled yard; the goods piles themselves are drawn by VE.StockpileRender */
   B.yard = function (m) {
-    foundation(m, 1.8, 1.8, C.stoneD);
-    m.box(1.76, 0.03, 1.76, 0xc6a574, { y: 0.04, j: 0.06 });
-    const post = (x, z, h) => m.box(0.045, h || 0.24, 0.045, C.woodD, { x: x, y: 0.05, z: z, j: 0.08 });
-    const rail = (x1, z1, x2, z2) => {
-      const len = Math.hypot(x2 - x1, z2 - z1), a = Math.atan2(x2 - x1, z2 - z1);
-      for (const y of [0.12, 0.22]) m.box(0.025, 0.03, len, C.wood, { x: (x1 + x2) / 2, y: y, z: (z1 + z2) / 2, ry: a, j: 0.08 });
-    };
-    const E = 0.86;
-    for (let s = -E; s <= E + 0.001; s += E / 3) { post(s, -E); post(-E, s); post(E, s); }
-    rail(-E, -E, E, -E); rail(-E, -E, -E, E); rail(E, -E, E, E);
-    // front fence with a gate opening at the door (x = +0.5)
-    for (const x of [-E, -E * 2 / 3, -E / 3, 0, 0.24, 0.76, E]) post(x, E);
-    rail(-E, E, 0.24, E); rail(0.76, E, E, E);
-    post(0.24, E, 0.34); post(0.76, E, 0.34);
-    m.box(0.6, 0.04, 0.05, C.woodD, { x: 0.5, y: 0.36, z: E, j: 0.05 });          // gate beam
-    m.box(0.3, 0.12, 0.02, C.woodL, { x: 0.5, y: 0.42, z: E + 0.01 });             // sign board
-    m.box(0.2, 0.025, 0.006, C.woodD, { x: 0.5, y: 0.465, z: E + 0.022, j: 0 });
+    // startvoorraad: aangestampte grond met 4×4 pallets; de goederen tekent VE.StockpileRender
+    m.box(1.8, 0.04, 1.8, 0x8a6a45, { y: 0.0, j: 0.06 });
+    m.box(1.7, 0.012, 1.7, 0xa8865a, { y: 0.04, j: 0.08 });
+    for (const sl of VE.STORE_SLOTS.yard[0]) {
+      for (const dz of [-0.1, 0.1]) m.box(0.34, 0.018, 0.03, C.woodD, { x: sl[0], y: 0.04, z: sl[2] + dz, j: 0.08 });
+      for (let k = 0; k < 5; k++) m.box(0.05, 0.012, 0.3, C.wood, { x: sl[0] - 0.14 + k * 0.07, y: 0.058, z: sl[2], j: 0.1 });
+    }
   };
   B.house = function (m, lvl, ex) {
     foundation(m, 0.82, 0.74);
@@ -391,15 +381,14 @@
     barrel(m, -0.37, -0.28);
   };
   B.warehouse = function (m, lvl, ex) {
-    foundation(m, 0.88, 0.84);
-    m.box(0.7, 0.42, 0.6, C.woodL, { z: -0.04 });
-    for (let i = 0; i < 8; i++) m.box(0.012, 0.42, 0.012, C.timber, { x: -0.35 + i * 0.1, z: 0.265 });
-    m.roof(0.82, 0.38, 0.72, C.slate2, { y: 0.42, z: -0.04 });
-    m.box(0.26, 0.3, 0.02, C.door, { z: 0.27 });
-    m.box(0.012, 0.3, 0.025, C.woodL, { z: 0.275 });
-    m.box(0.12, 0.08, 0.02, C.woodL, { y: 0.48, z: 0.24 });
-    crate(m, 0.3, 0.36); crate(m, 0.38, 0.32, 0, 0.08); crate(m, 0.32, 0.34, 0.1, 0.08);
-    barrel(m, -0.3, 0.35); barrel(m, -0.38, 0.3);
+    // open loods: achterwand, lessenaarsdak, vakken voor de stapels (VE.STORE_SLOTS.warehouse)
+    foundation(m, 0.9, 0.88);
+    m.box(0.86, 0.03, 0.8, C.wood, { y: 0.04, z: -0.04 });
+    m.box(0.88, 0.46, 0.04, C.woodL, { z: -0.42 });
+    for (const x of [-0.42, 0.42]) { m.box(0.035, 0.46, 0.035, C.timber, { x: x, z: -0.42 }); m.box(0.035, 0.4, 0.035, C.timber, { x: x, z: -0.02 }); m.box(0.03, 0.12, 0.5, C.woodL, { x: x, y: 0.04, z: -0.2 }); }
+    m.box(0.96, 0.03, 0.54, C.slate2, { y: 0.5, z: -0.22, rx: 0.3 });
+    const S = VE.STORE_SLOTS.warehouse[lvl - 1];
+    for (const sl of S) if (sl[0] < 0.2) m.box(0.022, 0.07, 0.22, C.timber, { x: sl[0] + 0.135, y: 0.05, z: sl[2] });
   };
   B.monument = function (m, lvl, ex) {
     foundation(m, 1.8, 1.8, C.stoneL);
@@ -512,6 +501,23 @@
   };
 
   VE.modelCache = {};
+  /* gehakte bouwsteen (breedte × hoogte × diepte, item-eenheden): overal precies dit formaat */
+  VE.STONE_BLOCK = [0.09, 0.05, 0.06];
+  /* schaal van goederen in de wereld (stapels, bouwplaatsen, lading): overal dezelfde, dus een
+     bouwsteen is overal 0,072 × 0,04 × 0,048 tegel */
+  VE.ITEM_SCALE = 0.8;
+  /* Vakken voor voorraadstapels (gebouw-lokaal x, y, z). De GLB-modellen hebben eigen 'slot'-markers;
+     dit is de reserve voor de procedurele modellen en de bron voor yard.py en warehouse.py. */
+  const grid4 = []; for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) grid4.push([-0.63 + i * 0.42, 0.064, -0.63 + j * 0.42]);
+  const row = (xs, z) => xs.map(x => [x, 0.055, z]), X3 = [-0.27, 0, 0.27];
+  VE.STORE_SLOTS = {
+    yard: [grid4],
+    warehouse: [
+      row(X3, -0.2).concat(row(X3, 0.16)),
+      row(X3, -0.28).concat(row(X3, -0.04), row(X3, 0.2)),
+      row(X3, -0.28).concat(row(X3, -0.04), row(X3, 0.2))
+    ]
+  };
   /* Plek (gebouw-lokaal x, y, z) waar de uitvoervoorraad van een productiebedrijf als stapel ligt.
      GLB-modellen hebben hun eigen marker 'pile'; dit is de reserve voor de procedurele modellen. */
   VE.PILE_SPOT = {
@@ -793,7 +799,8 @@
     const m = new VE.Model(40);
     switch (res) {
       case 'log': m.add(new THREE.CylinderGeometry(0.035, 0.035, 0.24, 7), 0x8a5a2b, { rz: PI / 2 }); m.add(new THREE.CylinderGeometry(0.03, 0.03, 0.005, 7), 0xe2b77c, { x: 0.121, rz: PI / 2 }); break;
-      case 'stone': m.add(new THREE.DodecahedronGeometry(0.06, 0), 0xa3a8ad, { sy: 0.8 }); break;
+      // gehakte bouwsteen: een rechthoekig blok, altijd exact VE.STONE_BLOCK groot
+      case 'stone': m.box(VE.STONE_BLOCK[0], VE.STONE_BLOCK[1], VE.STONE_BLOCK[2], 0xa9aaa4, { y: -VE.STONE_BLOCK[1] / 2, j: 0.03 }); break;
       case 'plank': m.box(0.24, 0.02, 0.06, 0xe0aa66, { y: -0.02 }); m.box(0.24, 0.02, 0.06, 0xd39a55, { y: 0.0, ry: 0.1 }); break;
       case 'grain': { const g = VE.sheafGeo(0.85); g.translate(0, -0.07, 0); return g; }  // graan = schoof (ook in de handen van dragers)
       case 'flour': m.ball(0.055, 0xf4ecdb, { sy: 1.2 }, 1); m.box(0.03, 0.025, 0.03, 0xa89474, { y: 0.065 }); break;

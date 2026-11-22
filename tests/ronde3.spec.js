@@ -12,7 +12,7 @@ test.describe('Ronde 3', () => {
       const piles = {}; for (const k in g.piles.meshes) piles[k] = g.piles.meshes[k].count;
       g.demolish(y); // vaste gebouwen kunnen niet gesloopt worden
       const before = { ...piles };
-      g.stock.log += 25; g.piles.update(g);
+      y.store.log += 25; g.piles.update(g);   // de stapel toont elk stuk dat erop ligt
       return { yard: !!y, dist: Math.hypot(y.cx - hq.cx, y.cz - hq.cz), storage: !!y.def.storage, alive: y.alive, before, logAfter: g.piles.meshes.log.count };
     });
     expect(r.yard).toBe(true);
@@ -147,7 +147,7 @@ test.describe('Ronde 3', () => {
     await page.evaluate(k => {
       window.VE.save();
       const sv = JSON.parse(localStorage.getItem(k));
-      sv.buildings = sv.buildings.filter(b => b.t !== 'yard'); delete sv.fog;
+      sv.buildings = sv.buildings.filter(b => b.t !== 'yard'); delete sv.fog; sv.v = 1;   // oud formaat (voor 1.4.0)
       localStorage.setItem(k, JSON.stringify(sv));
     }, SAVE_KEY);
     // zonder beforeunload-save herladen, zodat de aangepaste save blijft staan

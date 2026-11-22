@@ -123,7 +123,7 @@
         if (s.carry && this.items[s.carry]) {
           const im = this.items[s.carry]; ic[s.carry] = ic[s.carry] || 0;
           if (ic[s.carry] < 120) {
-            _l.makeRotationY(0.08); _l.setPosition(0, 0.15 + (s.moving ? Math.sin(s.wp * 2) * 0.004 : 0), 0.092); _o.multiplyMatrices(_m, _l);
+            _l.makeRotationY(0.08); _l.scale(_s.set(VE.ITEM_SCALE, VE.ITEM_SCALE, VE.ITEM_SCALE)); _l.setPosition(0, 0.15 + (s.moving ? Math.sin(s.wp * 2) * 0.004 : 0), 0.092); _o.multiplyMatrices(_m, _l);
             im.setMatrixAt(ic[s.carry]++, _o);
           }
         }
@@ -138,19 +138,24 @@
   }
   VE.SettlerRender = SettlerRender;
 
-  /* ---------------- Stockpiles in the stockyard ---------------- */
-  // Item positions per pile (item units, y = item centre), filled in order as the stock grows.
-  const PILE_S = 1.7;
-  function heap(r, h) {           // round goods: 7 on the ground, 3 on top, 1 crowning
+  /* ---------------- Voorraadstapels ----------------
+     Elk stuk in een opslag is één item op een nette stapel (InstancedMesh per goed, één draw call per goed):
+       - startstapel naast het dorpshuis (vakken op pallets, 'slot'-markers uit yard.glb);
+       - Storehouses (vakken in de open loods, 'slot'-markers uit warehouse.glb, per level meer vakken);
+       - producenten: hun lokale voorraad (max. VE.LOCAL_CAP) op de 'pile'-plek van het model;
+       - bouwplaatsen: geleverde maar nog niet verbouwde materialen.
+     Posities in item-eenheden (y = midden van het item). Gehakte stenen zijn identieke rechthoekige
+     blokken (0,09 × 0,05 × 0,06) die in een strak verband liggen: 3 × 2 per laag. */
+  function heap(r, h) {           // ronde goederen: 7 onderop, 3 erop, 1 als kroon
     const out = [{ x: 0, y: h, z: 0 }];
     for (let a = 0; a < 6; a++) out.push({ x: Math.cos(a * 1.047) * r * 1.95, y: h, z: Math.sin(a * 1.047) * r * 1.95, ry: a });
     for (let a = 0; a < 3; a++) out.push({ x: Math.cos(a * 2.094 + 0.5) * r * 1.05, y: h * 2.6, z: Math.sin(a * 2.094 + 0.5) * r * 1.05, ry: a * 2 });
     out.push({ x: 0, y: h * 4.1, z: 0, ry: 1 });
     return out;
   }
-  function grid(sp, h, layers) {   // baskets and barrels: 2×2 per layer
+  function grid(sp, h, layers) {   // manden, vaten en zakken: 2×2 per laag
     const out = [];
-    for (let l = 0; l < layers; l++) for (let q = 0; q < 4; q++) out.push({ x: ((q & 1) - 0.5) * sp, y: h + l * h * 2.6, z: ((q >> 1) - 0.5) * sp, ry: q });
+    for (let l = 0; l < layers; l++) for (let q = 0; q < 4; q++) out.push({ x: ((q & 1) - 0.5) * sp, y: h + l * h * 2, z: ((q >> 1) - 0.5) * sp, ry: (q & 1) * Math.PI });
     return out;
   }
   function stookLayout() {         // schoven: rechtop in het midden, ringen eromheen die naar binnen leunen (hok)
@@ -159,54 +164,92 @@
     for (let a = 0; a < 5; a++) out.push({ x: Math.sin(a * 1.257 + 0.5) * 0.12, y: 0.058, z: Math.cos(a * 1.257 + 0.5) * 0.12, ry: a * 1.257 + 0.5, lean: 0.45 });
     return out;
   }
-  const LAYOUT = {
-    log: (() => { const o = []; for (let r = 0; r < 4; r++) for (let c = 0; c < 4 - r; c++) o.push({ x: 0, y: 0.035 + r * 0.061, z: (c - (3 - r) / 2) * 0.072 }); return o; })(),
-    plank: (() => { const o = []; for (let l = 0; l < 6; l++) for (let c = 0; c < 2; c++) o.push(l % 2 ? { x: (c - 0.5) * 0.09, y: 0.02 + l * 0.042, z: 0, ry: Math.PI / 2 } : { x: 0, y: 0.02 + l * 0.042, z: (c - 0.5) * 0.09 }); return o; })(),
-    stone: heap(0.055, 0.045), grain: stookLayout(), flour: heap(0.06, 0.066),
-    bread: heap(0.058, 0.038), fish: heap(0.05, 0.034),
-    grape: grid(0.13, 0.03, 2), wine: grid(0.11, 0.04, 2),
-    meat: heap(0.06, 0.04), coal: heap(0.055, 0.04), ironore: heap(0.058, 0.045), copperore: heap(0.058, 0.045), goldore: heap(0.058, 0.045),
-    ironbar: bars(), copperbar: bars(), goldbar: bars()
-  };
+  // bouwstenen: allemaal precies even groot (VE.STONE_BLOCK), strak gestapeld met een voeg van 3 mm
+  const SB = VE.STONE_BLOCK || [0.09, 0.05, 0.06];
+  function blocks() {
+    const o = [], g = 0.003;
+    for (let l = 0; l < 2; l++) for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++)
+      o.push({ x: (c - 1) * (SB[0] + g), y: SB[1] / 2 + l * (SB[1] + g), z: (r - 0.5) * (SB[2] + g) });
+    return o;
+  }
   function bars() {               // metaalstaven: kruiselings gestapeld
     const o = [];
     for (let l = 0; l < 4; l++) for (let c = 0; c < 3; c++) o.push(l % 2 ? { x: (c - 1) * 0.045, y: 0.012 + l * 0.032, z: 0, ry: Math.PI / 2 } : { x: 0, y: 0.012 + l * 0.032, z: (c - 1) * 0.045 });
     return o;
   }
-  // a fixed spot for every good inside the 2×2 yard (yard-local x/z)
-  const SLOT = { log: [-0.55, -0.55], stone: [0, -0.55], plank: [0.55, -0.55], grain: [-0.55, 0], flour: [0, 0], bread: [0.55, 0], fish: [-0.55, 0.5], grape: [0, 0.5], wine: [0.55, 0.5] };
-  // 1 item per unit for small stocks, then the pile grows more slowly until it is full
-  const visCount = (s, cap) => s <= 0 ? 0 : Math.min(cap, s <= 6 ? Math.ceil(s) : 6 + Math.ceil((s - 6) / 4));
+  const LAYOUT = {
+    log: (() => { const o = []; for (let r = 0; r < 4; r++) for (let c = 0; c < 4 - r; c++) o.push({ x: 0, y: 0.035 + r * 0.061, z: (c - (3 - r) / 2) * 0.072 }); return o; })(),
+    plank: (() => { const o = []; for (let l = 0; l < 6; l++) for (let c = 0; c < 2; c++) o.push(l % 2 ? { x: (c - 0.5) * 0.09, y: 0.02 + l * 0.042, z: 0, ry: Math.PI / 2 } : { x: 0, y: 0.02 + l * 0.042, z: (c - 0.5) * 0.09 }); return o; })(),
+    stone: blocks(), grain: stookLayout(), flour: grid(0.115, 0.06, 3),
+    bread: heap(0.058, 0.038), fish: heap(0.05, 0.034),
+    grape: grid(0.13, 0.03, 2), wine: grid(0.11, 0.055, 2),
+    meat: heap(0.06, 0.04), coal: heap(0.055, 0.04), ironore: heap(0.058, 0.045), copperore: heap(0.058, 0.045), goldore: heap(0.058, 0.045),
+    ironbar: bars(), copperbar: bars(), goldbar: bars()
+  };
+  VE.PILE_LAYOUT = LAYOUT;
+  // hoogte van één volle stapel: past een goed niet in zijn vakken, dan komt er een tweede laag stapel bovenop
+  const LAYER_H = {};
+  for (const r in LAYOUT) { let lo = 1, hi = 0; for (const p of LAYOUT[r]) { lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); } LAYER_H[r] = hi + lo; }
+  const NEAT = new Set(['stone', 'plank', 'log', 'ironbar', 'copperbar', 'goldbar', 'flour', 'wine', 'grape']);   // strak gestapeld: geen schuine stukken
 
-  // Uitvoervoorraad bij productiebedrijven: dezelfde stapels, kleiner, op de 'pile'-plek van het model.
-  const PILE_B = 0.85, PROD_CAP = 640;   // max. items per goed over alle bedrijven samen
+  // één schaal voor alle goederen in de wereld (stapels én lading van dragers): elk stuk is overal even groot
+  const PILE_B = VE.ITEM_SCALE;
+  const INST = 1400;                      // max. items per goed in de hele wereld
+
+  /* vakken toewijzen per opslag: elk goed houdt zijn vak(ken) zolang het er ligt (stapels springen niet) */
+  function allocSlots(b, nSlots, counts) {
+    const A = b._slots || (b._slots = {}), used = new Set();
+    const need = r => counts[r] > 0 ? Math.ceil(counts[r] / LAYOUT[r].length) : 0;
+    for (const r in A) {
+      A[r] = A[r].filter(i => i < nSlots).slice(0, need(r));
+      if (!A[r].length) delete A[r]; else for (const i of A[r]) used.add(i);
+    }
+    const free = () => { for (let i = 0; i < nSlots; i++) if (!used.has(i)) { used.add(i); return i; } return -1; };
+    for (const r of VE.RES_ORDER) if (need(r) && !A[r]) { const i = free(); if (i < 0) break; A[r] = [i]; }      // eerst elk goed één vak
+    for (const r of VE.RES_ORDER) while (A[r] && A[r].length < need(r)) { const i = free(); if (i < 0) break; A[r].push(i); }
+    return A;
+  }
 
   class StockpileRender {
     constructor(root) {
       const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5, specular: 0x111111 });
       this.meshes = {};
       for (const r of VE.RES_ORDER) {
-        const n = LAYOUT[r].length * 2 + PROD_CAP;
-        const m = new THREE.InstancedMesh(VE.itemGeo(r), mat, n);
-        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3); // see VE-001
+        const m = new THREE.InstancedMesh(VE.itemGeo(r), mat, INST);
+        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(INST * 3).fill(1), 3); // see VE-001
         m.count = 0; m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false;
+        m.userData.item = r; m.name = 'pile_' + r;
         root.add(m); this.meshes[r] = m;
       }
-      this.sig = '';
+      this.sig = ''; this.gv = VE.itemGeoVer || 0;
+    }
+    /* vakken van een opslag (game-lokaal x, y, z): uit het Blender-model, anders de procedurele reserve */
+    slotsOf(b) {
+      const md = VE.buildModel(b.type, b.level);
+      return (md.slots && md.slots.length ? md.slots : (VE.STORE_SLOTS && VE.STORE_SLOTS[b.type] && VE.STORE_SLOTS[b.type][b.level - 1])) || [];
     }
     update(game) {
-      const yards = game.buildings.filter(b => b.alive && b.built && b.type === 'yard').slice(0, 2);
-      const counts = VE.RES_ORDER.map(r => visCount(game.stock[r] || 0, LAYOUT[r].length));
-      // productiebedrijven: elk stuk in de uitvoervoorraad (b.output) is één item op de stapel.
-      // Leeg = geen stapel; vol (= de werker wacht op dragers) = volle stapel.
-      const prod = [];
-      let psig = '';
+      // itemmodellen uit Blender later binnen: geometrie verwisselen
+      if ((VE.itemGeoVer || 0) !== this.gv) { this.gv = VE.itemGeoVer; for (const r in this.meshes) this.meshes[r].geometry = VE.itemGeo(r); this.sig = ''; }
+      let sig = '';
+      const stores = [];
       for (const b of game.buildings) {
-        if (!b.alive || !b.built || !b.def.out) continue;
-        let any = false; for (const r in b.output) if (b.output[r] > 0) { any = true; psig += b.id + r + b.output[r] + ','; }
+        if (!b.alive || !b.built || !b.store || !(b.def.pile || b.def.depot)) continue;
+        let any = false; for (const r in b.store) if (b.store[r] > 0) { any = true; sig += b.id + r + b.store[r] + ','; }
+        if (!any) { b._slots = null; continue; }
+        const slots = this.slotsOf(b);
+        if (!slots.length) continue;
+        stores.push({ b: b, slots: slots, A: allocSlots(b, slots.length, b.store), sc: PILE_B });
+        sig += b.level + ':' + b.y.toFixed(2) + (slots.g ? 'g' : '') + slots.length + ';';
+      }
+      // productiebedrijven: elk stuk in de uitvoervoorraad (b.output) is één item op de stapel
+      const prod = [];
+      for (const b of game.buildings) {
+        if (!b.alive || !b.built || b.store || !b.output) continue;
+        let any = false; for (const r in b.output) if (b.output[r] > 0) { any = true; sig += b.id + r + b.output[r] + ','; }
         if (!any) continue;
         const md = VE.buildModel(b.type, b.level), spot = md.pile || (VE.PILE_SPOT && VE.PILE_SPOT[b.type]);
-        if (spot) { prod.push({ b: b, spot: spot }); psig += b.level + ':' + b.y.toFixed(2) + (md.pile ? 'g' : 'p') + ';'; }
+        if (spot) { prod.push({ b: b, spot: spot }); sig += b.level + ':' + b.y.toFixed(2) + (md.pile ? 'g' : 'p') + ';'; }
       }
       // bouwplaatsen: geleverde maar nog niet verbouwde materialen liggen op de grond. De bouwer verbruikt
       // ze één voor één (b.used); het laatste stuk verdwijnt precies als het gebouw klaar is.
@@ -219,45 +262,45 @@
         for (const r of Object.keys(b.def.cost)) {
           const del = b.delivered[r] || 0, take = Math.min(del, u);
           u -= take;
-          if (del - take > 0) { rem[r] = del - take; any = true; psig += 's' + b.id + r + rem[r] + ','; }
+          if (del - take > 0) { rem[r] = del - take; any = true; sig += 's' + b.id + r + rem[r] + ','; }
         }
-        if (any) { sites.push({ b: b, rem: rem }); psig += b.y.toFixed(2) + ';'; }
+        if (any) { sites.push({ b: b, rem: rem }); sig += b.y.toFixed(2) + ';'; }
       }
-      const sig = yards.map(b => b.id + ':' + b.y.toFixed(2)).join(',') + '|' + counts.join(',') + '|' + psig;
       if (sig === this.sig) return;
       this.sig = sig;
       VE.RES_ORDER.forEach((r, ri) => {
-        const mesh = this.meshes[r], lay = LAYOUT[r], sl = SLOT[r], capN = mesh.instanceMatrix.count;
+        const mesh = this.meshes[r], lay = LAYOUT[r], L = lay.length, neat = NEAT.has(r);
         let n = 0;
-        if (sl) for (const b of yards) for (let q = 0; q < counts[ri]; q++) {
-          const p = lay[q], jit = ((q * 37 + ri * 11) % 7 - 3) * 0.012;  // a little untidiness
+        const put = (b, ox, oy, oz, sc, q, seed) => {
+          if (n >= INST) return;
+          oy += Math.floor(q / L) * LAYER_H[r] * sc; q %= L;
+          const p = lay[q], jit = neat ? 0 : ((q * 37 + seed * 13) % 7 - 3) * 0.012;
           pileRot(p, jit);
-          _m.compose(_p.set(b.cx + sl[0] + p.x * PILE_S, b.y + 0.07 + p.y * PILE_S, b.cz + sl[1] + p.z * PILE_S), _q, _s.set(PILE_S, PILE_S, PILE_S));
+          // het vak draait mee met het gebouw (alle gebouwen staan recht, deur naar +z)
+          _m.compose(_p.set(b.cx + ox + p.x * sc, b.y + oy + p.y * sc, b.cz + oz + p.z * sc), _q, _s.set(sc, sc, sc));
           mesh.setMatrixAt(n++, _m);
+        };
+        for (const st of stores) {
+          const S = st.A[r]; if (!S) continue;
+          // gelijk verdeeld over de vakken van dit goed; meer dan één stapel per vak: hoger stapelen (max. 3 lagen)
+          let left = st.b.store[r] || 0;
+          const per = Math.min(L * 3, Math.ceil(left / S.length));
+          for (let k = 0; k < S.length && left > 0; k++) {
+            const sl = st.slots[S[k]], amt = Math.min(per, left);
+            for (let q = 0; q < amt; q++) put(st.b, sl[0], sl[1], sl[2], st.sc, q, st.b.id + k);
+            left -= amt;
+          }
         }
         for (const pr of prod) {
-          const b = pr.b, amt = Math.min(lay.length, Math.ceil(b.output[r] || 0));
-          for (let q = 0; q < amt && n < capN; q++) {
-            const p = lay[q], jit = ((q * 37 + b.id * 13) % 7 - 3) * 0.015;
-            pileRot(p, jit);
-            _m.compose(_p.set(b.cx + pr.spot[0] + p.x * PILE_B, b.y + pr.spot[1] + p.y * PILE_B, b.cz + pr.spot[2] + p.z * PILE_B), _q, _s.set(PILE_B, PILE_B, PILE_B));
-            mesh.setMatrixAt(n++, _m);
-          }
+          const b = pr.b, amt = Math.min(L, Math.ceil(b.output[r] || 0));
+          for (let q = 0; q < amt; q++) put(b, pr.spot[0], pr.spot[1], pr.spot[2], PILE_B, q, b.id);
         }
         for (const st of sites) {
-          const amt = Math.min(lay.length, st.rem[r] || 0);
+          const amt = Math.min(L, st.rem[r] || 0);
           if (!amt) continue;
-          // eerste materiaal links vooraan op de bouwplaats, tweede rechts vooraan
-          // vaste kant per materiaal (volgorde in de bouwkosten), zodat een stapel niet verspringt
-          // vóór de steiger (loopplank op z≈0.41), links en rechts van de ingang: zichtbaar vanuit de
-          // gebruikelijke camerahoek en het deurpad blijft vrij. 2×2: naast de steiger (palen op ±0.8).
+          // vaste kant per materiaal (volgorde in de bouwkosten), vóór de steiger links en rechts van de ingang
           const b = st.b, side = Object.keys(b.def.cost).indexOf(r) % 2 ? 1 : -1, e = b.size > 1 ? 0.88 : 0.27, f = b.size > 1 ? 0.5 : 0.47;
-          for (let q = 0; q < amt && n < capN; q++) {
-            const p = lay[q], jit = ((q * 29 + b.id * 7) % 7 - 3) * 0.015;
-            pileRot(p, jit);
-            _m.compose(_p.set(b.cx + side * e + p.x * PILE_B, b.y + 0.02 + p.y * PILE_B, b.cz + f + p.z * PILE_B), _q, _s.set(PILE_B, PILE_B, PILE_B));
-            mesh.setMatrixAt(n++, _m);
-          }
+          for (let q = 0; q < amt; q++) put(b, side * e, 0.02, f, PILE_B, q, b.id * 7);
         }
         mesh.count = n; mesh.instanceMatrix.needsUpdate = true;
       });

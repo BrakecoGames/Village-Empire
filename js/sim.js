@@ -101,8 +101,24 @@
       this.pf = new Pathfinder(w);
       this.buildings = []; this.bmap = {}; this.settlers = [];
       this.bid = 0; this.sid = 0; this.time = 0;
-      this.stock = {}; this.stockRes = {};
-      for (const r of VE.RES_ORDER) { this.stock[r] = 0; this.stockRes[r] = 0; }
+      /* Voorraad ligt altijd ergens: in een Storehouse, op de startstapel, in het dorpshuis (beloningen en
+         ingekochte waar) of bij een producent (max. VE.LOCAL_CAP). this.stock is het totaal daarvan
+         (alleen-lezen overzicht, wordt bij elke wijziging opnieuw geteld). Schrijven naar this.stock[r]
+         (tests, oude code) legt het verschil netjes in een opslag of haalt het eruit: nooit iets dubbel. */
+      this._stock = {}; this._res = {}; this.sd = true;
+      for (const r of VE.RES_ORDER) { this._stock[r] = 0; this._res[r] = 0; }
+      const self = this;
+      this.stock = new Proxy(this._stock, {
+        get(t, r) { if (self.sd) self.recount(); return t[r]; },
+        set(t, r, v) {
+          if (!VE.RES[r]) { t[r] = v; return true; }
+          if (self.sd) self.recount();
+          const d = Math.round((+v || 0) - (t[r] || 0));
+          if (d > 0) self.addGoods(r, d); else if (d < 0) self.takeGoods(r, -d);
+          return true;
+        }
+      });
+      this.stockRes = new Proxy(this._res, { get(t, r) { if (self.sd) self.recount(); return t[r]; }, set() { return true; } });
       this.gold = 0; this.rank = 0; this.claimed = {};
       this.stats = { produced: {}, goldEarned: 0, roads: 0, built: {}, upgrades: 0 };
       this.upg = {}; for (const u of VE.UPGRADES) this.upg[u.id] = 0;
@@ -118,7 +134,13 @@
       if (VE.Mining) VE.Mining.init(this, save ? save.ore : null);
       if (w.veg) w.veg.settle();             // geen struiken door stammen; easter eggs op een vrije plek
       this.updateTerritory(true);
-      if (!this.buildings.some(b => b.type === 'yard')) this.placeYard(); // new village, or a save from before stockyards
+      // startvoorraad: ligt zichtbaar op de grond naast het dorpshuis en wordt nooit aangevuld.
+      // Oude saves (v1): de hele oude voorraad komt op die stapel te liggen, er gaat niets verloren.
+      const legacy = !save || (save.v || 1) < 2;
+      if (legacy && !this.buildings.some(b => b.type === 'yard')) this.placeYard();
+      if (!save) this.fillPile(VE.START_STOCK);
+      else if (legacy) this.fillPile(save.stock || {});
+      this.checkPiles(true);
       w.rebuildRoads();
       this.nature.update(0, 1);
       // wilde dieren (na het dorp: ze mijden de drukke dorpskern)
@@ -130,12 +152,11 @@
       this.nature.populate(rand);
       const s = this.world.start;
       this.placeBuilding('hq', s.i, s.j, true);
-      Object.assign(this.stock, { log: 6, stone: 14, plank: 28, bread: 8, fish: 4 });
       this.gold = 40;
       for (let n = 0; n < 10; n++) this.spawnSettler();
     }
 
-    /* Stockyard next to the Village Hall, without blocking the space in front of the hall's door */
+    /* Startstapel naast het dorpshuis, zonder de ruimte voor de deur van het dorpshuis te blokkeren */
     placeYard() {
       const hq = this.hq; if (!hq) return null;
       let best = null, bd = 1e9;
@@ -170,6 +191,7 @@
       b.recipe = key;
       // grondstoffen die het nieuwe recept niet gebruikt: terug naar de uitvoer, dragers brengen ze weg
       for (const r in b.input) if (b.input[r] > 0 && !R.inp[r]) { b.output[r] = (b.output[r] || 0) + b.input[r]; b.input[r] = 0; }
+      this.sd = true;
       if (!b.working) b.status = '';
       return true;
     }
@@ -178,23 +200,118 @@
     tradeMult() { return 1 + 0.15 * this.upg.trade; }
     growMult() { return 1 + 0.2 * this.upg.soil; }
     walkSpeed() { return 1.15 * (1 + 0.12 * this.upg.boots); }
-    cap(b) { return 4 + 2 * (b.level - 1); }
+    cap(b) { return 4 + 2 * (b.level - 1); }               // invoervoorraad van een werkplaats
     outTotal(b) { let n = 0; for (const r in b.output) n += b.output[r]; return n; }
-    outFull(b) { return this.outTotal(b) >= this.cap(b); }
-    storages() { return this.buildings.filter(b => b.alive && b.built && b.def.storage); }
+    /* lokale opslag van een producent: max. VE.LOCAL_CAP stuks. Past `add` er niet meer bij, dan stopt hij. */
+    outFull(b, add) { return this.outTotal(b) + (add || 1) > VE.LOCAL_CAP; }
+    fullStatus(b, r) {
+      const st = r && this.depotFor(r, b.dx, b.dz, null, true);
+      return 'Storage full (' + this.outTotal(b) + '/' + VE.LOCAL_CAP + '): ' + (st || !r ? 'waiting for carriers' : 'build a Storehouse that keeps ' + VE.RES[r].name.toLowerCase());
+    }
+
+    /* ---------- opslag ---------- */
+    // alles wat goederen vasthoudt: opslag (b.store) of de uitvoer van een producent (b.output)
+    held(b) { return b.store || b.output; }
+    recount() {
+      this.sd = false;
+      const S = this._stock, R = this._res;
+      for (const r of VE.RES_ORDER) { S[r] = 0; R[r] = 0; }
+      for (const b of this.buildings) {
+        if (!b.alive || !b.built) continue;
+        const h = this.held(b);
+        for (const r in h) if (h[r]) S[r] = (S[r] || 0) + h[r];
+        for (const r in b.outRes) if (b.outRes[r]) R[r] = (R[r] || 0) + b.outRes[r];
+      }
+    }
+    storages() { return this.buildings.filter(b => b.alive && b.built && b.store); }
     nearestStorage(x, z) {
       let best = null, bd = 1e9;
-      for (const b of this.buildings) if (b.alive && b.built && b.def.storage) { const d = (b.dx - x) ** 2 + (b.dz - z) ** 2; if (d < bd) { bd = d; best = b; } }
+      for (const b of this.buildings) if (b.alive && b.built && b.store) { const d = (b.dx - x) ** 2 + (b.dz - z) ** 2; if (d < bd) { bd = d; best = b; } }
       return best;
+    }
+    storeTotal(b) { let n = 0; for (const r in b.store) n += b.store[r]; return n; }
+    storeCap(b) { return b.def.depot ? VE.STORE_CAP[b.level - 1] || VE.STORE_CAP[0] : Infinity; }
+    storeFree(b) { let inc = 0; for (const r in b.incoming) inc += b.incoming[r]; return this.storeCap(b) - this.storeTotal(b) - inc; }
+    /* dichtstbijzijnde Storehouse die r aanneemt en nog plek heeft (`not`: behalve dit gebouw) */
+    depotFor(r, x, z, not, any) {
+      let best = null, bd = 1e9;
+      for (const b of this.buildings) {
+        if (!b.alive || !b.built || !b.def.depot || b === not || !b.accept[r]) continue;
+        if (!any && (b.unreach > this.time || this.storeFree(b) <= 0)) continue;
+        const d = (b.dx - x) ** 2 + (b.dz - z) ** 2;
+        if (d < bd) { bd = d; best = b; }
+      }
+      return best;
+    }
+    /* dichtstbijzijnde plek waar r vrij (niet gereserveerd) ligt: opslag, en met `outputs` ook producenten */
+    sourceFor(r, x, z, outputs) {
+      let best = null, bd = 1e9;
+      for (const b of this.buildings) {
+        if (!b.alive || !b.built || b.unreach > this.time) continue;
+        if (!b.store && !outputs) continue;
+        const h = this.held(b);
+        if ((h[r] || 0) - (b.outRes[r] || 0) <= 0) continue;
+        const d = (b.dx - x) ** 2 + (b.dz - z) ** 2 + (b.store ? 0 : 4);
+        if (d < bd) { bd = d; best = b; }
+      }
+      return best;
+    }
+    /* goederen van buiten (beloningen, inkoop, sloop): eerst een Storehouse dat ze aanneemt, anders het dorpshuis */
+    addGoods(r, n, x, z) {
+      n = Math.round(n); if (!(n > 0) || !VE.RES[r]) return;
+      this.sd = true;
+      const hq = this.hq;
+      if (x === undefined) { x = hq ? hq.dx : 0; z = hq ? hq.dz : 0; }
+      while (n > 0) {
+        const d = this.depotFor(r, x, z); if (!d) break;
+        const k = Math.min(n, this.storeFree(d));
+        d.store[r] = (d.store[r] || 0) + k; n -= k;
+      }
+      if (n > 0 && hq && hq.store) hq.store[r] = (hq.store[r] || 0) + n;
+    }
+    /* goederen verbruiken zonder drager (upgrade, verkoop, eten): alleen wat niet gereserveerd is */
+    takeGoods(r, n) {
+      n = Math.round(n); if (!(n > 0)) return true;
+      this.sd = true;
+      const pr = b => b.type === 'hq' ? 0 : b.def.pile ? 1 : b.store ? 2 : 3;
+      const list = this.buildings.filter(b => b.alive && b.built).sort((a, c) => pr(a) - pr(c));
+      for (const b of list) {
+        const h = this.held(b), free = (h[r] || 0) - (b.outRes[r] || 0);
+        if (free <= 0) continue;
+        const k = Math.min(free, n); h[r] -= k; n -= k;
+        if (n <= 0) break;
+      }
+      this.checkPiles();
+      return n <= 0;
+    }
+    fillPile(goods) {
+      const pile = this.buildings.find(b => b.alive && b.def.pile) || this.hq;
+      for (const r in goods) if (VE.RES[r] && goods[r] > 0) pile.store[r] = (pile.store[r] || 0) + Math.round(goods[r]);
+      this.sd = true;
+    }
+    /* de startstapel is op: hij verdwijnt (en de grond komt vrij) */
+    checkPiles(silent) {
+      for (const b of this.buildings.slice()) {
+        if (!b.alive || !b.def.pile || this.storeTotal(b) > 0) continue;
+        let res = 0; for (const r in b.outRes) res += b.outRes[r];
+        if (res > 0) continue;
+        this.demolish(b, true);
+        if (!silent) emit('toast', { text: '🪵 The starting supplies are used up. Build Storehouses to keep your goods.' });
+      }
+    }
+    setAccept(b, r, on) {
+      if (!b || !b.def.depot) return;
+      if (r === '*') { for (const k of VE.RES_ORDER) b.accept[k] = !!on; }
+      else if (VE.RES[r]) b.accept[r] = on === undefined ? !b.accept[r] : !!on;
     }
     countBuilt(type) { let n = 0; for (const b of this.buildings) if (b.alive && b.built && b.type === type) n++; return n; }
     canAfford(cost) {
       for (const r in cost) { if (r === 'gold') { if (this.gold < cost[r]) return false; } else if (this.avail(r) < cost[r]) return false; }
       return true;
     }
-    pay(cost) { for (const r in cost) { if (r === 'gold') this.gold -= cost[r]; else this.stock[r] -= cost[r]; } }
+    pay(cost) { for (const r in cost) { if (r === 'gold') this.gold -= cost[r]; else this.takeGoods(r, cost[r]); } }
     give(rew) {
-      for (const r in rew) { if (r === 'gold') this.gold += rew[r]; else this.stock[r] = (this.stock[r] || 0) + rew[r]; }
+      for (const r in rew) { if (r === 'gold') this.gold += rew[r]; else this.addGoods(r, rew[r]); }
     }
 
     /* ---------- placement ---------- */
@@ -241,7 +358,7 @@
       const key = k + ':' + this.bid + ':' + this.buildings.length;
       this._route = this._route || {};
       if (this._route[key] !== undefined) return this._route[key];
-      const st = this.nearestStorage(k % N + 0.5, ((k / N) | 0) + 0.5);
+      const st = this.hq || this.nearestStorage(k % N + 0.5, ((k / N) | 0) + 0.5);
       const ok = !!(st && this.pf.find(k, st.doorK));
       if (Object.keys(this._route).length > 400) this._route = {};
       return (this._route[key] = ok);
@@ -259,6 +376,9 @@
       if (def.cost) for (const r in def.cost) b.total += def.cost[r];
       if (def.market) for (const r of ['bread', 'fish', 'wine', 'flour']) b.sell[r] = true;
       if (def.recipes) b.recipe = def.recipe;
+      if (def.storage) b.store = {};
+      if (def.depot) { b.accept = {}; for (const r of VE.RES_ORDER) b.accept[r] = true; }
+      this.sd = true;
       for (let dj = 0; dj < size; dj++) for (let di = 0; di < size; di++) {
         const k = (j + dj) * N + i + di;
         w.bld[k] = b.id; w.road[k] = 0; w.wear[k] = 0; if (w.paths) w.paths.clearTile(k);
@@ -313,7 +433,7 @@
       this.root.add(g);
     }
     complete(b, silent) {
-      b.built = true;
+      b.built = true; this.sd = true;
       if (b.scaffold) { b.group.remove(b.scaffold); b.scaffold = null; }
       b.mesh.scale.y = 1;
       for (const a of b.anims) a.mesh.visible = true;
@@ -346,21 +466,24 @@
       sfx('done', b.cx, b.cz);
       return true;
     }
-    demolish(b) {
-      if (!b || b.def.fixed || !b.alive) return;
+    demolish(b, force) {
+      if (!b || (b.def.fixed && !force) || !b.alive) return;
       const w = this.world;
-      b.alive = false;
+      b.alive = false; this.sd = true;
       this.root.remove(b.group);
       for (let dj = 0; dj < b.size; dj++) for (let di = 0; di < b.size; di++) w.bld[(b.j + dj) * N + b.i + di] = 0;
       w.door[b.doorK] = Math.max(0, w.door[b.doorK] - 1);
       if (w.paths) { w.paths.unfix(b.doorK); if (b.size > 1) w.paths.unfix(b.doorJ * N + b.i); }   // stoepje groeit langzaam weer dicht
       if (b.dig) { b.dig.reserved = false; b.dig = null; }                // ondergrondse ronde van een mijn afbreken
-      // refunds
-      if (b.built) { if (b.def.cost) for (const r in b.def.cost) this.stock[r] += Math.floor(b.def.cost[r] / 2); }
-      else for (const r in b.delivered) this.stock[r] += b.delivered[r];
-      for (const r in b.input) this.stock[r] += b.input[r];
-      for (const r in b.output) this.stock[r] += b.output[r] - (b.outRes[r] || 0);
-      b.input = {}; b.output = {};
+      // terug naar de opslag: de helft van de bouwkosten, alles wat er lag (ook gereserveerd: die drager
+      // vindt straks een leeg gebouw en haalt niets op, dus niets dubbel en niets kwijt)
+      const back = (r, n) => this.addGoods(r, n, b.dx, b.dz);
+      if (b.built) { if (b.def.cost) for (const r in b.def.cost) back(r, Math.floor(b.def.cost[r] / 2)); }
+      else for (const r in b.delivered) back(r, b.delivered[r]);
+      for (const r in b.input) back(r, b.input[r]);
+      for (const r in b.output) back(r, b.output[r]);
+      if (b.store) for (const r in b.store) back(r, b.store[r]);
+      b.input = {}; b.output = {}; if (b.store) b.store = {};
       if (b.worker) this.freeWorker(b.worker);
       if (b.builder) { const s = b.builder; s.mode = 'idle'; s.tool = null; s.act = null; b.builder = null; s.path = null; s.cb = null; }
       for (const f of b.fields) if (!f.dead) this.nature.removeField(f);
@@ -429,34 +552,49 @@
     /* ---------- transport ---------- */
     startTransport(s, res, src, dst) {
       s.mode = 'carry'; s.task = { res: res, src: src, dst: dst, picked: false }; s.tool = null; s.act = null;
-      if (src.def.storage) this.stockRes[res]++; else src.outRes[res] = (src.outRes[res] || 0) + 1;
+      src.outRes[res] = (src.outRes[res] || 0) + 1; this.sd = true;
       dst.incoming[res] = (dst.incoming[res] || 0) + 1;
       if (!this.walkToB(s, src, () => this.pickup(s))) this.failTask(s, true);
     }
     pickup(s) {
       const t = s.task; if (!t) return;
       if (!t.src.alive) { this.failTask(s); return; }
-      if (t.src.def.storage) { this.stock[t.res]--; this.stockRes[t.res]--; }
-      else { t.src.output[t.res]--; t.src.outRes[t.res]--; }
+      const h = this.held(t.src);
+      t.src.outRes[t.res]--; this.sd = true;
+      if (!(h[t.res] > 0)) { this.failTask(s); return; }
+      h[t.res]--;
       t.picked = true; s.carry = t.res;
+      if (t.src.def.pile) this.checkPiles();
       if (!t.dst.alive) { this.redirect(s); return; }
       if (!this.walkToB(s, t.dst, () => this.deliver(s))) this.redirect(s);
     }
+    /* bestemming weg of onbereikbaar: naar een Storehouse dat het aanneemt, anders terug naar de bron */
     redirect(s) {
       const t = s.task;
       if (t.dst.alive && t.dst.incoming[t.res]) t.dst.incoming[t.res]--;
-      const st = this.nearestStorage(s.x, s.z);
-      if (!st) { this.stock[t.res]++; s.carry = null; s.task = null; s.mode = 'idle'; return; }
-      t.dst = st; st.incoming[t.res] = (st.incoming[t.res] || 0) + 1;
-      if (!this.walkToB(s, st, () => this.deliver(s))) { st.incoming[t.res]--; this.stock[t.res]++; s.carry = null; s.task = null; s.mode = 'idle'; }
+      let st = this.depotFor(t.res, s.x, s.z, t.dst), back = false;
+      if (!st && t.src.alive && t.src.built && t.src !== t.dst) { st = t.src; back = !t.src.store; }
+      if (st) {
+        t.dst = st; t.back = back; st.incoming[t.res] = (st.incoming[t.res] || 0) + 1;
+        if (this.walkToB(s, st, () => this.deliver(s))) return;
+        st.incoming[t.res]--;
+      }
+      this.dropCarry(s);
+    }
+    /* noodgeval (nergens heen te lopen): het goed gaat naar een opslag, het verdwijnt nooit */
+    dropCarry(s) {
+      if (s.carry) this.addGoods(s.carry, 1, s.x, s.z);
+      s.carry = null; s.task = null; s.mode = 'idle'; s.path = null; s.cb = null;
     }
     deliver(s) {
       const t = s.task; if (!t) return;
       const d = t.dst;
       if (!d.alive) { this.redirect(s); return; }
       if (d.incoming[t.res]) d.incoming[t.res]--;
+      this.sd = true;
       if (!d.built) d.delivered[t.res] = (d.delivered[t.res] || 0) + 1;
-      else if (d.def.storage) this.stock[t.res]++;
+      else if (d.store) d.store[t.res] = (d.store[t.res] || 0) + 1;
+      else if (t.back) d.output[t.res] = (d.output[t.res] || 0) + 1;
       else if (d.def.recipes && !this.rcp(d).inp[t.res]) d.output[t.res] = (d.output[t.res] || 0) + 1;
       else d.input[t.res] = (d.input[t.res] || 0) + 1;
       s.carry = null; s.task = null; s.mode = 'idle'; s.wt = 0.2;
@@ -465,9 +603,10 @@
       const t = s.task;
       if (t) {
         if (!t.picked) {
-          if (t.src.def.storage) this.stockRes[t.res]--; else if (t.src.alive) t.src.outRes[t.res]--;
+          if (t.src.alive && t.src.outRes[t.res] > 0) t.src.outRes[t.res]--;
           if (early) t.src.unreach = this.time + 6;
-        } else { this.stock[t.res]++; }
+        } else if (s.carry) { this.addGoods(s.carry, 1, s.x, s.z); }
+        this.sd = true;
         if (t.dst.alive && t.dst.incoming[t.res]) t.dst.incoming[t.res]--;
         if (early) t.dst.unreach = this.time + 6;
       }
@@ -512,7 +651,7 @@
             for (const r in b.def.cost) {
               let need = b.def.cost[r] - (b.delivered[r] || 0) - (b.incoming[r] || 0);
               while (need > 0 && n < cap && idle.length && this.avail(r) > 0) {
-                const src = this.nearestStorage(b.dx, b.dz); if (!src) break;
+                const src = this.sourceFor(r, b.dx, b.dz); if (!src) break;
                 const s = take(src.dx, src.dz); if (!s) break;
                 this.startTransport(s, r, src, b); need--; n++;
               }
@@ -545,7 +684,7 @@
             for (const r in R.inp) {
               let want = this.cap(b) - (b.input[r] || 0) - (b.incoming[r] || 0);
               while (want > 0 && n < cap && idle.length && this.avail(r) > 0) {
-                const src = this.nearestStorage(b.dx, b.dz); if (!src) break;
+                const src = this.sourceFor(r, b.dx, b.dz); if (!src) break;
                 const s = take(src.dx, src.dz); if (!s) break;
                 this.startTransport(s, r, src, b); want--; n++;
               }
@@ -562,7 +701,7 @@
             for (const r of VE.RES_ORDER) {
               if (!b.sell[r]) continue;
               while (pending < 6 && n < cap && idle.length && this.avail(r) > b.keep) {
-                const src = this.nearestStorage(b.dx, b.dz); if (!src) break;
+                const src = this.sourceFor(r, b.dx, b.dz, true); if (!src) break;
                 const s = take(src.dx, src.dz); if (!s) break;
                 this.startTransport(s, r, src, b); pending++; n++;
               }
@@ -583,15 +722,27 @@
     moveOutputs(take, idle, cap, consumerOnly) {
       let n = 0;
       for (const b of this.buildings) {
-        if (!b.alive || b.unreach > this.time) continue;
+        if (!b.alive || !b.built || b.store || b.unreach > this.time) continue;
         for (const r in b.output) {
           while (b.output[r] - (b.outRes[r] || 0) > 0 && n < cap && idle.length) {
             let dst = this.findConsumer(r, b);
             if (!dst) {
               if (consumerOnly && !this.outFull(b)) break;
-              dst = this.nearestStorage(b.dx, b.dz);
+              dst = this.depotFor(r, b.dx, b.dz);          // alleen een Storehouse dat dit goed aanneemt en plek heeft
             }
-            if (!dst) break;
+            if (!dst) break;                                // geen plek: het blijft bij de producent liggen
+            const s = take(b.dx, b.dz); if (!s) return n;
+            this.startTransport(s, r, b, dst); n++;
+          }
+        }
+      }
+      // goederen die een Storehouse niet meer aanneemt (uitgevinkt): naar een Storehouse dat ze wel wil
+      if (!consumerOnly) for (const b of this.buildings) {
+        if (!b.alive || !b.built || !b.def.depot || b.unreach > this.time) continue;
+        for (const r in b.store) {
+          if (b.accept[r]) continue;
+          while (b.store[r] - (b.outRes[r] || 0) > 0 && n < cap && idle.length) {
+            const dst = this.depotFor(r, b.dx, b.dz, b); if (!dst) break;
             const s = take(b.dx, b.dz); if (!s) return n;
             this.startTransport(s, r, b, dst); n++;
           }
@@ -653,7 +804,7 @@
         if (f.mow || f.state === 'cut') { f.mow = 0; if (f.state === 'cut') f.state = 'grown'; if (!f.dead && this.nature.setFieldM) this.nature.setFieldM(f); }
       }
       s.mowField = null;
-      if (s.carry && b) { this.stock[s.carry]++; }
+      if (s.carry && b) this.addGoods(s.carry, 1, s.x, s.z);
       s.carry = null; s.mode = 'idle'; s.role = 'carrier'; s.tool = null; s.act = null; s.work = null; s.hidden = false; s.path = null; s.cb = null; s.wstate = null; s.wt = 0.5;
       if (b) { s.x = b.dx; s.z = b.dz + 0.1; }
     }
@@ -669,14 +820,14 @@
     goHome(s, b, carry, done) {
       s.carry = carry; s.wstate = 'walk'; s.act = null;
       const arrive = () => {
-        if (!b.alive || b.worker !== s) { if (carry) { this.stock[carry]++; s.carry = null; } this.freeWorker(s); return; }
+        if (!b.alive || b.worker !== s) { if (carry) { this.addGoods(carry, 1, s.x, s.z); s.carry = null; } this.freeWorker(s); return; }
         s.carry = null; s.hidden = true; s.wstate = 'inside'; s.wt = 1.0; s.x = b.dx; s.z = b.dz;
         if (done) done();
       };
       if (!this.walkToB(s, b, arrive)) arrive();
     }
     produce(b, res, n) {
-      b.output[res] = (b.output[res] || 0) + n;
+      b.output[res] = (b.output[res] || 0) + n; this.sd = true;
       this.stats.produced[res] = (this.stats.produced[res] || 0) + n;
       emit('float', { x: b.cx, y: b.y + 0.9, z: b.cz, text: '+' + n, icon: res });
     }
@@ -706,7 +857,7 @@
       const d = b.def, w = this.world;
       s.tool = d.tool || null;
       if (d.gather) {
-        if (d.gather !== 'plant' && this.outFull(b)) { b.status = 'Waiting for carriers'; s.wt = 1; return; }
+        if (d.gather !== 'plant' && this.outFull(b)) { b.status = this.fullStatus(b, d.out); s.wt = 1; return; }
         const gm = this.gatherMult(b);
         if (d.gather === 'tree') {
           let best = null, bd = 1e9;
@@ -858,7 +1009,7 @@
         if (dep.amount > 0) { M.take(w, dep); this.produce(b, d.out, 1); }
       }
       b.working = false;
-      if (this.outFull(b)) { b.status = 'Waiting for carriers'; s.wt = 1; return; }
+      if (this.outFull(b)) { b.status = this.fullStatus(b, d.out); s.wt = 1; return; }
       const r = d.radius + (b.level - 1) * 0.5;
       const dep = M && M.pick(w, b.cx, b.cz, d.ore, r);
       if (!dep) {
@@ -876,11 +1027,12 @@
     thinkHunt(s, b, d) {
       const wl = this.wild, gm = this.gatherMult(b);
       if (!wl) { b.status = 'No game in range'; s.wt = 4; return; }
-      if (this.outFull(b)) { b.status = 'Waiting for carriers'; s.wt = 1; return; }
+      if (this.outFull(b)) { b.status = this.fullStatus(b, d.out); s.wt = 1; return; }
       const r = d.radius + (b.level - 1);
       const a = wl.findPrey(b.cx, b.cz, r);
       if (!a) { b.status = wl.anyGameNear(b.cx, b.cz, r) ? 'Letting the game recover' : 'No game in range'; s.wt = 4; return; }
       const SP = a.sp;
+      if (this.outFull(b, SP.meat)) { b.status = this.fullStatus(b, d.out); s.wt = 1; return; }   // de vangst moet erbij passen
       const st = wl.stalkPoint(a, b);
       if (!st) { s.wt = 2; return; }
       a.reserved = true; s.resv = a; b.status = 'Stalking a ' + SP.name.toLowerCase();
@@ -978,7 +1130,7 @@
       if (!b.working) {
         let ok = true; for (const r in R.inp) if ((b.input[r] || 0) < R.inp[r]) ok = false;
         if (!ok) { b.status = 'Waiting for ' + Object.keys(R.inp).map(r => VE.RES[r].name.toLowerCase()).join(' & '); return; }
-        if (R.out && this.outFull(b)) { b.status = 'Waiting for carriers'; return; }
+        if (R.out) { let k = 0; for (const r in R.out) k += R.out[r]; if (this.outFull(b, k)) { b.status = this.fullStatus(b, Object.keys(R.out)[0]); return; } }
         for (const r in R.inp) b.input[r] -= R.inp[r];
         b.working = true; b.wt = R.time; b.wt0 = R.time; b.batch = b.recipe || null; b.status = d.recipes ? 'Smelting ' + R.name.toLowerCase() : 'Working';
       } else {
@@ -1021,7 +1173,7 @@
 
     /* ---------- main update ---------- */
     update(dt) {
-      this.time += dt;
+      this.time += dt; this.sd = true;
       const w = this.world;
       // settlers
       for (const s of this.settlers) {
@@ -1049,7 +1201,7 @@
         const cap = this.popCap();
         if (this.settlers.length < cap) {
           const food = (VE.FOOD || ['bread', 'fish']).find(r => this.avail(r) > 0) || null;
-          if (food) this.stock[food]--;
+          if (food) this.takeGoods(food, 1);
           const s = this.spawnSettler();
           if (s) emit('arrive', { x: s.x, z: s.z });
           const tav = this.countBuilt('tavern');
@@ -1096,9 +1248,9 @@
     sellPrice(r) { return Math.max(1, Math.round(VE.RES[r].price * this.tradeMult() * 0.8)); }
     buyPrice(r) { return Math.max(2, Math.round(VE.RES[r].price * 2.2)); }
     trade(r, n) {
-      if (n > 0) { const c = this.buyPrice(r) * n; if (this.gold < c) return false; this.gold -= c; this.stock[r] += n; return true; }
+      if (n > 0) { const c = this.buyPrice(r) * n; if (this.gold < c) return false; this.gold -= c; this.addGoods(r, n); return true; }
       n = -n; if (this.avail(r) < n) return false;
-      this.stock[r] -= n; const g = this.sellPrice(r) * n; this.gold += g; this.stats.goldEarned += g; return true;
+      this.takeGoods(r, n); const g = this.sellPrice(r) * n; this.gold += g; this.stats.goldEarned += g; return true;
     }
     buyUpgrade(id) {
       const u = VE.UPGRADES.find(x => x.id === id), lvl = this.upg[id];
@@ -1109,14 +1261,30 @@
 
     /* ---------- save / load ---------- */
     serialize(cam) {
+      this.sd = true;                                // altijd een verse telling
       const w = this.world;
+      const bl = this.buildings.filter(b => b.alive).map(b => ({
+        id: b.id, t: b.type, i: b.i, j: b.j, l: b.level, b: b.built ? 1 : 0, u: b.used,
+        d: b.built ? {} : Object.assign({}, b.delivered), inp: Object.assign({}, b.input), out: Object.assign({}, b.output), sell: b.sell, keep: b.keep, rc: b.recipe || undefined,
+        st: b.store ? Object.assign({}, b.store) : undefined, ac: b.accept ? VE.RES_ORDER.filter(r => b.accept[r]) : undefined
+      }));
+      // wat dragers op dit moment vasthouden, gaat terug naar waar het vandaan kwam (of het dorpshuis):
+      // na het laden ligt het daar weer, er raakt niets kwijt
+      const byId = {}; for (const e of bl) byId[e.id] = e;
+      const hqE = this.hq && byId[this.hq.id];
+      let carried = 0;
+      for (const s of this.settlers) {
+        const t = s.task; if (!t || !t.picked || !s.carry) continue;
+        const e = t.src && t.src.alive && t.src.built ? byId[t.src.id] : hqE;
+        if (!e) continue;
+        const h = e.st || e.out; h[s.carry] = (h[s.carry] || 0) + 1; carried++;
+      }
+      const stock = Object.assign({}, this.stock);
+      if (carried) for (const s of this.settlers) if (s.task && s.task.picked && s.carry) stock[s.carry] = (stock[s.carry] || 0) + 1;
       return {
-        v: 1, seed: this.seed, time: Math.round(this.time), stock: this.stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
+        v: 2, seed: this.seed, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
         stats: this.stats, upg: this.upg, pop: this.settlers.length, speed: this.speed,
-        buildings: this.buildings.filter(b => b.alive).map(b => ({
-          id: b.id, t: b.type, i: b.i, j: b.j, l: b.level, b: b.built ? 1 : 0, u: b.used,
-          d: b.built ? {} : b.delivered, inp: b.input, out: b.output, sell: b.sell, keep: b.keep, rc: b.recipe || undefined
-        })),
+        buildings: bl,
         ore: VE.Mining ? VE.Mining.serialize(w) : undefined, wild: this.wild ? this.wild.serialize() : undefined,
         trail: w.paths.serialize(), nature: this.nature.serialize(), fog: w.serializeFog(), cam: cam || null, saved: Date.now()
       };
@@ -1124,7 +1292,7 @@
     load(sv, rand) {
       const w = this.world;
       this.gold = sv.gold || 0; this.rank = sv.rank || 0; this.claimed = sv.claimed || {}; this.time = sv.time || 0;
-      for (const r of VE.RES_ORDER) this.stock[r] = (sv.stock && sv.stock[r]) || 0;
+      // voorraad: v2 per gebouw (st); oude saves (v1) leggen hun totale voorraad op de startstapel (init)
       Object.assign(this.stats, sv.stats || {});
       Object.assign(this.upg, sv.upg || {});
       this.speed = sv.speed || 1;
@@ -1138,6 +1306,8 @@
         if (!b.built) { b.delivered = bs.d || {}; b.used = bs.u || 0; b.mesh.scale.y = 0.03 + 0.97 * (b.total ? b.used / b.total : 0); }
         b.input = bs.inp || {}; b.output = bs.out || {}; if (bs.sell) b.sell = bs.sell; if (bs.keep !== undefined) b.keep = bs.keep;
         if (bs.rc && b.def.recipes && b.def.recipes[bs.rc]) b.recipe = bs.rc;
+        if (b.store && bs.st && (sv.v || 1) >= 2) for (const r in bs.st) if (VE.RES[r] && bs.st[r] > 0) b.store[r] = bs.st[r];
+        if (b.accept && bs.ac) for (const r of VE.RES_ORDER) b.accept[r] = bs.ac.indexOf(r) >= 0;
       }
       // stats.built was re-incremented by instant completes; restore the saved values
       if (sv.stats && sv.stats.built) this.stats.built = Object.assign({}, sv.stats.built);
@@ -1163,6 +1333,7 @@
         // opgeslagen tijdens het binden ('cut'): het graan staat weer rijp op het veld, de boer oogst opnieuw
         if (fo) { fo.growth = f[2]; fo.state = f[3] === 'cut' ? 'grown' : f[3]; if (f[3] === 'cut') fo.growth = 1; this.nature.setFieldM(fo); if (owner) owner.fields.push(fo); }
       }
+      this.sd = true;
       const n = Math.max(4, sv.pop || 10);
       for (let i = 0; i < n; i++) this.spawnSettler();
       for (const s of this.settlers) { s.x += (Math.random() - 0.5) * 2; s.z += Math.random() * 1.2; }

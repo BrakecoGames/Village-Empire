@@ -140,7 +140,7 @@
   /* ---------------- renderer ---------------- */
   const _m = new THREE.Matrix4(), _l = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(),
     _p = new THREE.Vector3(), _s = new THREE.Vector3(), _one = new THREE.Vector3(1, 1, 1), _e = new THREE.Euler(),
-    _cam = new THREE.Vector3(), _rz = new THREE.Matrix4(), _ry = new THREE.Matrix4();
+    _cam = new THREE.Vector3(), _rz = new THREE.Matrix4(), _ry = new THREE.Matrix4(), _sv = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
 
   class SettlerRenderGLB {
@@ -318,7 +318,7 @@
         }
         if (s.carry && this.items[s.carry]) {
           const it = this.items[s.carry];
-          if (it.n < it.mesh.instanceMatrix.count) { _l.makeRotationY(0.08); _ry.multiplyMatrices(W[I.carry], _l); it.mesh.setMatrixAt(it.n++, _ry); }
+          if (it.n < it.mesh.instanceMatrix.count) { _l.makeRotationY(0.08); _l.scale(_sv.set(VE.ITEM_SCALE, VE.ITEM_SCALE, VE.ITEM_SCALE)); _ry.multiplyMatrices(W[I.carry], _l); it.mesh.setMatrixAt(it.n++, _ry); }
         }
       }
       let inst = 0, drawn = 0;

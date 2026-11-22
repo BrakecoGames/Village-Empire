@@ -72,6 +72,11 @@ test.describe('Paden', () => {
         for (let r = 5; r < 11 && !done; r++) for (let j = hq.j - r; j <= hq.j + r && !done; j++) for (let i = hq.i - r; i <= hq.i + r && !done; i++)
           if (Math.max(Math.abs(i - hq.i), Math.abs(j - hq.j)) === r && g.canPlace(t, i, j, true).ok) { g.placeBuilding(t, i, j, true); done = true; }
       }
+      // en een Storehouse bij het dorpshuis: dragers sjouwen hout en steen erheen (sinds 1.4.0)
+      { let done = false;
+        for (let r = 2; r < 6 && !done; r++) for (let j = hq.j - r; j <= hq.j + r && !done; j++) for (let i = hq.i - r; i <= hq.i + r && !done; i++)
+          if (g.canPlace('warehouse', i, j, true).ok) { g.placeBuilding('warehouse', i, j, true); done = true; } }
+      for (let n = 0; n < 6; n++) g.spawnSettler();
       const count = () => { let a = 0, b = 0; for (let k = 0; k < N * N; k++) if (!w.door[k]) { if (w.road[k] === 1) a++; else if (w.road[k] === 2) b++; } return { trail: a, path: b }; };
       const before = count();
       // zes spel-minuten simuleren zonder te tekenen (de software-renderer is te traag)

@@ -37,6 +37,11 @@ async function demo(page) {
       if (sc > hs) { hs = sc; hu = [i, j]; }
     }
     if (hu) { const b = g.placeBuilding('hunter', hu[0], hu[1], true); out.hunter = [b.cx, b.cz]; }
+    // opslag voor de productieketens (sinds 1.4.0 houden producenten er zelf maar 6)
+    for (const at of [[g.hq.cx - 3, g.hq.cz + 3], [g.hq.cx + 3, g.hq.cz - 2]]) {
+      const s = find('warehouse', at, 8);
+      if (s) { const b = g.placeBuilding('warehouse', s[0], s[1], true); b.level = 3; g.makeMesh(b); }
+    }
     for (let n = 0; n < 20; n++) g.spawnSettler();
     document.querySelectorAll('.toast').forEach(t => t.remove());
     return out;
@@ -162,7 +167,7 @@ test.describe('wildlife & mijnbouw: logica', () => {
     expect(r.good.ok).toBe(true);
     expect(r.good.why).toMatch(/(small|good|rich) coal deposit below \(about \d+\)/);
     expect(r.wrongOre.ok).toBe(false);
-    expect(r.wrongOre.why).toMatch(/No iron below this spot, but coal/);
+    expect(r.wrongOre.why).toMatch(/No iron below this spot, but (coal|copper|gold): try a /);
     expect(r.bare).toMatch(/No coal found below this spot|geen/);
     expect(r.houseOnMountain).toBe('Too rocky here');
     expect(r.sameOre && r.sameWild, 'deterministisch').toBe(true);
@@ -314,15 +319,17 @@ test.describe('wildlife & mijnbouw: logica', () => {
         ore: JSON.stringify(VE.Mining.serialize(g2.world)) === JSON.stringify(save.ore),
         wild: g2.wild.list.filter(a => !a.dead).length === save.wild.length,
         recipe: g2.buildings.find(b => b.type === 'smelter').recipe,
-        stock: ['coal', 'ironore', 'ironbar', 'meat'].every(x => g2.stock[x] === save.stock[x]),
+        stock: ['coal', 'ironore', 'ironbar', 'meat'].every(x => g2.stock[x] === save.stock[x]) || JSON.stringify(['coal', 'ironore', 'ironbar', 'meat'].map(x => [g2.stock[x], save.stock[x]])),
         mines: g2.buildings.filter(b => b.def.mountain).length
       };
       g2.dispose();
       // oude save (zonder aders, dieren en recept) laadt ook
-      const old = JSON.parse(JSON.stringify(save)); delete old.ore; delete old.wild; for (const b of old.buildings) delete b.rc;
+      // (oud formaat v1: één totale voorraad, geen opslag per gebouw)
+      const old = JSON.parse(JSON.stringify(save)); delete old.ore; delete old.wild; old.v = 1; for (const b of old.buildings) { delete b.rc; delete b.st; delete b.ac; }
+      const coalAtMines = old.buildings.reduce((a, b) => a + ((b.out || {}).coal || 0), 0);
       for (const x of VE.RES_ORDER.slice(9)) delete old.stock[x];
       const g3 = new VE.Game(VE.view.scene); g3.init(old);
-      const oldOk = { deposits: g3.world.deposits.length, wild: g3.wild.list.length, recipe: (g3.buildings.find(b => b.type === 'smelter') || {}).recipe, coal: g3.stock.coal };
+      const oldOk = { deposits: g3.world.deposits.length, wild: g3.wild.list.length, recipe: (g3.buildings.find(b => b.type === 'smelter') || {}).recipe, coal: g3.stock.coal - coalAtMines };
       g3.dispose();
       const q = id => VE.RANKS.some(r => r.quests.some(x => x.id === id));
       VE.ui.openProduction();
@@ -343,7 +350,7 @@ test.describe('wildlife & mijnbouw: logica', () => {
     expect(r.whyBad).toBe('Mines can only be built on the mountain');
     expect(r.clsBad).toBe('bad');
     expect(r.rings, 'mijnbouw-informatielaag zichtbaar').toBeGreaterThan(0.5);
-    expect(r.same.ore && r.same.wild && r.same.stock).toBe(true);
+    expect([r.same.ore, r.same.wild, r.same.stock]).toEqual([true, true, true]);
     expect(r.same.recipe).toBe('copperbar');
     expect(r.same.mines).toBe(4);
     expect(r.oldOk.deposits).toBeGreaterThan(10);

@@ -134,4 +134,5 @@ Bijgewerkt zijn `tests/paden.spec.js` (nieuw opslagformaat, geen padgeometrie me
 ## Resterende beperkingen
 - De informatielaag toont alleen wat onder ontdekt land ligt. Wat nog onder de wolken ligt, verschijnt
   pas als je het gebied hebt verkend.
-- De stockyard toont nog steeds geen stapels van de nieuwe goederen. Dat stond al in het vorige rapport.
+- ~~De stockyard toont nog steeds geen stapels van de nieuwe goederen.~~ Opgelost in 1.4.0
+  ([RAPPORT-OPSLAG.md](RAPPORT-OPSLAG.md)).
