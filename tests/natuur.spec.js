@@ -51,6 +51,8 @@ test.describe('Natuur', () => {
       const adultSp = t.sp;
       const before = nat.pools[adultSp].used - nat.pools[adultSp].free.length;
       nat.fellTree(t); for (let n = 0; n < 60; n++) nat.update(0.05, 1);
+      // sinds de nieuwe houthakcyclus blijft de boom liggen tot hij in stukken gehakt wordt (buckTree)
+      if (t.landed) nat.removeLog(nat.buckTree(t));
       const after = nat.pools[adultSp].used - nat.pools[adultSp].free.length;
       // wind: één gedeelde shader voor alle planten (geen mixers)
       const windMats = new Set(); g.root.traverse(o => { if (o.isInstancedMesh && o.material && /wind_/.test(o.material.customProgramCacheKey ? o.material.customProgramCacheKey() : '')) windMats.add(o.material.customProgramCacheKey()); });

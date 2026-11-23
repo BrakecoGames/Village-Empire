@@ -96,10 +96,15 @@ def node(name, fn, seed):
     return obj
 
 
-def limb(p0, p1, r0, r1, mat, seg=6, cap=True, smooth=True):
-    """Taps toelopende tak/stam tussen twee game-punten (normalen naar buiten)."""
+def limb(p0, p1, r0, r1, mat, seg=6, cap=True, smooth=True, collar=True):
+    """Taps toelopende tak/stam tussen twee game-punten (normalen naar buiten).
+    Naadloos: de voet begint een stukje binnen de stam of tak waar hij uit groeit, en takken boven de grond
+    krijgen een kleine kraag (verdikking) op het aanhechtpunt, zodat er nooit een kier of zwevende tak is."""
     p0, p1 = Vector(p0), Vector(p1)
     ax = (p1 - p0).normalized()
+    if collar and p0.y > 0.03 and r0 >= 0.008 and mat.startswith(("Bark", "Twig", "Root")):
+        blob(r0 * 1.25, mat, tuple(p0), sub=1, smooth=True)
+    p0 = p0 - ax * (r0 * 0.9)                      # voet in de ouder laten beginnen
     ref = Vector((0, 0, 1)) if abs(ax.z) < 0.9 else Vector((1, 0, 0))
     u = ax.cross(ref).normalized()
     v = ax.cross(u)
@@ -126,9 +131,49 @@ def limb(p0, p1, r0, r1, mat, seg=6, cap=True, smooth=True):
 
 
 def chain(pts, radii, mat, seg=6):
-    """Kromme stam: opeenvolgende limb-stukken door punten (met naadloze overgangen)."""
-    for i in range(len(pts) - 1):
-        limb(pts[i], pts[i + 1], radii[i], radii[i + 1], mat, seg=seg, cap=(i == len(pts) - 2))
+    """Kromme stam als één doorlopende buis: bij elke knik staat de ring schuin (gemiddelde richting van
+    beide stukken, met verbrede 'verstek'-straal), dus geen wigvormige kieren tussen de stukken.
+    Onderaan open (zit in de grond), bovenaan dicht."""
+    P = [Vector(p) for p in pts]
+    n = len(P)
+    tang = []
+    for i in range(n):
+        a = (P[i] - P[i - 1]).normalized() if i > 0 else None
+        b = (P[i + 1] - P[i]).normalized() if i < n - 1 else None
+        tang.append(((a + b) / 2).normalized() if a and b else (a or b))
+    ref = Vector((1, 0, 0)) if abs(tang[0].x) < 0.9 else Vector((0, 0, 1))
+    bm = bmesh.new()
+    rings = []
+    for i in range(n):
+        t = tang[i]
+        u = (ref - t * ref.dot(t)).normalized()
+        v = t.cross(u)
+        r = radii[i]
+        if 0 < i < n - 1:                           # verstek: de schuine ring iets breder (max. 1,3x)
+            a = (P[i] - P[i - 1]).normalized()
+            r = r / max(0.77, a.dot(t))
+        ring = []
+        for k in range(seg):
+            ang = TAU * k / seg
+            d = u * math.cos(ang) + v * math.sin(ang)
+            ring.append(gverts(bm, [tuple(P[i] + d * r)])[0])
+        rings.append(ring)
+    sides = []
+    for i in range(n - 1):
+        for k in range(seg):
+            sides.append((bm.faces.new((rings[i][k], rings[i][(k + 1) % seg], rings[i + 1][(k + 1) % seg], rings[i + 1][k])), i))
+    cap = bm.faces.new(rings[-1])
+    bm.normal_update()
+    for f, i in sides:
+        c = f.calc_center_median()
+        mid = M3 @ ((P[i] + P[i + 1]) / 2)
+        axis = M3 @ (P[i + 1] - P[i]).normalized()
+        proj = mid + axis * (c - mid).dot(axis)
+        if f.normal.dot(c - proj) < 0:
+            f.normal_flip()
+    if cap.normal.dot(M3 @ tang[-1]) < 0:
+        cap.normal_flip()
+    return new_obj("trunk", bm, mat, True)
 
 
 def foliage(r, mat, pos, scale=(1, 1, 1), sub=2, jit=0.16, flat=0.0):

@@ -581,6 +581,7 @@
       this.smoke = new Smoke(root, VE.isMobile ? 220 : 420);
       this.dust = new Puffs(root, 0xcdb88e, 160, 0.7, 1);
       this.leaves = new Puffs(root, 0x5aa83a, 120, 1.0, 0);
+      this.chips = new Puffs(root, 0xd9b07a, 90, 1.0, 0);        // houtsnippers bij elke bijlslag
       this.splash = new Puffs(root, 0xe8f6ff, 80, 0.85, 0);
       this.sparks = new Puffs(root, 0xffb347, 90, 1.0, 0);
       this.poofs = new Puffs(root, 0xfffbe8, 60, 0.9, 1);
@@ -591,6 +592,7 @@
         smoke: e => this.smoke.emit(e),
         // e.small: kluitjes aarde bij het schoffelen (klein en kort)
         dust: e => { const k = e.small ? 0.22 : 1; for (let i = 0; i < (e.n || 8); i++) { const a = Math.random() * 6.28, sp = (0.4 + Math.random() * 0.6) * k; this.dust.emit({ x: e.x + Math.cos(a) * 0.3 * k, y: e.y + 0.1 * k, z: e.z + Math.sin(a) * 0.3 * k, vx: Math.cos(a) * sp, vy: (0.25 + Math.random() * 0.3) * (e.small ? 0.8 : 1), vz: Math.sin(a) * sp, g: e.small ? 1.2 : 0, life: (1.1 + Math.random() * 0.5) * (e.small ? 0.45 : 1), s0: 0.06 * k, s1: 0.2 * k }); } },
+        chips: e => { for (let i = 0; i < 5; i++) { const a = Math.random() * 6.28; this.chips.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.5 + (e.vx || 0), vy: 0.7 + Math.random() * 0.6, vz: Math.sin(a) * 0.5 + (e.vz || 0), g: 3.2, life: 0.55 + Math.random() * 0.3, s0: 0.012, s1: 0.014, sy: 0.5 }); } },
         leaves: e => { for (let i = 0; i < 10; i++) { const a = Math.random() * 6.28; this.leaves.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.6, vy: 0.6 + Math.random() * 0.5, vz: Math.sin(a) * 0.6, g: 1.4, life: 1.4, s0: 0.03, s1: 0.035, sy: 0.4 }); } },
         sparks: e => { for (let i = 0; i < 2; i++) { const a = Math.random() * 6.28; this.sparks.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.35, vy: 0.7 + Math.random() * 0.6, vz: Math.sin(a) * 0.35 + 0.15, g: 2.2, life: 0.5 + Math.random() * 0.3, s0: 0.012, s1: 0.004 }); } },
         poof: e => { for (let i = 0; i < 9; i++) { const a = i * 0.7; this.poofs.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.5, vy: 0.35 + (i % 3) * 0.15, vz: Math.sin(a) * 0.5, life: 0.8, s0: 0.05, s1: 0.16 }); } },
@@ -616,7 +618,7 @@
       }
     }
     update(dt, t) {
-      this.smoke.update(dt); this.dust.update(dt); this.leaves.update(dt); this.splash.update(dt); this.sparks.update(dt); this.poofs.update(dt);
+      this.smoke.update(dt); this.dust.update(dt); this.leaves.update(dt); this.chips.update(dt); this.splash.update(dt); this.sparks.update(dt); this.poofs.update(dt);
       // clouds
       for (const c of this.clouds) {
         c.mesh.position.x += c.sp * dt;

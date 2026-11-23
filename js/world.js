@@ -6,6 +6,7 @@
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color(), _up = new THREE.Vector3(0, 1, 0);
   VE.ZERO = ZERO;
+  const _q2 = new THREE.Quaternion(), _ax = new THREE.Vector3();
   const _sh = new THREE.Matrix4(), _tr = new THREE.Matrix4();
 
   class World {
@@ -551,8 +552,13 @@
       if (!P) return;
       const s = t.sc * (0.18 + 0.82 * Math.min(1, t.growth));
       // easter-egg-bomen: vogelhuisje/embleem naar de standaardcamera
-      _e.set(t.fall, t.sp === 'tree_oak_bird' || t.sp === 'tree_beech_logo' ? Math.PI / 4 : t.rot, 0); _q.setFromEuler(_e);
-      _m.compose(_p.set(t.x, w.heightAt(t.x, t.z) - 0.02, t.z), _q, _s.set(s * t.look.vx, s * t.look.vy, s * t.look.vx));
+      _e.set(0, t.sp === 'tree_oak_bird' || t.sp === 'tree_beech_logo' ? Math.PI / 4 : t.rot, 0); _q.setFromEuler(_e);
+      if (t.fall) {
+        // omvallen: kantelen om de horizontale as loodrecht op de valrichting (de boom zelf draait niet)
+        const d = t.fallDir || [0, 1];
+        _q2.setFromAxisAngle(_ax.set(d[1], 0, -d[0]), t.fall); _q.premultiply(_q2);
+      }
+      _m.compose(_p.set(t.x, w.heightAt(t.x, t.z) - 0.02 + (t.fall ? 0.03 : 0), t.z), _q, _s.set(s * t.look.vx, s * t.look.vy, s * t.look.vx));
       if (P.inst) P.inst.set(t.idx, _m); else for (const m of P.meshes) m.setMatrixAt(t.idx, _m);
       P.dirty = true;
     }
@@ -562,7 +568,95 @@
       t.dead = true;
       if (this.w.tree[t.k] === t) this.w.tree[t.k] = null;
     }
-    fellTree(t) { t.falling = true; t.fall = 0.01; t.fallV = 0.4; }
+    /* Omhakken. De boom valt in richting `dir` ([dx, dz], weg van de houthakker en vrij van obstakels):
+       eerst langzaam, dan steeds sneller (zwaartekracht), en hij komt tot stilstand op de hoek waarop de
+       kroon de grond raakt (het terrein meegerekend), met een kleine stuit. Daarna blijft hij liggen tot de
+       houthakker hem in stukken hakt (buckTree). */
+    fellTree(t, dir) {
+      t.falling = true; t.fall = 0.012; t.fallV = 0.05; t.landed = false;
+      t.fallDir = dir || [Math.sin(t.rot), Math.cos(t.rot)];
+      const s = t.sc * (0.18 + 0.82 * Math.min(1, t.growth)), w = this.w, sp = t.sp || '';
+      const hc = (sp === 'tree_pine' ? 0.88 : sp === 'tree_birch' ? 0.8 : sp === 'tree_spruce' ? 0.55 : /apple|pear|blossom/.test(sp) ? 0.52 : 0.72) * s;
+      const rc = (sp === 'tree_spruce' ? 0.2 : /apple|pear|blossom|birch/.test(sp) ? 0.18 : 0.24) * s;
+      const g0 = w.heightAt(t.x, t.z);
+      let max = 1.5;
+      for (let a = 0.9; a <= 1.5; a += 0.02) {
+        const x = t.x + t.fallDir[0] * hc * Math.sin(a), z = t.z + t.fallDir[1] * hc * Math.sin(a);
+        const gy = w.inb(Math.floor(x), Math.floor(z)) ? w.heightAt(x, z) - g0 : 0;
+        if (hc * Math.cos(a) - rc * 0.8 <= gy) { max = a; break; }
+      }
+      t.fallMax = max; t.trunkLen = hc * 0.78; t.logR = 0.055 * s;
+    }
+    /* valrichting: zo veel mogelijk weg van de houthakker, maar niet op gebouwen, water, andere bomen of
+       buiten de kaart (16 richtingen, de beste score wint) */
+    fallDir(t, cx, cz) {
+      const w = this.w, N = VE.N, L = 0.95 * t.sc;
+      const away = Math.atan2(t.x - cx, t.z - cz);
+      let best = away, bs = 1e9;
+      for (let k = 0; k < 16; k++) {
+        const a = away + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * Math.PI / 8;
+        const dx = Math.sin(a), dz = Math.cos(a);
+        let sc = Math.ceil(k / 2) * 0.6;
+        for (let r = 0.3; r <= L; r += 0.15) {
+          const x = t.x + dx * r, z = t.z + dz * r, i = Math.floor(x), j = Math.floor(z);
+          if (!w.inb(i, j)) { sc += 6; continue; }
+          const kk = j * N + i;
+          if (w.bld[kk] || w.door[kk]) sc += 5;
+          if (w.type[kk] === 1) sc += 3;
+          const o = w.tree[kk];
+          if (o && o !== t && !o.dead && !o.falling && Math.hypot(o.x - x, o.z - z) < 0.3) sc += 2;
+          if (w.rock[kk]) sc += 1;
+        }
+        if (sc < bs) { bs = sc; best = a; }
+      }
+      return [Math.sin(best), Math.cos(best)];
+    }
+    /* de omgevallen boom in stukken: de kroon gaat eraf (bladeren), de stam wordt één lange stam op de grond */
+    buckTree(t) {
+      const d = t.fallDir || [0, 1], len = t.trunkLen || 0.5, R = t.logR || 0.05;
+      const cx = t.x + d[0] * (len + 0.1), cz = t.z + d[1] * (len + 0.1);
+      VE.bus.emit('leaves', { x: cx, y: this.w.heightAt(cx, cz) + 0.2, z: cz });
+      VE.bus.emit('leaves', { x: cx + d[0] * 0.15, y: this.w.heightAt(cx, cz) + 0.15, z: cz + d[1] * 0.15 });
+      this.removeTree(t);
+      return this.addLog(t.x + d[0] * len * 0.52, t.z + d[1] * len * 0.52, d, len, R);
+    }
+    /* een lange stam in twee losse stammen */
+    splitLog(p) {
+      const d = p.dir, h = p.len * 0.25;
+      this.removeLog(p);
+      return [this.addLog(p.x - d[0] * h * 1.04, p.z - d[1] * h * 1.04, d, p.len * 0.48, p.R),
+              this.addLog(p.x + d[0] * h * 1.04, p.z + d[1] * h * 1.04, d, p.len * 0.48, p.R)];
+    }
+    /* losse boomstammen op de grond (één InstancedMesh, item-model 'log', geschaald naar de echte stam) */
+    addLog(x, z, d, len, R) {
+      if (!this.logMesh || this.logGeoVer !== (VE.itemGeoVer || 0)) {
+        const g = VE.itemGeo('log');
+        if (!this.logMesh) {
+          this.logMesh = new THREE.InstancedMesh(g, new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 4, specular: 0x111111 }), 64);
+          this.logMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3).fill(1), 3);   // zie VE-001
+          this.logMesh.count = 0; this.logMesh.castShadow = this.logMesh.receiveShadow = true; this.logMesh.frustumCulled = false;
+          this.logMesh.name = 'fallen_logs'; this.w.root.add(this.logMesh);
+          this.logs = []; this.logFree = [];
+        } else this.logMesh.geometry = g;
+        this.logGeoVer = VE.itemGeoVer || 0;
+      }
+      const idx = this.logFree.length ? this.logFree.pop() : this.logs.length < 64 ? this.logMesh.count++ : -1;
+      const p = { x: x, z: z, dir: d, len: len, R: R, idx: idx, dead: false };
+      if (idx >= 0) {
+        // lokale x langs de valrichting; schaal: item-stam (0,24 lang, straal 0,035) naar de echte stam
+        _q.setFromAxisAngle(_up, Math.atan2(-d[1], d[0]));
+        _m.compose(_p.set(x, this.w.heightAt(x, z) + R * 0.85, z), _q, _s.set(len / 0.24, R / 0.035, R / 0.035));
+        this.logMesh.setMatrixAt(idx, _m); this.logMesh.instanceMatrix.needsUpdate = true;
+      }
+      this.logs.push(p);
+      return p;
+    }
+    removeLog(p) {
+      if (!p || p.dead) return;
+      p.dead = true;
+      if (p.idx >= 0) { this.logMesh.setMatrixAt(p.idx, ZERO); this.logMesh.instanceMatrix.needsUpdate = true; this.logFree.push(p.idx); }
+      this.logs = this.logs.filter(q => q !== p);
+    }
     /* rocks */
     addRock(i, j, amount, r) {
       const w = this.w, k = j * VE.N + i;
@@ -660,8 +754,23 @@
         const t = this.trees[n];
         if (t.dead) continue;
         if (t.falling) {
-          t.fallV += dt * 3.2; t.fall += t.fallV * dt;
-          if (t.fall > 1.5) { this.removeTree(t); continue; }
+          if (t.landed) continue;
+          // vallen: zwaartekracht (sneller naarmate hij schuiner hangt), stilstaan op de grond met een stuit
+          t.fallV += dt * (0.9 + 5.2 * Math.sin(t.fall + 0.05)); t.fall += t.fallV * dt;
+          const max = t.fallMax || 1.45;
+          if (t.fall >= max) {
+            t.fall = max;
+            if (t.fallV > 0.7) {
+              if (!t.thud) {
+                t.thud = true;
+                const d = t.fallDir || [0, 1], r = (t.trunkLen || 0.5) * 1.3;
+                VE.bus.emit('sfx', { n: 'thud', x: t.x, z: t.z });
+                VE.bus.emit('dust', { x: t.x + d[0] * r, y: this.w.heightAt(t.x + d[0] * r, t.z + d[1] * r), z: t.z + d[1] * r, n: 8 });
+                VE.bus.emit('leaves', { x: t.x + d[0] * r, y: this.w.heightAt(t.x + d[0] * r, t.z + d[1] * r) + 0.15, z: t.z + d[1] * r });
+              }
+              t.fallV = -t.fallV * 0.2;                     // kleine stuit
+            } else { t.fallV = 0; t.landed = true; }
+          }
           this.setTreeM(t);
         } else if (t.growth < 1 && slow) {
           t.growth = Math.min(1, t.growth + this.acc / 75 * growMult);

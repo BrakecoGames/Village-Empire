@@ -478,6 +478,7 @@
       w.door[b.doorK] = Math.max(0, w.door[b.doorK] - 1);
       if (w.paths) { w.paths.unfix(b.doorK); if (b.size > 1) w.paths.unfix(b.doorJ * N + b.i); }   // stoepje groeit langzaam weer dicht
       if (b.dig) { b.dig.reserved = false; b.dig = null; }                // ondergrondse ronde van een mijn afbreken
+      if (b.lumber) { const n = this.dropLumber(b); if (n) this.addGoods('log', n, b.dx, b.dz); }   // gevallen boom / stammen
       // terug naar de opslag: de helft van de bouwkosten, alles wat er lag (ook gereserveerd: die drager
       // vindt straks een leeg gebouw en haalt niets op, dus niets dubbel en niets kwijt)
       const back = (r, n) => this.addGoods(r, n, b.dx, b.dz);
@@ -815,7 +816,8 @@
       if (b) { s.x = b.dx; s.z = b.dz + 0.1; }
     }
     goAct(s, b, tk, fx, fz, face, act, time, done) {
-      s.hidden = false; s.x = b.dx; s.z = b.dz; s.wstate = 'walk'; s.act = null;
+      if (s.hidden) { s.x = b.dx; s.z = b.dz; }        // vanuit de hut: vertrek bij de deur
+      s.hidden = false; s.wstate = 'walk'; s.act = null;
       return this.walkTo(s, tk, () => {
         if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
         s.wstate = 'act'; s.act = act; s.ap = 0; s.actTick = 0; s.wt = time;
@@ -866,6 +868,13 @@
         if (d.gather !== 'plant' && this.outFull(b)) { b.status = this.fullStatus(b, d.out); s.wt = 1; return; }
         const gm = this.gatherMult(b);
         if (d.gather === 'tree') {
+          // houthakken: boom zoeken -> omhakken -> omvallen -> kroon eraf en in stukken hakken -> stammen
+          // één voor één oppakken, naar de hut dragen en op de stapel leggen (pas dan in de lokale voorraad)
+          const L = b.lumber;
+          if (L && L.pieces && L.pieces.length) { this.carryLog(s, b, L); return; }
+          if (L && L.tree && !L.tree.dead) { if (!L.tree.landed) { s.wt = 0.3; return; } this.buckLog(s, b, L); return; }
+          if (L) b.lumber = null;
+          if (this.outFull(b, 2)) { b.status = this.fullStatus(b, d.out); s.wt = 1; return; }   // een boom levert 2 stammen
           let best = null, bd = 1e9;
           for (const t of this.nature.trees) {
             if (t.dead || t.falling || t.reserved || t.growth < 1) continue;
@@ -873,14 +882,25 @@
             if (dd < d.radius * d.radius && dd < bd) { bd = dd; best = t; }
           }
           if (!best) { b.status = 'No mature trees in range'; s.wt = 3; return; }
-          const t = best; t.reserved = true; s.resv = t; b.status = 'Felling trees';
+          const t = best; t.reserved = true; s.resv = t; b.status = 'Felling a tree';
           const sp = this.standPoint(b, t.x, t.z, 0.3);
           const ok = this.goAct(s, b, t.k, sp[0], sp[1], [t.x, t.z], 'chop', d.time / gm, () => {
-            s.resv = null; t.reserved = false;
-            if (t.dead || t.falling) { this.goHome(s, b, null); return; }
-            this.nature.fellTree(t); sfx('fall', t.x, t.z);
+            if (t.dead || t.falling) { s.resv = null; t.reserved = false; this.goHome(s, b, null); return; }
+            // de boom valt weg van de houthakker, op een vrije plek
+            this.nature.fellTree(t, this.nature.fallDir(t, s.x, s.z));
+            sfx('creak', t.x, t.z);
             emit('leaves', { x: t.x, y: w.heightAt(t.x, t.z) + 0.6, z: t.z });
-            this.goHome(s, b, 'log', () => this.produce(b, 'log', 1));
+            b.lumber = { tree: t, pieces: [], cut: 0 };
+            b.status = 'Timber!';
+            this.stats.felled = (this.stats.felled || 0) + 1;
+            s.act = null; s.tool = 'axe';
+            // wachten (bijl in de hand) tot de boom stil ligt
+            const wait = () => {
+              if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
+              if (!t.landed && !t.dead) { s.wstate = 'act'; s.act = null; s.wt = 0.15; s.onAct = wait; return; }
+              this.buckLog(s, b, b.lumber);
+            };
+            wait();
           });
           if (!ok) { t.reserved = false; s.resv = null; s.hidden = true; s.wstate = 'inside'; s.wt = 3; b.status = 'Cannot reach the trees'; }
         } else if (d.gather === 'plant') {
@@ -1024,6 +1044,63 @@
       // indoor workers just stay inside; the building does the work
       if (!d.gather) { s.wt = 0.5; }
     }
+    /* houthakker: de omgevallen boom in stukken hakken (eerst de kroon eraf, dan de stam doormidden) */
+    buckLog(s, b, L) {
+      const d = b.def, w = this.world, gm = this.gatherMult(b), t = L.tree;
+      const dir = t.fallDir || [0, 1], len = t.trunkLen || 0.5;
+      const side = [dir[1], -dir[0]];
+      const cutAt = f => [t.x + dir[0] * len * f, t.z + dir[1] * len * f];
+      const go = (f, then) => {
+        const c = cutAt(f), sx = c[0] + side[0] * 0.2, sz = c[1] + side[1] * 0.2;
+        const tk = this.tileOf(sx, sz);
+        b.status = 'Cutting the tree into logs';
+        const ok = this.goAct(s, b, tk, sx, sz, c, 'chop', 1.3 / gm, then);
+        if (!ok) { // onbereikbaar: de stammen toch opleveren (niets kwijt), het hout ligt dan bij de hut
+          if (!t.dead) this.nature.removeTree(t);
+          for (const p of L.pieces) this.nature.removeLog(p);
+          b.lumber = null; s.resv = null;
+          this.goHome(s, b, 'log', () => this.produce(b, 'log', 2));
+        }
+      };
+      if (!L.long) {
+        go(1.02, () => {                                   // bij de kroon: kroon eraf, de stam blijft liggen
+          s.resv = null;
+          L.long = this.nature.buckTree(t);
+          L.tree = null;
+          go(0.5, () => {                                  // in het midden: twee losse stammen
+            L.pieces = this.nature.splitLog(L.long); L.long = null;
+            this.carryLog(s, b, L);
+          });
+        });
+      } else {
+        go(0.5, () => { L.pieces = this.nature.splitLog(L.long); L.long = null; this.carryLog(s, b, L); });
+      }
+    }
+    /* houthakker: een gehakte stam oppakken en naar de hut dragen; op de stapel = in de lokale voorraad */
+    carryLog(s, b, L) {
+      if (!L.pieces.length) { b.lumber = null; this.goHome(s, b, null); return; }
+      if (this.outFull(b)) { b.status = this.fullStatus(b, 'log'); if (!s.hidden) this.goHome(s, b, null); else s.wt = 1; return; }
+      const p = L.pieces[0], side = [p.dir[1], -p.dir[0]];
+      const sx = p.x + side[0] * 0.16, sz = p.z + side[1] * 0.16;
+      b.status = 'Carrying logs home';
+      const ok = this.goAct(s, b, this.tileOf(sx, sz), sx, sz, [p.x, p.z], 'sow', 0.55, () => {   // bukken en optillen
+        this.nature.removeLog(p); L.pieces.shift();
+        if (!L.pieces.length) b.lumber = null;
+        this.goHome(s, b, 'log', () => this.produce(b, 'log', 1));
+      });
+      if (!ok) { this.nature.removeLog(p); L.pieces.shift(); if (!L.pieces.length) b.lumber = null; this.goHome(s, b, 'log', () => this.produce(b, 'log', 1)); }
+    }
+    /* weggevallen werk van een houthakker (sloop, werker weg): liggende boom en stammen opruimen, hout niet kwijt */
+    dropLumber(b) {
+      const L = b.lumber; if (!L) return 0;
+      let n = 0;
+      if (L.tree && !L.tree.dead) { L.tree.reserved = false; this.nature.removeTree(L.tree); n += 2; }
+      if (L.long) { this.nature.removeLog(L.long); n += 2; }
+      for (const p of L.pieces || []) { this.nature.removeLog(p); n++; }
+      b.lumber = null;
+      return n;
+    }
+
     /* mijnwerker: loopt naar de ertsader naast de mijn, hakt een brok los en brengt die naar de mijn */
     thinkMine(s, b, d) {
       const w = this.world, M = VE.Mining, gm = this.gatherMult(b);
@@ -1104,7 +1181,8 @@
         const tick = Math.floor(s.ap / per);
         if (tick !== s.actTick) {
           s.actTick = tick;
-          if (s.act === 'chop') sfx('chop', s.x, s.z); else if (s.act === 'pick') sfx('pick', s.x, s.z);
+          if (s.act === 'chop') { sfx('chop', s.x, s.z); emit('chips', { x: s.x + Math.sin(s.rot) * 0.2, y: s.y + 0.1, z: s.z + Math.cos(s.rot) * 0.2 }); }
+          else if (s.act === 'pick') sfx('pick', s.x, s.z);
           else if (s.act === 'hoe') { sfx('plant', s.x, s.z); emit('dust', { x: s.x + Math.sin(s.rot) * 0.22, y: s.y + 0.02, z: s.z + Math.cos(s.rot) * 0.22, n: 3, small: true }); }   // kluitjes aarde
         }
         if (s.wt <= 0) { s.act = null; const f = s.onAct; s.onAct = null; if (f) f(); }
@@ -1311,8 +1389,22 @@
         if (!e) continue;
         const h = e.st || e.out; h[s.carry] = (h[s.carry] || 0) + 1; carried++;
       }
+      for (const b of this.buildings) {
+        const L = b.alive && b.lumber; if (!L) continue;
+        const n = (L.tree && !L.tree.dead ? 2 : 0) + (L.long ? 2 : 0) + (L.pieces ? L.pieces.length : 0), e = byId[b.id];
+        if (n && e) e.out.log = (e.out.log || 0) + n;
+      }
+      // wat een werker op weg naar huis draagt (stam, steen, graan ...), ligt na het laden op zijn stapel
+      const inHand = {};
+      for (const s of this.settlers) {
+        const b = s.work;
+        if (s.mode !== 'work' || !s.carry || !b || !b.alive || !byId[b.id] || (s.task && s.task.picked)) continue;
+        byId[b.id].out[s.carry] = (byId[b.id].out[s.carry] || 0) + 1; inHand[s.carry] = (inHand[s.carry] || 0) + 1;
+      }
       const stock = Object.assign({}, this.stock);
+      for (const b of this.buildings) { const L = b.alive && b.lumber; if (L) stock.log = (stock.log || 0) + (L.tree && !L.tree.dead ? 2 : 0) + (L.long ? 2 : 0) + (L.pieces ? L.pieces.length : 0); }
       if (carried) for (const s of this.settlers) if (s.task && s.task.picked && s.carry) stock[s.carry] = (stock[s.carry] || 0) + 1;
+      for (const r in inHand) stock[r] = (stock[r] || 0) + inHand[r];
       return {
         v: 3, seed: this.seed, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
         stats: this.stats, upg: this.upg, pop: this.settlers.length, speed: this.speed,

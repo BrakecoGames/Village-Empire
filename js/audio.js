@@ -73,6 +73,8 @@
         case 'hammer': this.tone('triangle', 950, 900, 0.05, 0.15 * vol); this.tone('sine', 1420, 1400, 0.04, 0.08 * vol); break;
         case 'fall': { const t = now; this.tone('sawtooth', 160, 70, 0.5, 0.05 * vol, t); this.burst('lowpass', 700, 1, 0.5, 0.35 * vol, t + 0.35); this.tone('sine', 90, 50, 0.3, 0.35 * vol, t + 0.4); break; }
         case 'plant': this.tone('sine', 320, 520, 0.12, 0.15 * vol); break;
+        case 'creak': this.tone('sawtooth', 170, 80, 0.9, 0.045 * vol); this.tone('sawtooth', 130, 95, 0.6, 0.03 * vol, now + 0.25); break;   // kraken van de vallende boom
+        case 'thud': this.burst('lowpass', 600, 1, 0.45, 0.4 * vol); this.tone('sine', 95, 45, 0.35, 0.4 * vol); break;                         // boom komt neer
         case 'coin': this.tone('sine', 1318, 1318, 0.12, 0.13 * vol); this.tone('sine', 1760, 1760, 0.2, 0.12 * vol, now + 0.07); break;
         case 'done': [523, 659, 784, 1046].forEach((f, i) => this.tone('triangle', f, f, 0.22, 0.2, now + i * 0.08)); break;
         case 'fanfare': [392, 523, 659, 784, 659, 784, 1046].forEach((f, i) => { this.tone('triangle', f, f, 0.32, 0.22, now + i * 0.13); this.tone('square', f / 2, f / 2, 0.25, 0.03, now + i * 0.13); }); break;
