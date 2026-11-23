@@ -184,13 +184,22 @@
     bread: heap(0.058, 0.038), fish: heap(0.05, 0.034),
     grape: grid(0.13, 0.03, 2), wine: grid(0.11, 0.055, 2),
     meat: heap(0.06, 0.04), coal: heap(0.055, 0.04), ironore: heap(0.058, 0.045), copperore: heap(0.058, 0.045), goldore: heap(0.058, 0.045),
-    ironbar: bars(), copperbar: bars(), goldbar: bars()
+    ironbar: bars(), copperbar: bars(), goldbar: bars(),
+    // wapens: plat, netjes naast en op elkaar (lengte langs x)
+    sword: rows(3, 0.078, 4, 0.016), spear: rows(4, 0.036, 3, 0.016), battleaxe: rows(3, 0.12, 3, 0.017),
+    dagger: (() => { const o = []; for (let l = 0; l < 2; l++) for (let c = 0; c < 2; c++) for (let r = 0; r < 3; r++) o.push({ x: (c - 0.5) * 0.15, y: 0.008 + l * 0.014, z: (r - 1) * 0.048, ry: c ? Math.PI : 0 }); return o; })(),
+    bow: rows(3, 0.03, 3, 0.014), crossbow: rows(1, 0, 8, 0.024)
   };
+  function rows(n, sp, layers, h) {   // n wapens naast elkaar per laag, `layers` lagen
+    const o = [];
+    for (let l = 0; l < layers; l++) for (let c = 0; c < n; c++) o.push({ x: 0, y: h / 2 + l * h, z: (c - (n - 1) / 2) * sp, ry: (l % 2) * Math.PI });
+    return o;
+  }
   VE.PILE_LAYOUT = LAYOUT;
   // hoogte van één volle stapel: past een goed niet in zijn vakken, dan komt er een tweede laag stapel bovenop
   const LAYER_H = {};
   for (const r in LAYOUT) { let lo = 1, hi = 0; for (const p of LAYOUT[r]) { lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); } LAYER_H[r] = hi + lo; }
-  const NEAT = new Set(['stone', 'plank', 'log', 'ironbar', 'copperbar', 'goldbar', 'flour', 'wine', 'grape']);   // strak gestapeld: geen schuine stukken
+  const NEAT = new Set(['stone', 'plank', 'log', 'ironbar', 'copperbar', 'goldbar', 'flour', 'wine', 'grape', 'sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow']);   // strak gestapeld: geen schuine stukken
 
   // één schaal voor alle goederen in de wereld (stapels én lading van dragers): elk stuk is overal even groot
   const PILE_B = VE.ITEM_SCALE;

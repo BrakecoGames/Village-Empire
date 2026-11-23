@@ -26,7 +26,7 @@
     vineyard: {}, winery: {}, tavern: {}, warehouse: {}, monument: {},
     // jacht en mijnbouw. De vier mijnen delen één model (mine.glb, nodes mine_l1..l3); de ertsaders
     // in de rots en het bordje (materialen Vein/Vein2) krijgen per mijn de kleur van het erts
-    hunter: {}, smelter: {},
+    hunter: {}, smelter: {}, weaponsmith: {},
     coalmine: { file: 'mine', node: 'mine', tint: { Vein: 0x26262b, Vein2: 0x6f7688 } },
     ironmine: { file: 'mine', node: 'mine', tint: { Vein: 0xb0582c, Vein2: 0x6e4a38 } },
     coppermine: { file: 'mine', node: 'mine', tint: { Vein: 0x3fae94, Vein2: 0x6fd6c4 } },

@@ -495,6 +495,27 @@
     if (lvl >= 3) crate(m, 0.36, -0.3, 0, 0.09);
   };
 
+  /* Wapensmederij (reserve; de GLB levert het echte model): smidse, haard met gloed, blaasbalg en een
+     aambeeld met het gloeiende wapen (anker 'hotblade'). */
+  B.weaponsmith = function (m, lvl, ex) {
+    foundation(m, 0.88, 0.84);
+    house(m, { x: -0.16, z: -0.2, w: 0.5, d: 0.32, h: 0.36, roof: C.roofR, rh: 0.28 });
+    m.box(0.26, 0.16, 0.22, C.brick, { x: 0.28, z: -0.12, j: 0.06 });
+    m.box(0.11, 0.5, 0.11, C.brick, { x: 0.28, y: 0.42, z: -0.14, j: 0.06 });
+    ex.chimneys.push([0.28, 0.96, -0.14]);
+    m.cyl(0.05, 0.058, 0.08, 8, C.woodD, { x: 0.06, z: 0.2 });
+    m.box(0.1, 0.03, 0.05, C.iron, { x: 0.06, y: 0.16, z: 0.2 });
+    for (const dx of [-0.12, 0.12]) m.box(0.02, 0.26, 0.02, C.timber, { x: -0.24 + dx, z: 0.22 });
+    for (let k = 0; k < 3; k++) m.box(0.016, 0.2, 0.006, 0xb8c0c8, { x: -0.3 + k * 0.05, y: 0.07, z: 0.23 });
+    barrel(m, 0.36, 0.22);
+    const glow = new VE.Model(95); glow.box(0.2, 0.012, 0.16, 0xffffff, { j: 0 });
+    ex.anims.push({ geo: glow.build(), x: 0.28, y: 0.2, z: -0.07, kind: 'glow' });
+    const bel = new VE.Model(96); bel.box(0.1, 0.06, 0.14, 0x7a4e2a, { j: 0.06 });
+    ex.anims.push({ geo: bel.build(), x: 0.44, y: 0.09, z: -0.1, kind: 'bellows' });
+    const hot = new VE.Model(97); hot.box(0.09, 0.006, 0.02, 0xffffff, { j: 0 }); hot.box(0.03, 0.008, 0.012, 0x5a3a24, { x: -0.06, j: 0 });
+    ex.anims.push({ geo: hot.build(), x: 0.055, y: 0.193, z: 0.2, kind: 'hotblade' });
+  };
+
   VE.modelCache = {};
   /* gehakte bouwsteen (breedte × hoogte × diepte, item-eenheden): overal precies dit formaat */
   VE.STONE_BLOCK = [0.09, 0.05, 0.06];
@@ -521,7 +542,7 @@
     farm: [0.3, 0.06, 0.27], windmill: [0.3, 0.06, 0.27], bakery: [-0.03, 0.06, 0.34],
     fisher: [0.14, 0.095, 0.1], vineyard: [-0.04, 0.06, 0.33], winery: [0.07, 0.06, 0.34],
     hunter: [0.3, 0.06, 0.3], coalmine: [0.3, 0.06, 0.34], ironmine: [0.3, 0.06, 0.34], coppermine: [0.3, 0.06, 0.34],
-    goldmine: [0.3, 0.06, 0.34], smelter: [-0.1, 0.06, 0.34]
+    goldmine: [0.3, 0.06, 0.34], smelter: [-0.1, 0.06, 0.34], weaponsmith: [0.22, 0.06, 0.4]
   };
 
   /* Procedureel model zonder cache (ook gebruikt door glb-models.js voor de geanimeerde delen). */
@@ -826,6 +847,13 @@
         m.add(new THREE.CylinderGeometry(0.05, 0.068, 0.035, 4, 1), col, { ry: PI / 4, sz: 0.5, y: -0.01, j: 0.02 });
         break;
       }
+      // wapens (reserve voor items.glb): plat liggend, lengte langs x
+      case 'sword': m.box(0.2, 0.008, 0.024, 0xc4cbd2, { x: 0.03, y: -0.004 }); m.box(0.014, 0.014, 0.075, 0x7e868e, { x: -0.077, y: -0.007 }); m.box(0.05, 0.016, 0.017, 0x5a3a24, { x: -0.11, y: -0.008 }); break;
+      case 'spear': m.box(0.28, 0.012, 0.012, 0xa0703f, { x: -0.01, y: -0.006 }); m.cone(0.018, 0.06, 4, 0xc4cbd2, { x: 0.16, rz: -PI / 2 }); break;
+      case 'battleaxe': m.box(0.25, 0.014, 0.014, 0xa0703f, { x: -0.02, y: -0.007 }); m.box(0.04, 0.01, 0.13, 0xc4cbd2, { x: 0.085, y: -0.005 }); break;
+      case 'dagger': m.box(0.085, 0.006, 0.018, 0xc4cbd2, { x: 0.025, y: -0.003 }); m.box(0.01, 0.012, 0.045, 0x7e868e, { x: -0.022, y: -0.006 }); m.box(0.035, 0.013, 0.013, 0x5a3a24, { x: -0.045, y: -0.0065 }); break;
+      case 'bow': m.box(0.26, 0.012, 0.014, 0x8e5e30, { z: -0.02, y: -0.006 }); m.box(0.24, 0.003, 0.003, 0xede3c8, { z: 0.03 }); break;
+      case 'crossbow': m.box(0.19, 0.02, 0.03, 0x8e5e30, { x: -0.01, y: -0.01 }); m.box(0.014, 0.012, 0.17, 0x7e868e, { x: 0.07, y: -0.006 }); break;
       default: m.ball(0.04, 0xf2c443, {});
     }
     return m.build();

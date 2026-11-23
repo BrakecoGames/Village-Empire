@@ -418,7 +418,7 @@
       mesh.castShadow = true; mesh.receiveShadow = true;
       g.add(mesh);
       b.anims = md.anims.map(a => {
-        const am = new THREE.Mesh(a.geo, a.kind === 'glow' && VE.glowMat ? VE.glowMat() : this.mats.building);
+        const am = new THREE.Mesh(a.geo, (a.kind === 'glow' || a.kind === 'hotblade') && VE.glowMat ? VE.glowMat() : this.mats.building);
         am.position.set(a.x, a.y, a.z); am.castShadow = true; g.add(am);
         return { mesh: am, kind: a.kind, ph: Math.random() * 6 };
       });
@@ -1160,7 +1160,7 @@
         if (!ok) { b.status = 'Waiting for ' + Object.keys(R.inp).map(r => VE.RES[r].name.toLowerCase()).join(' & '); return; }
         if (R.out) { let k = 0; for (const r in R.out) k += R.out[r]; if (this.outFull(b, k)) { b.status = this.fullStatus(b, Object.keys(R.out)[0]); return; } }
         for (const r in R.inp) b.input[r] -= R.inp[r];
-        b.working = true; b.wt = R.time; b.wt0 = R.time; b.batch = b.recipe || null; b.status = d.recipes ? 'Smelting ' + R.name.toLowerCase() : 'Working';
+        b.working = true; b.wt = R.time; b.wt0 = R.time; b.batch = b.recipe || null; b.status = d.forge ? 'Forging ' + R.name.toLowerCase() : d.recipes ? 'Smelting ' + R.name.toLowerCase() : 'Working';
       } else {
         b.wt -= dt * this.craftMult(b);
         if (b.wt <= 0) {
@@ -1173,10 +1173,13 @@
     }
     /* smelterij: tijdens het smelten staat de smelter buiten bij de ovenmond (hamer, vonken); daarna weer binnen */
     smithAtOven(b, s, dt) {
-      const md = VE.buildModel(b.type, b.level), g = md.anims && md.anims.find(a => a.kind === 'glow');
+      const md = VE.buildModel(b.type, b.level), anvil = md.anims && md.anims.find(a => a.kind === 'hotblade');
+      const g = anvil || (md.anims && md.anims.find(a => a.kind === 'glow'));
       if (b.working && g) {
         s.hidden = false; s.tool = 'hammer'; s.act = 'hammer'; s.ap += dt;
-        s.x = b.cx + g.x + 0.05; s.z = b.cz + g.z + 0.15; s.rot = Math.PI + 0.25;
+        // wapensmederij: de smid staat voor het aambeeld en slaat op het gloeiende wapen; smelterij: bij de ovenmond
+        if (anvil) { s.x = b.cx + g.x; s.z = b.cz + g.z + 0.12; s.rot = Math.PI; }
+        else { s.x = b.cx + g.x + 0.05; s.z = b.cz + g.z + 0.15; s.rot = Math.PI + 0.25; }
         if (Math.floor(s.ap / 0.45) !== s.actTick) { s.actTick = Math.floor(s.ap / 0.45); if (s.actTick % 2 === 0) sfx('hammer', s.x, s.z); }
       } else if (s.act === 'hammer') { s.hidden = true; s.act = null; s.x = b.dx; s.z = b.dz; }
     }
@@ -1250,6 +1253,7 @@
         case 'gold': return this.stats.goldEarned;
         case 'pop': return this.settlers.length;
         case 'upgrade': return this.stats.upgrades;
+        case 'weapons': { let n = 0; for (const r of VE.WEAPONS || []) n += this.stock[r] || 0; return n; }
       }
       return 0;
     }
@@ -1310,7 +1314,7 @@
       const stock = Object.assign({}, this.stock);
       if (carried) for (const s of this.settlers) if (s.task && s.task.picked && s.carry) stock[s.carry] = (stock[s.carry] || 0) + 1;
       return {
-        v: 2, seed: this.seed, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
+        v: 3, seed: this.seed, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
         stats: this.stats, upg: this.upg, pop: this.settlers.length, speed: this.speed,
         buildings: bl,
         ore: VE.Mining ? VE.Mining.serialize(w) : undefined, wild: this.wild ? this.wild.serialize() : undefined,
@@ -1335,7 +1339,7 @@
         b.input = bs.inp || {}; b.output = bs.out || {}; if (bs.sell) b.sell = bs.sell; if (bs.keep !== undefined) b.keep = bs.keep;
         if (bs.rc && b.def.recipes && b.def.recipes[bs.rc]) b.recipe = bs.rc;
         if (b.store && bs.st && (sv.v || 1) >= 2) for (const r in bs.st) if (VE.RES[r] && bs.st[r] > 0) b.store[r] = bs.st[r];
-        if (b.accept && bs.ac) for (const r of VE.RES_ORDER) b.accept[r] = bs.ac.indexOf(r) >= 0;
+        if (b.accept && bs.ac) for (const r of VE.RES_ORDER) b.accept[r] = bs.ac.indexOf(r) >= 0 || ((sv.v || 1) < 3 && VE.RES[r].weapon === true);
       }
       // stats.built was re-incremented by instant completes; restore the saved values
       if (sv.stats && sv.stats.built) this.stats.built = Object.assign({}, sv.stats.built);

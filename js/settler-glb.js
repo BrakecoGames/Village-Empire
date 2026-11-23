@@ -36,9 +36,9 @@
   const HAT = {
     carrier: 'hat_straw', builder: 'hat_hood', woodcutter: 'hat_beanie', forester: 'hat_feather', mason: 'hat_helmet',
     farmer: 'hat_wide', miller: 'hat_floppy', baker: 'hat_toque', fisher: 'hat_souwester', vintner: 'hat_beret',
-    merchant: 'hat_bycocket', innkeeper: 'hat_bandana', sawyer: 'hat_flatcap', guard: 'hat_kettle', hunter: 'hat_feather', miner: 'hat_helmet', smelter: 'hat_bandana'
+    merchant: 'hat_bycocket', innkeeper: 'hat_bandana', sawyer: 'hat_flatcap', guard: 'hat_kettle', hunter: 'hat_feather', miner: 'hat_helmet', smelter: 'hat_bandana', blacksmith: 'hat_bandana'
   };
-  const APRON = new Set(['baker', 'miller', 'innkeeper', 'sawyer', 'smelter']);
+  const APRON = new Set(['baker', 'miller', 'innkeeper', 'sawyer', 'smelter', 'blacksmith']);
   /* Easter eggs: ~13% van de bewoners krijgt er één (vast per bewoner en beroep).
      part: extra deel; hat/beard: vervangt hoed/baard; fx: speciaal effect. roles: alleen voor die beroepen. */
   const EGGS = [

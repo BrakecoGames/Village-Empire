@@ -217,6 +217,17 @@
     } else if (a.kind === 'bellows') {
       a.ph += dt * 4.2 * a.v;
       a.mesh.scale.y = 1 - 0.28 * (0.5 + 0.5 * Math.sin(a.ph)) * a.v;
+    } else if (a.kind === 'hotblade') {
+      // wapensmederij: het wapen op het aambeeld gloeit tijdens het smeden; bij elke hamerslag vonken
+      const mat = a.mesh.material;
+      if (mat && mat.color) {
+        const k = 0.15 + 0.85 * a.v * (0.9 + 0.1 * Math.sin(game.time * 9 + a.ph));
+        mat.color.setRGB(0.3 + 0.7 * k, 0.16 + 0.5 * k * k, 0.12 + 0.18 * k * k * k);
+      }
+      if (a.v > 0.5 && s && s.act === 'hammer') {
+        const tick = Math.floor(s.ap / 0.45);
+        if (tick !== a.tick) { a.tick = tick; VE.bus.emit('sparks', { x: b.cx + a.base.x, y: b.y + a.base.y + 0.03, z: b.cz + a.base.z }); }
+      }
     } else if (a.kind === 'glow') {
       const mat = a.mesh.material;
       if (mat && mat.color) {

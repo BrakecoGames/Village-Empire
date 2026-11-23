@@ -37,6 +37,9 @@ setup(seed=7301, extra_palette={
     "RockI": (0x6E5A4C, 0.05), "RockC": (0x8A6A50, 0.05), "RockG": (0x8F8A82, 0.05),
     "VeinI": (0xC0612F, 0.03), "VeinC": (0x3FAE94, 0.03), "VeinG": (0xF2C443, 0.02),
     "BarI": (0x9AA2AA, 0.02), "BarC": (0xC4703E, 0.02), "BarG": (0xE8B73A, 0.02),
+    # wapens
+    "Steel": (0xC4CBD2, 0.02), "SteelD": (0x7E868E, 0.03), "Grip": (0x5A3A24, 0.04), "Pommel": (0xD9A93A, 0.02),
+    "Shaft": (0xA0703F, 0.04), "BowW": (0x8E5E30, 0.04), "String": (0xEDE3C8, 0.0),
 })
 STONE = (0.09, 0.05, 0.06)
 NODES = []
@@ -164,9 +167,78 @@ def bar(key, mat):
     finish(key)
 
 
+def along_x(obj):
+    return obj
+
+
+def sword():
+    # kling 0,2 met punt, pareerstang, gevest en knop: totaal ~0,29 lang
+    box(0.2, 0.008, 0.024, "Steel", pos=(0.03, -0.004, 0), bevel=0.002)
+    box(0.18, 0.009, 0.006, "SteelD", pos=(0.03, -0.0045, 0))                               # bloedgroef
+    cyl(0.0, 0.0125, 0.03, 4, "Steel", pos=(0.13, 0, 0), rot=(math.pi / 4, 0, -math.pi / 2), smooth=False)
+    box(0.014, 0.014, 0.075, "SteelD", pos=(-0.077, -0.007, 0), bevel=0.002)                 # pareerstang
+    box(0.05, 0.016, 0.017, "Grip", pos=(-0.11, -0.008, 0))
+    blob(0.013, "Pommel", (-0.142, 0, 0), sub=1, smooth=False)
+    finish("sword")
+
+
+def spear():
+    cyl(0.007, 0.007, 0.28, 6, "Shaft", pos=(-0.15, 0, 0), rot=(0, 0, -math.pi / 2), smooth=False)
+    cyl(0.009, 0.009, 0.02, 6, "SteelD", pos=(0.125, 0, 0), rot=(0, 0, -math.pi / 2), smooth=False)   # huls
+    cyl(0.0, 0.018, 0.06, 4, "Steel", pos=(0.145, 0, 0), rot=(math.pi / 4, 0, -math.pi / 2), smooth=False)
+    finish("spear")
+
+
+def battleaxe():
+    box(0.25, 0.014, 0.014, "Shaft", pos=(-0.02, -0.007, 0))
+    box(0.04, 0.012, 0.03, "SteelD", pos=(0.085, -0.006, 0), bevel=0.002)                    # oog
+    for s in (-1, 1):                                                                         # dubbel blad
+        box(0.03, 0.01, 0.04, "Steel", pos=(0.085, -0.005, s * 0.035), bevel=0.002)
+        box(0.05, 0.011, 0.014, "Steel", pos=(0.085, -0.0055, s * 0.058), bevel=0.002)
+    box(0.02, 0.016, 0.018, "Grip", pos=(-0.13, -0.008, 0))
+    finish("battleaxe")
+
+
+def dagger():
+    box(0.085, 0.006, 0.018, "Steel", pos=(0.025, -0.003, 0), bevel=0.0015)
+    cyl(0.0, 0.009, 0.02, 4, "Steel", pos=(0.067, 0, 0), rot=(math.pi / 4, 0, -math.pi / 2), smooth=False)
+    box(0.01, 0.012, 0.045, "SteelD", pos=(-0.022, -0.006, 0))
+    box(0.035, 0.013, 0.013, "Grip", pos=(-0.045, -0.0065, 0))
+    blob(0.009, "Pommel", (-0.066, 0, 0), sub=1, smooth=False)
+    finish("dagger")
+
+
+def bow():
+    # gebogen boog uit 6 stukjes langs een boog; pees als rechte lijn tussen de uiteinden
+    R, n = 0.15, 6
+    pts = [(R * math.sin(t), -R * math.cos(t) + 0.12) for t in [(-0.95 + 1.9 * i / n) for i in range(n + 1)]]
+    for i in range(n):
+        (x0, z0), (x1, z1) = pts[i], pts[i + 1]
+        L = math.hypot(x1 - x0, z1 - z0)
+        a = math.atan2(z1 - z0, x1 - x0)
+        mid = i in (n // 2 - 1, n // 2)
+        box(L * 1.06, 0.012 if mid else 0.01, 0.014 if mid else 0.011, "Grip" if mid else "BowW",
+            pos=((x0 + x1) / 2, -0.006, (z0 + z1) / 2), rot=(0, -a, 0))
+    (xa, za), (xb, zb) = pts[0], pts[-1]
+    box(xb - xa, 0.003, 0.003, "String", pos=(0, -0.0015, za))
+    finish("bow")
+
+
+def crossbow():
+    box(0.19, 0.02, 0.03, "BowW", pos=(-0.01, -0.01, 0), bevel=0.003)                       # kolf
+    box(0.05, 0.022, 0.02, "Grip", pos=(-0.09, -0.011, 0))
+    box(0.014, 0.012, 0.17, "SteelD", pos=(0.07, -0.006, 0), bevel=0.002)                   # stalen boog
+    for s in (-1, 1):
+        box(0.03, 0.01, 0.012, "SteelD", pos=(0.06, -0.005, s * 0.085), rot=(0, s * 0.5, 0))
+    box(0.004, 0.003, 0.16, "String", pos=(0.035, 0.0, 0))
+    box(0.08, 0.004, 0.004, "Shaft", pos=(0.05, 0.004, 0))                                   # pijl
+    finish("crossbow")
+
+
 log(); plank(); stone(); flour(); bread(); fish(); grape(); wine(); meat(); coal()
 ore("ironore", "RockI", "VeinI"); ore("copperore", "RockC", "VeinC"); ore("goldore", "RockG", "VeinG")
 bar("ironbar", "BarI"); bar("copperbar", "BarC"); bar("goldbar", "BarG")
+sword(); spear(); battleaxe(); dagger(); bow(); crossbow()
 for obj, tris in NODES:
     print(f"VE-BLENDER-ITEM {obj.name} tris={tris}")
-ve.export_glb(args.out, budget=6000)
+ve.export_glb(args.out, budget=8000)

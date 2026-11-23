@@ -406,7 +406,7 @@
         case 'sell': if (this.sel) { this.sel.sell[arg] = !this.sel.sell[arg]; this.renderInfo(true); } break;
         case 'accept': if (this.sel) { g.setAccept(this.sel, arg); this.renderInfo(true); } break;
         case 'acceptAll': if (this.sel) { g.setAccept(this.sel, '*', arg === '1'); this.renderInfo(true); } break;
-        case 'recipe': if (this.sel && g.setRecipe(this.sel, arg)) { this.toast(VE.DEFS.smelter.icon + ' The smelter now makes ' + VE.RECIPES[arg].name.toLowerCase()); VE.save(); } this.renderInfo(true); break;
+        case 'recipe': if (this.sel && g.setRecipe(this.sel, arg)) { const d = this.sel.def; this.toast(d.icon + ' The ' + d.name.toLowerCase() + ' now makes ' + d.recipes[arg].name.toLowerCase()); VE.save(); } this.renderInfo(true); break;
         case 'keep': if (this.sel && e.type === 'change') { this.sel.keep = +el.value; } break;
         case 'goto': if (this.sel) this.view.cam.focus(this.sel.cx, this.sel.cz); break;
         case 'buyUpg': if (g.buyUpgrade(arg)) { VE.audio.play('coin'); this.toast('🔨 Upgrade purchased!'); VE.save(); } this.openUpgrades(); break;
@@ -481,7 +481,7 @@
         h += this.chainHtml(d, b);
         if (d.recipes) {
           // smelterij: kies het metaal
-          h += '<div class="ip-sub">Smelt:</div><div class="recipes">';
+          h += '<div class="ip-sub">' + (d.forge ? 'Forge:' : 'Smelt:') + '</div><div class="recipes' + (d.forge ? ' forge' : '') + '">';
           for (const k in d.recipes) {
             const R = d.recipes[k], lock = R.rank && g.rank < R.rank;
             let inp = ''; for (const r in R.inp) inp += VE.icon(r, 14) + R.inp[r];
