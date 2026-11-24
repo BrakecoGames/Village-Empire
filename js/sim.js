@@ -398,6 +398,7 @@
         if (def.pile) continue;                        // geen stoepje: dragers lopen gewoon door het gras
         w.road[k] = 2; w.clearDeco(k); if (w.paths) w.paths.apron(k);
       }
+      if (!def.pile && !def.mountain) this.clearDoorway(b);
       b.y = w.flatten(i, j, size);
       this.nature.refreshArea(i - 1, j - 1, i + size, j + size);
       w.refreshDecoArea(i - 1, j - 1, i + size, j + size);
@@ -408,6 +409,21 @@
       if (instant || b.total === 0) this.complete(b, true);
       this.roadsDirty = true;
       return b;
+    }
+    /* Ingang ingesloten door rotsblokken (vaak bij een quarry tussen de keien): bewoners lopen niet schuin
+       tussen twee blokken door, dus dragers en bouwers kunnen de deur niet bereiken. De bouwers ruimen dan
+       de blokken vóór, links en rechts van de ingang op (alleen rotsblokken; water en bergen blijven). */
+    clearDoorway(b) {
+      const w = this.world, N = VE.N, hq = this.hq, d = b.doorK;
+      const reach = () => hq && hq !== b ? !!this.pf.find(hq.doorK, d) : [[0, 1], [-1, 0], [1, 0]].some(([di, dj]) => w.inb(b.doorI + di, b.doorJ + dj) && w.walkable(d + dj * N + di));
+      if (reach()) return;
+      for (const [di, dj] of [[0, 1], [-1, 0], [1, 0], [-1, 1], [1, 1], [0, 2]]) {
+        if (!w.inb(b.doorI + di, b.doorJ + dj)) continue;
+        const k = d + dj * N + di, r = w.rock[k];
+        if (!r || w.bld[k]) continue;
+        r.amount = 1; this.nature.mineRock(r);
+        if (reach()) return;
+      }
     }
     makeMesh(b) {
       if (b.group) this.root.remove(b.group);
@@ -1541,6 +1557,8 @@
         // opgeslagen tijdens het binden ('cut'): het graan staat weer rijp op het veld, de boer oogst opnieuw
         if (fo) { fo.growth = f[2]; fo.state = f[3] === 'cut' ? 'grown' : f[3]; if (f[3] === 'cut') fo.growth = 1; this.nature.setFieldM(fo); if (owner) owner.fields.push(fo); }
       }
+      // oude saves: ingangen die door rotsblokken zijn ingesloten alsnog vrijmaken (rotsen staan er nu weer)
+      for (const b of this.buildings) if (b.alive && !b.def.pile && !b.def.mountain) this.clearDoorway(b);
       this.sd = true;
       const sol = sv.sol || [];                                           // soldaten tellen mee in de bevolking
       const n = Math.max(4, (sv.pop || 10) - sol.length);
