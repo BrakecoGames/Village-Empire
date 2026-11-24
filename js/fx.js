@@ -142,8 +142,10 @@
      Elk stuk in een opslag is één item op een nette stapel (InstancedMesh per goed, één draw call per goed):
        - startstapel naast het dorpshuis (vakken op pallets, 'slot'-markers uit yard.glb);
        - Storehouses (vakken in de open loods, 'slot'-markers uit warehouse.glb, per level meer vakken);
-       - producenten: hun lokale voorraad (max. VE.LOCAL_CAP) op de 'pile'-plek van het model;
-       - bouwplaatsen: geleverde maar nog niet verbouwde materialen.
+       - producenten: hun lokale voorraad (max. VE.LOCAL_CAP) op de 'pile'-plek van het model; meer soorten
+         naast elkaar; wapens van de wapensmederij rechtop in het wapenrek ('rack');
+       - werkplaatsen: aangeleverde grondstoffen (b.input) op eigen stapels ('in0', 'in1' … of VE.IN_SPOT);
+       - bouwplaatsen (nieuwbouw en upgrades): geleverde maar nog niet verbouwde materialen.
      Posities in item-eenheden (y = midden van het item). Gehakte stenen zijn identieke rechthoekige
      blokken (0,09 × 0,05 × 0,06) die in een strak verband liggen: 3 × 2 per laag. */
   function heap(r, h) {           // ronde goederen: 7 onderop, 3 erop, 1 als kroon
@@ -219,6 +221,32 @@
     return A;
   }
 
+  /* wapenrek: RACK_N gleuven naast elkaar; zwaarden en dolken met de punt omlaag, de rest met de kop omhoog,
+     licht achterover tegen de bovenste regel. Items liggen in hun model plat met de lengte langs x (punt +x). */
+  const RACK_N = 6, RACK_SP = 0.05, RACK_LEAN = 0.16;
+  const SIDE = [0, -0.15, 0.15, -0.3];                                  // x-verschuiving per extra soort op de uitvoerplek
+  const _rp = new THREE.Vector3(), _rw = new THREE.Vector3(), _rb = new THREE.Matrix4(), _rq = new THREE.Quaternion();
+  const _ax = new THREE.Vector3(), _ay = new THREE.Vector3(), _az = new THREE.Vector3(), _RX = new THREE.Vector3(1, 0, 0), _RY = new THREE.Vector3(0, 1, 0);
+  const TIP_DOWN = { sword: true, dagger: true }, _ext = {};
+  VE.RACK_N = RACK_N;
+  function rackPose(r, k, rack) {
+    const down = TIP_DOWN[r];
+    if (!_ext[r] || _ext[r].ver !== VE.itemGeoVer) {
+      const g = VE.itemGeo(r); g.computeBoundingBox();
+      _ext[r] = { lo: g.boundingBox.min.x, hi: g.boundingBox.max.x, ver: VE.itemGeoVer };
+    }
+    // lengte (x) wordt verticaal, platte kant (y) naar voren (+z)
+    if (down) _rb.makeBasis(_ax.set(0, -1, 0), _ay.set(0, 0, 1), _az.set(-1, 0, 0));
+    else _rb.makeBasis(_ax.set(0, 1, 0), _ay.set(0, 0, 1), _az.set(1, 0, 0));
+    _q.setFromRotationMatrix(_rb);
+    _rq.setFromAxisAngle(_RX, -RACK_LEAN); _q.premultiply(_rq);
+    const e = _ext[r], foot = (down ? e.hi : -e.lo) * PILE_B;            // onderkant van het wapen op de voetplank
+    const rot = rack[3] || 0;                                            // draaiing van het rek om y
+    const lx = (k - (RACK_N - 1) / 2) * RACK_SP, ly = foot * Math.cos(RACK_LEAN), lz = -foot * Math.sin(RACK_LEAN);
+    _rp.set(Math.cos(rot) * lx + Math.sin(rot) * lz, ly, -Math.sin(rot) * lx + Math.cos(rot) * lz);
+    if (rot) { _rq.setFromAxisAngle(_RY, rot); _q.premultiply(_rq); }
+  }
+
   class StockpileRender {
     constructor(root) {
       const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5, specular: 0x111111 });
@@ -258,22 +286,42 @@
         let any = false; for (const r in b.output) if (b.output[r] > 0) { any = true; sig += b.id + r + b.output[r] + ','; }
         if (!any) continue;
         const md = VE.buildModel(b.type, b.level), spot = md.pile || (VE.PILE_SPOT && VE.PILE_SPOT[b.type]);
-        if (spot) { prod.push({ b: b, spot: spot }); sig += b.level + ':' + b.y.toFixed(2) + (md.pile ? 'g' : 'p') + ';'; }
+        const rack = md.rack || (VE.RACK_SPOT && VE.RACK_SPOT[b.type]) || null, rackAt = {};
+        if (rack) { let k = 0; for (const r of VE.WEAPONS) { rackAt[r] = k; k += b.output[r] || 0; } }
+        // meer soorten in de uitvoer (bijv. na het wisselen van recept): elk goed een eigen stapel ernaast
+        const side = {}; let si = 0;
+        for (const r of VE.RES_ORDER) if (b.output[r] > 0 && !(rack && VE.RES[r].weapon === true)) side[r] = SIDE[Math.min(si++, SIDE.length - 1)];
+        if (spot) { prod.push({ b: b, spot: spot, rack: rack, rackAt: rackAt, side: side }); sig += b.level + ':' + b.y.toFixed(2) + (md.pile ? 'g' : 'p') + (md.rack ? 'r' : '') + ';'; }
+      }
+      // werkplaatsen: aangeleverde grondstoffen (b.input) liggen op eigen stapels naast het gebouw ('in0'..
+      // markers uit Blender, anders VE.IN_SPOT); vaste volgorde per goed, dus een stapel springt nooit
+      const ins = [];
+      for (const b of game.buildings) {
+        if (!b.alive || !b.built || b.store || !b.input || b.def.market) continue;
+        const keys = VE.RES_ORDER.filter(r => b.input[r] > 0);
+        if (!keys.length) continue;
+        const md = VE.buildModel(b.type, b.level), spots = (md.inp && md.inp.length ? md.inp : VE.IN_SPOT && VE.IN_SPOT[b.type]) || null;
+        if (!spots) continue;
+        const at = {};
+        keys.forEach((r, i) => { if (i < spots.length) { at[r] = spots[i]; sig += 'i' + b.id + r + b.input[r] + ','; } });
+        ins.push({ b: b, at: at }); sig += b.level + ':' + b.y.toFixed(2) + (md.inp ? 'g' : 'p') + ';';
       }
       // bouwplaatsen: geleverde maar nog niet verbouwde materialen liggen op de grond. De bouwer verbruikt
-      // ze één voor één (b.used); het laatste stuk verdwijnt precies als het gebouw klaar is.
+      // ze één voor één (used); het laatste stuk verdwijnt precies als het gebouw (of de upgrade) klaar is.
       const sites = [];
       for (const b of game.buildings) {
-        if (!b.alive || b.built || !b.def.cost) continue;
-        let u = b.used || 0;
+        const S = !b.alive ? null : !b.built ? (b.def.cost ? b : null) : b.up;
+        if (!S) continue;
+        const cost = S.cost || b.def.cost;
+        let u = S.used || 0;
         const rem = {};
         let any = false;
-        for (const r of Object.keys(b.def.cost)) {
-          const del = b.delivered[r] || 0, take = Math.min(del, u);
+        for (const r of Object.keys(cost)) {
+          const del = S.delivered[r] || 0, take = Math.min(del, u);
           u -= take;
           if (del - take > 0) { rem[r] = del - take; any = true; sig += 's' + b.id + r + rem[r] + ','; }
         }
-        if (any) { sites.push({ b: b, rem: rem }); sig += b.y.toFixed(2) + ';'; }
+        if (any) { sites.push({ b: b, rem: rem, keys: Object.keys(cost), up: S !== b }); sig += b.y.toFixed(2) + (S !== b ? 'u' : '') + ';'; }
       }
       if (sig === this.sig) return;
       this.sig = sig;
@@ -300,16 +348,39 @@
             left -= amt;
           }
         }
+        const weapon = VE.RES[r].weapon === true;
         for (const pr of prod) {
-          const b = pr.b, amt = Math.min(L, Math.ceil(b.output[r] || 0));
-          for (let q = 0; q < amt; q++) put(b, pr.spot[0], pr.spot[1], pr.spot[2], PILE_B, q, b.id);
+          const b = pr.b; let amt = Math.ceil(b.output[r] || 0);
+          if (!amt) continue;
+          if (weapon && pr.rack) {
+            // wapenrek: elk wapen rechtop in zijn eigen gleuf (gleuf = volgorde over alle wapens samen)
+            for (let q = 0; q < amt && n < INST; q++) {
+              const k = pr.rackAt[r] + q; if (k >= RACK_N) break;
+              rackPose(r, k, pr.rack);
+              _m.compose(_rw.set(b.cx + pr.rack[0] + _rp.x, b.y + pr.rack[1] + _rp.y, b.cz + pr.rack[2] + _rp.z), _q, _s.set(PILE_B, PILE_B, PILE_B));
+              mesh.setMatrixAt(n++, _m);
+            }
+            continue;
+          }
+          amt = Math.min(L, amt);
+          const ox = pr.side[r] || 0;
+          for (let q = 0; q < amt; q++) put(b, pr.spot[0] + ox, pr.spot[1], pr.spot[2], PILE_B, q, b.id);
+        }
+        for (const it of ins) {
+          const sp = it.at[r]; if (!sp) continue;
+          const amt = Math.min(L * 2, it.b.input[r]);
+          for (let q = 0; q < amt; q++) put(it.b, sp[0], sp[1], sp[2], PILE_B, q, it.b.id * 3);
         }
         for (const st of sites) {
-          const amt = Math.min(L, st.rem[r] || 0);
+          const amt = Math.min(L * 2, st.rem[r] || 0);
           if (!amt) continue;
-          // vaste kant per materiaal (volgorde in de bouwkosten), vóór de steiger links en rechts van de ingang
-          const b = st.b, side = Object.keys(b.def.cost).indexOf(r) % 2 ? 1 : -1, e = b.size > 1 ? 0.88 : 0.27, f = b.size > 1 ? 0.5 : 0.47;
-          for (let q = 0; q < amt; q++) put(b, side * e, 0.02, f, PILE_B, q, b.id * 7);
+          // vaste kant per materiaal (volgorde in de kosten), links en rechts van de ingang;
+          // bij een upgrade vóór het bestaande gebouw, op de stoep (de deur staat bij grote gebouwen rechts)
+          const b = st.b, idx = st.keys.indexOf(r);
+          let x, z;
+          if (st.up) { x = b.size > 1 ? -0.78 + idx * 0.36 : (idx % 2 ? 0.34 : -0.34); z = b.size / 2 + 0.17 + (b.size > 1 ? 0 : Math.floor(idx / 2) * 0.2); }
+          else { x = (idx % 2 ? 1 : -1) * (b.size > 1 ? 0.88 : 0.27); z = b.size > 1 ? 0.5 : 0.47; }
+          for (let q = 0; q < amt; q++) put(b, x, 0.02, z, PILE_B, q, b.id * 7);
         }
         mesh.count = n; mesh.instanceMatrix.needsUpdate = true;
       });
@@ -451,9 +522,10 @@
 
   /* ---------------- Vlinders ----------------
      Kleurrijke maar bescheiden vlinders uit Blender (animals.glb: lijfje + twee vleugels; anders eenvoudig).
-     Gedrag: onregelmatig fladderen (zachte ruis in de koers, op-en-neer deinen), af en toe landen op een
-     bloem (vleugels langzaam open en dicht), meer rond bloemenvelden en struiken, weg van drukke gebouwen
-     en opvliegen als er iemand langs loopt. Drie InstancedMeshes (lijf, linker- en rechtervleugel). */
+     Gedrag: vrij zwerven met willekeurige, vloeiende bochten (geen rondjes om een doel), wisselende snelheid
+     en vlieghoogte, af en toe even zweven, en na een tijdje landen op een bloem in de buurt (vleugels
+     langzaam open en dicht); meer rond bloemenvelden, weg van drukke gebouwen, opvliegen als er iemand
+     langs loopt. Drie InstancedMeshes (lijf, linker- en rechtervleugel). */
   const BF_COLORS = [0xffd84a, 0xff9f43, 0xfff3de, 0x8fc8ff, 0xd99ae0, 0xe9f06a, 0xffb0a0];
   class Butterflies {
     constructor(root, game) {
@@ -495,11 +567,14 @@
       this.wL.instanceColor.needsUpdate = this.wR.instanceColor.needsUpdate = true;
       this.ready = true;
     }
-    /* een bloem in de buurt van de thuisplek, niet bij drukke gebouwen */
-    pickFlower(b) {
+    /* een bloem in de buurt (vooral vóór de vlinder, binnen ~3 tegels), niet bij drukke gebouwen */
+    pickFlower(b, R) {
       const w = this.game.world, N = VE.N, busy = this.game.wild && this.game.wild.busy;
-      for (let t = 0; t < 14; t++) {
-        const i = Math.floor(b.hx + (Math.random() - 0.5) * 6), j = Math.floor(b.hz + (Math.random() - 0.5) * 6);
+      R = R || 3;
+      for (let t = 0; t < 18; t++) {
+        // de helft van de pogingen rond de eigen plek, de rest rond de thuisbloemen: nooit te ver weg zwerven
+        const ox = t % 2 ? b.x + Math.sin(b.h) * R * 0.4 : b.hx, oz = t % 2 ? b.z + Math.cos(b.h) * R * 0.4 : b.hz;
+        const i = Math.floor(ox + (Math.random() - 0.5) * R * 2), j = Math.floor(oz + (Math.random() - 0.5) * R * 2);
         if (!w.inb(i, j)) continue;
         const k = j * N + i;
         if (!w.decoF[k] || (busy && busy[k] > 0.7)) continue;
@@ -518,11 +593,18 @@
         // ver weg: minder vaak bijwerken (opgeteld)
         b.acc += dt; if (far && b.acc < 0.15) { } else { const st = b.acc; b.acc = 0; this.step(b, st, w, N, busy, settlers); }
         const gy = w.heightAt(b.x, b.z);
-        // vleugels: snel fladderen in de vlucht, rustig open/dicht als hij zit
-        const flap = b.state === 'sit' ? 0.25 + (Math.sin(this.t * 1.6 + b.seed) * 0.5 + 0.5) * 1.05 : 0.15 + (Math.sin(b.ph) * 0.5 + 0.5) * 1.25;
+        // vleugels: snel fladderen; zweven = vleugels half open stil; zittend rustig open en dicht
+        let flap, bob = 0;
+        if (b.state === 'sit') flap = 0.25 + (Math.sin(this.t * 1.6 + b.seed) * 0.5 + 0.5) * 1.05;
+        else if (b.glide > 0) flap = 0.55 + Math.sin(this.t * 5 + b.seed) * 0.08;
+        else { flap = 0.15 + (Math.sin(b.ph) * 0.5 + 0.5) * 1.25; bob = Math.sin(b.ph) * 0.006; }   // elke slag een klein sprongetje
         _q.setFromAxisAngle(UP, b.h);
-        if (b.state !== 'sit') { _e2.set(-0.25 + Math.sin(b.ph * 0.5) * 0.08, 0, Math.sin(this.t * 2 + b.seed) * 0.15); _q2.setFromEuler(_e2); _q.multiply(_q2); }
-        _m.compose(_p.set(b.x, gy + b.y, b.z), _q, _s.set(b.sc, b.sc, b.sc));
+        if (b.state !== 'sit') {
+          // neus omhoog bij klimmen, omlaag bij dalen; overhellen in de bocht
+          _e2.set(-0.22 - Math.max(-0.5, Math.min(0.5, (b.vy || 0) * 3)) + Math.sin(b.ph * 0.5) * 0.06, 0, -Math.max(-0.45, Math.min(0.45, (b.turn || 0) * 0.14)));
+          _q2.setFromEuler(_e2); _q.multiply(_q2);
+        }
+        _m.compose(_p.set(b.x, gy + b.y + bob, b.z), _q, _s.set(b.sc, b.sc, b.sc));
         this.body.setMatrixAt(n, _m);
         _l.makeRotationZ(-flap); _o.multiplyMatrices(_m, _l); this.wL.setMatrixAt(n, _o);
         _l.makeRotationZ(flap); _o.multiplyMatrices(_m, _l); this.wR.setMatrixAt(n, _o);
@@ -530,41 +612,75 @@
       }
       for (const m of [this.body, this.wL, this.wR]) { m.count = n; m.instanceMatrix.needsUpdate = true; }
     }
+    /* Natuurlijke vlucht, geen cirkels om een doel:
+       - koers: een draaisnelheid die om de paar tienden van een seconde een nieuw willekeurig doel krijgt en
+         daar vloeiend naartoe gaat (zigzaggen, lussen, rechte stukjes); zachte trek terug naar de thuisbloemen
+         als hij te ver weg dwaalt, en weg van drukke gebouwen;
+       - snelheid en vlieghoogte: telkens een nieuw willekeurig doel, vloeiend benaderd; af en toe even zweven;
+       - landen: na een tijdje kiest hij een bloem in de buurt, fladdert er (nog steeds wat onrustig) naartoe,
+         daalt en gaat zitten; daarna (of als er iemand langskomt) vliegt hij omhoog weer verder. */
     step(b, dt, w, N, busy, settlers) {
       if (dt <= 0) return;
-      const k = Math.floor(b.z) * N + Math.floor(b.x);
-      // iemand loopt vlakbij: opfladderen
+      const R = Math.random, wrap = a => { while (a > Math.PI) a -= 6.283; while (a < -Math.PI) a += 6.283; return a; };
       if (b.state === 'sit') {
         b.t -= dt;
-        for (let i = 0; i < settlers.length; i += 3) { const s = settlers[i]; if (!s.hidden && (s.x - b.x) ** 2 + (s.z - b.z) ** 2 < 0.36) { b.t = 0; break; } }
-        if (b.t <= 0) { b.state = 'fly'; b.t = 3 + Math.random() * 6; }
+        for (let i = 0; i < settlers.length; i += 3) { const s = settlers[i]; if (!s.hidden && (s.x - b.x) ** 2 + (s.z - b.z) ** 2 < 0.36) { b.t = 0; break; } }   // iemand loopt vlakbij: opfladderen
+        if (b.t <= 0) {
+          b.state = 'fly'; b.landing = false; b.t = 5 + R() * 9;
+          b.h += (R() - 0.5) * 3; b.turn = (R() - 0.5) * 3; b.ty = 0.3 + R() * 0.4; b.yt = 1 + R() * 2; b.v = b.sp * 0.6; b.glide = 0;
+        }
         return;
       }
-      b.ph += dt * b.fr;
+      if (b.turn === undefined) { b.turn = 0; b.turnT = 0; b.tw = 0; b.v = b.sp; b.vT = b.sp; b.vw = 0; b.ty = b.by; b.yt = 0; b.glide = 0; b.vy = 0; }
+      b.ph += dt * b.fr * (b.glide > 0 ? 0.2 : 1);
       b.t -= dt;
-      // koers: zachte ruis + trek naar het doel (een bloem) + weg van drukte
-      const wob = Math.sin(this.t * 0.9 + b.seed) * 1.4 + Math.sin(this.t * 2.3 + b.seed * 1.7) * 0.8;
-      const dGoal = Math.hypot(b.tx - b.x, b.tz - b.z);
-      let want = Math.atan2(b.tx - b.x, b.tz - b.z) + wob * 0.6 * (b.landing ? Math.min(1, dGoal / 0.7) : 1);   // vlak bij de bloem: recht erop af
-      if (busy && busy[k] > 0.7) want = Math.atan2(b.x - (b.hx + 0.01), b.z - b.hz) + Math.PI;    // terug naar de rustige bloemen
-      let dr = want - b.h; while (dr > Math.PI) dr -= 6.283; while (dr < -Math.PI) dr += 6.283;
-      b.h += dr * Math.min(1, dt * (b.landing && dGoal < 0.7 ? 6 : 2.2));
-      const d = Math.hypot(b.tx - b.x, b.tz - b.z);
-      const v = b.sp * (0.75 + 0.25 * Math.sin(this.t * 3 + b.seed));
-      b.x = Math.max(0.5, Math.min(N - 0.5, b.x + Math.sin(b.h) * v * dt));
-      b.z = Math.max(0.5, Math.min(N - 0.5, b.z + Math.cos(b.h) * v * dt));
-      // hoogte: deinen; bij het doel omlaag naar de bloem
-      const land = b.landing && d < 0.5;
-      const ty = land ? 0.13 + d * 0.35 : b.by + Math.sin(this.t * 2.6 + b.seed) * 0.07 + Math.sin(this.t * 0.7 + b.seed) * 0.08;
-      b.y += (ty - b.y) * Math.min(1, dt * 2.5);
-      if (b.landing && d < 0.12) { b.state = 'sit'; b.t = 2 + Math.random() * 5; b.y = 0.13; b.landing = false; b.sits = (b.sits || 0) + 1; return; }
-      // nieuw doel
-      if (b.t <= 0 || (d < 0.2 && !b.landing)) {            // op weg om te landen: niet halverwege een ander doel kiezen
-        const f = this.pickFlower(b);
-        if (f) { b.tx = f[0]; b.tz = f[1]; b.landing = Math.random() < 0.55; }
-        else { b.tx = b.hx + (Math.random() - 0.5) * 4; b.tz = b.hz + (Math.random() - 0.5) * 4; b.landing = false; }
-        b.t = 4 + Math.random() * 6;
+      const k = Math.floor(b.z) * N + Math.floor(b.x);
+      // willekeurige draaisnelheid (rad/s), vloeiend
+      b.tw -= dt;
+      if (b.tw <= 0) { b.turnT = (R() - 0.5) * (R() < 0.15 ? 7 : 3.2); b.tw = 0.25 + R() * 1.1; }
+      b.turn += (b.turnT - b.turn) * Math.min(1, dt * 3);
+      let steer = b.turn;
+      const d = b.landing ? Math.hypot(b.tx - b.x, b.tz - b.z) : 0;
+      if (b.landing) {
+        // naar de bloem: hoe dichterbij, hoe minder gezigzag
+        const near = Math.min(1, d / 1.2);
+        steer = b.turn * near + wrap(Math.atan2(b.tx - b.x, b.tz - b.z) - b.h) * (1.4 + (1 - near) * 5);
+        b.lt -= dt; if (b.lt <= 0) { b.landing = false; b.t = 2 + R() * 4; }
+      } else {
+        const dh = Math.hypot(b.x - b.hx, b.z - b.hz);
+        if (dh > 2.5) steer += wrap(Math.atan2(b.hx - b.x, b.hz - b.z) - b.h) * Math.min(2, (dh - 2.5) * 0.7);
       }
+      if (busy && busy[k] > 0.7) steer += wrap(Math.atan2(b.hx - b.x, b.hz - b.z) - b.h) * 2.5;    // terug naar de rustige bloemen
+      if (b.x < 1.5 || b.z < 1.5 || b.x > N - 1.5 || b.z > N - 1.5) steer += wrap(Math.atan2(N / 2 - b.x, N / 2 - b.z) - b.h) * 2;
+      b.h = wrap(b.h + steer * dt);
+      // snelheid: telkens een nieuw doel, vloeiend; zweven gaat iets sneller en rechter
+      b.vw -= dt;
+      if (b.vw <= 0) { b.vT = b.sp * (0.5 + R() * 1.0); b.vw = 0.8 + R() * 2.2; }
+      if (b.glide > 0) b.glide -= dt;
+      else if (!b.landing && R() < dt * 0.12) b.glide = 0.5 + R() * 0.9;
+      let vT = b.vT * (b.glide > 0 ? 1.15 : 1);
+      if (b.landing) vT *= Math.min(1, 0.35 + d * 0.6);
+      b.v += (vT - b.v) * Math.min(1, dt * 1.6);
+      b.x = Math.max(0.5, Math.min(N - 0.5, b.x + Math.sin(b.h) * b.v * dt));
+      b.z = Math.max(0.5, Math.min(N - 0.5, b.z + Math.cos(b.h) * b.v * dt));
+      // hoogte: willekeurige doelhoogte; bij het zweven zakt hij langzaam; bij de bloem omlaag
+      b.yt -= dt;
+      if (b.yt <= 0) { b.ty = 0.2 + R() * R() * 0.75; b.yt = 1 + R() * 2.5; }
+      let ty = b.ty;
+      if (b.glide > 0) ty = Math.max(0.18, b.y - 0.12);
+      if (b.landing && d < 1) ty = 0.13 + d * 0.35;
+      const y0 = b.y;
+      b.y += (ty - b.y) * Math.min(1, dt * (b.landing && d < 0.4 ? 3 : 1.4));
+      b.vy = (b.y - y0) / dt;
+      if (b.landing && d < 0.08) { b.state = 'sit'; b.t = 2 + R() * 5; b.y = 0.13; b.landing = false; b.sits = (b.sits || 0) + 1; b.vy = 0; return; }
+      // tijd om te landen
+      if (!b.landing && b.t <= 0) {
+        const f = this.pickFlower(b);
+        if (f) { b.tx = f[0]; b.tz = f[1]; b.landing = true; b.lt = 14; }
+        else b.t = 2 + R() * 3;
+      }
+      // af en toe een andere thuisplek: zo zwerft een vlinder langzaam langs de bloemenvelden
+      if (!b.landing && R() < dt * 0.015) { const f = this.pickFlower(b, 4); if (f) { b.hx = f[0]; b.hz = f[1]; } }
     }
   }
   function simpleButterfly() {

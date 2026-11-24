@@ -544,6 +544,16 @@
     hunter: [0.3, 0.06, 0.3], coalmine: [0.3, 0.06, 0.34], ironmine: [0.3, 0.06, 0.34], coppermine: [0.3, 0.06, 0.34],
     goldmine: [0.3, 0.06, 0.34], smelter: [-0.1, 0.06, 0.34], weaponsmith: [0.22, 0.06, 0.4]
   };
+  /* Stapels aangeleverde grondstoffen (b.input), op volgorde van VE.RES_ORDER. Blender-markers 'in0', 'in1' …
+     gaan voor; dit is de reserve. */
+  VE.IN_SPOT = {
+    sawmill: [[0.3, 0.06, 0.36]], windmill: [[-0.3, 0.06, 0.34]], bakery: [[-0.33, 0.06, 0.36]],
+    winery: [[-0.3, 0.06, 0.36]], tavern: [[-0.32, 0.06, 0.38], [0.06, 0.06, 0.4]],
+    smelter: [[0.17, 0.06, 0.37], [0.37, 0.06, 0.37], [-0.36, 0.06, 0.38]],
+    weaponsmith: [[-0.42, 0.06, 0.1], [-0.42, 0.06, 0.34]]
+  };
+  /* wapenrek: [x, y (voetplank), z, draaiing]; Blender-marker 'rack' gaat voor */
+  VE.RACK_SPOT = { weaponsmith: [0.2, 0.07, 0.36, 0] };
 
   /* Procedureel model zonder cache (ook gebruikt door glb-models.js voor de geanimeerde delen). */
   VE.buildProcedural = function (type, lvl) {
@@ -558,7 +568,8 @@
     return (VE.modelCache[key] = VE.buildProcedural(type, lvl));
   };
 
-  VE.scaffoldGeo = function (size) {
+  VE.scaffoldGeo = function (size, around) {
+    if (around) return upgradeScaffold(size);
     const m = new VE.Model(2);
     const r = size === 2 ? 0.8 : 0.36;
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) m.box(0.025, 0.75 * size, 0.025, 0xb68a55, { x: sx * r, z: sz * r });
@@ -570,6 +581,31 @@
     m.box(r * 1.6, 0.03, r * 1.6, 0x9c7a50, { y: -0.01 });
     return m.build();
   };
+  /* steiger rondom een bestaand gebouw (upgrade): palen op de hoeken net buiten de muren, regels en een
+     loopplank aan de zijkanten en achter, schoren en een ladder. De voorkant blijft laag open (deur). */
+  function upgradeScaffold(size) {
+    const m = new VE.Model(3), W = 0xb68a55, P = 0xc9a06a, D = 0x8f6a40;
+    const r = size === 2 ? 1.02 : 0.52, H = size === 2 ? 1.25 : 0.95;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) m.box(0.026, H, 0.026, W, { x: sx * r, y: 0, z: sz * r });
+    for (const sx of [-1, 1]) m.box(0.022, H * 0.9, 0.022, W, { x: sx * r, z: 0 });                 // middenpalen zijkant
+    for (const y of [0.34, 0.68]) {
+      const yy = y * H;
+      m.box(r * 2, 0.02, 0.02, W, { y: yy, z: -r });                                                   // achter
+      m.box(0.02, 0.02, r * 2, W, { x: r, y: yy }); m.box(0.02, 0.02, r * 2, W, { x: -r, y: yy });   // zijkanten
+      if (y > 0.5) m.box(r * 2, 0.02, 0.02, W, { y: yy, z: r });                                       // voor: alleen boven de deur
+      // loopplanken
+      m.box(r * 2, 0.014, 0.09, P, { y: yy + 0.017, z: -r - 0.03 });
+      m.box(0.09, 0.014, r * 2, P, { x: r + 0.03, y: yy + 0.017 }); m.box(0.09, 0.014, r * 2, P, { x: -r - 0.03, y: yy + 0.017 });
+    }
+    // schoren op de zijkanten en achter
+    const L = Math.hypot(r, H * 0.68);
+    for (const sx of [-1, 1]) m.box(0.016, L, 0.016, D, { x: sx * r, y: H * 0.34, z: -r / 2, rx: Math.atan2(r, H * 0.68) * sx });
+    m.box(0.016, Math.hypot(r * 2, H * 0.34), 0.016, D, { y: H * 0.17, z: -r, rz: Math.atan2(r * 2, H * 0.34) });
+    // ladder tegen de rechterkant
+    for (const dz of [-0.05, 0.05]) m.box(0.016, H * 0.72, 0.016, W, { x: r + 0.07, y: 0, z: r * 0.5 + dz, rz: -0.12 });
+    for (let k = 1; k < 7; k++) m.box(0.012, 0.012, 0.1, D, { x: r + 0.07 - k * 0.0115 * H, y: k * H * 0.1, z: r * 0.5 });
+    return m.build();
+  }
 
   /* ---------- nature ---------- */
   VE.treeGeo = function (type) {

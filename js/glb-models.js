@@ -56,6 +56,7 @@
   }
 
   const _m = new THREE.Matrix4(), _inv = new THREE.Matrix4(), _c = new THREE.Color(), _v = new THREE.Vector3();
+  const _rq = new THREE.Quaternion(), _re = new THREE.Euler();
 
   /** Zet een GLB-node (met submeshes/materialen) om naar één vertex-gekleurde geometrie. */
   function bakeNode(node, seed, tint) {
@@ -163,7 +164,7 @@
         if (!geo) throw new Error('node ' + src.levels[lvl] + ' bevat geen meshes');
         // markers uitlezen: rookpunten en ankers voor animaties
         const chimneys = [], anchors = {}, pre = src.levels[lvl] + '_';
-        let pile = null; const slots = [];
+        let pile = null, rack = null; const slots = [], inp = [];
         gltf.scene.traverse(o => {
           if (!o.name || o.name.indexOf(pre) !== 0) return;
           const rest = o.name.slice(pre.length);
@@ -172,6 +173,8 @@
           else if (rest.indexOf('anim_') === 0) anchors[rest.slice(5)] = [_v.x, _v.y, _v.z];
           else if (rest === 'pile') pile = [_v.x, _v.y, _v.z];          // plek voor de uitvoervoorraad
           else if (/^slot\d+$/.test(rest)) slots[+rest.slice(4)] = [_v.x, _v.y, _v.z];   // vakken van een opslag
+          else if (/^in\d$/.test(rest)) inp[+rest.slice(2)] = [_v.x, _v.y, _v.z];      // stapels aangeleverde grondstoffen
+          else if (rest === 'rack') { o.getWorldQuaternion(_rq); _re.setFromQuaternion(_rq, 'YXZ'); rack = [_v.x, _v.y, _v.z, _re.y]; }   // wapenrek (voetplank)
         });
         // geanimeerde delen (vlag, wieken, zaag) blijven procedureel, op het anker uit het nieuwe model
         let anims = [];
@@ -184,7 +187,8 @@
           });
         }
         const sl = slots.filter(Boolean); sl.g = true;
-        baked[lvl] = { geo: geo, anims: anims, chimneys: chimneys, pile: pile, slots: sl.length ? sl : null };
+        const ip = inp.filter(Boolean);
+        baked[lvl] = { geo: geo, anims: anims, chimneys: chimneys, pile: pile, slots: sl.length ? sl : null, inp: ip.length ? ip : null, rack: rack };
       }
       // pas vervangen als alle levels gelukt zijn: nooit een half GLB / half procedureel gebouw
       let replaced = false;

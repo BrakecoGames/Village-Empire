@@ -433,6 +433,8 @@
         for (const a of b.anims) a.mesh.visible = false;
         mesh.scale.y = 0.03 + 0.97 * (b.total ? b.used / b.total : 0);
       }
+      b.upScaf = null;
+      if (b.up) this.upScaffold(b);
       this.root.add(g);
     }
     complete(b, silent) {
@@ -456,17 +458,63 @@
       for (const t of c) this.world.reveal(t.x, t.z, t.r + 2.5);   // your own land (and a little beyond) is known
       if (!initial) emit('territory', {});
     }
+    /* bouwplaats van een gebouw: het gebouw zelf (nog in aanbouw) of zijn lopende upgrade (b.up) */
+    site(b) { return !b.alive ? null : !b.built ? (b.def.cost ? b : null) : (b.up || null); }
+    siteCost(S, b) { return S.cost || b.def.cost; }
+    /* Upgrade = bouwplaats, net als nieuwbouw: het goud gaat direct uit de schatkist, de materialen brengen
+       dragers één voor één. Daarna komt een bouwer met een hamer; pas als alles verbouwd is, krijgt het
+       gebouw zijn nieuwe level. Het gebouw blijft tijdens de upgrade gewoon werken. */
     upgrade(b) {
-      if (!b.built || b.level >= this.maxLevel() || !b.def.cost) return false;
+      if (!b.built || b.up || b.level >= this.maxLevel() || !b.def.cost) return false;
       const cost = VE.levelCost(b.def, b.level + 1);
       if (!this.canAfford(cost)) return false;
-      this.pay(cost);
-      b.level++;
+      const mat = {}; let total = 0;
+      for (const r in cost) if (r !== 'gold') { mat[r] = cost[r]; total += cost[r]; }
+      if (cost.gold) this.gold -= cost.gold;
+      b.up = { lvl: b.level + 1, cost: mat, gold: cost.gold || 0, delivered: {}, incoming: {}, used: 0, total: total };
+      this.sd = true;
+      this.upScaffold(b);
+      emit('dust', { x: b.cx, y: b.y, z: b.cz, n: 6 });
+      sfx('place', b.cx, b.cz);
+      if (!total) this.finishUpgrade(b);
+      return true;
+    }
+    /* steiger rondom het bestaande gebouw; groeit mee met de voortgang */
+    upScaffold(b) {
+      if (b.upScaf) { b.group.remove(b.upScaf); b.upScaf = null; }
+      if (!b.up) return;
+      const key = 'up' + b.size;
+      if (!this.scaffolds[key]) this.scaffolds[key] = VE.scaffoldGeo(b.size, true);
+      b.upScaf = new THREE.Mesh(this.scaffolds[key], this.mats.building);
+      b.upScaf.castShadow = true; b.upScaf.name = 'upgradeScaffold';
+      b.group.add(b.upScaf);
+      this.upProgress(b);
+    }
+    upProgress(b) {
+      if (b.upScaf && b.up) b.upScaf.scale.y = 0.45 + 0.55 * (b.up.total ? b.up.used / b.up.total : 1);
+    }
+    finishUpgrade(b, silent) {
+      const u = b.up; if (!u) return;
+      b.up = null; this.sd = true;
+      if (b.builder) { const s = b.builder; s.mode = 'idle'; s.tool = null; s.act = null; s.wt = 0.5; s.work = null; b.builder = null; }
+      b.level = u.lvl;
       this.stats.upgrades++;
       this.makeMesh(b);
       if (b.def.territory) this.updateTerritory();
-      emit('dust', { x: b.cx, y: b.y, z: b.cz, n: 10 });
-      sfx('done', b.cx, b.cz);
+      if (!silent) {
+        emit('dust', { x: b.cx, y: b.y, z: b.cz, n: 14 });
+        emit('toast', { text: '⭐ ' + b.def.name + ' upgraded to level ' + b.level + '!' });
+        sfx('done', b.cx, b.cz);
+      }
+    }
+    /* upgrade afbreken: geleverde materialen en het goud gaan terug (dragers onderweg leveren elders af) */
+    cancelUpgrade(b) {
+      const u = b.up; if (!u) return false;
+      b.up = null; this.sd = true;
+      for (const r in u.delivered) if (u.delivered[r] > 0) this.addGoods(r, u.delivered[r], b.dx, b.dz);
+      this.gold += u.gold;
+      if (b.builder) { const s = b.builder; s.mode = 'idle'; s.tool = null; s.act = null; s.wt = 0.5; s.work = null; b.builder = null; }
+      this.upScaffold(b);
       return true;
     }
     demolish(b, force) {
@@ -484,6 +532,7 @@
       const back = (r, n) => this.addGoods(r, n, b.dx, b.dz);
       if (b.built) { if (b.def.cost) for (const r in b.def.cost) back(r, Math.floor(b.def.cost[r] / 2)); }
       else for (const r in b.delivered) back(r, b.delivered[r]);
+      if (b.up) { for (const r in b.up.delivered) back(r, b.up.delivered[r]); this.gold += b.up.gold; b.up = null; }
       for (const r in b.input) back(r, b.input[r]);
       for (const r in b.output) back(r, b.output[r]);
       if (b.store) for (const r in b.store) back(r, b.store[r]);
@@ -554,10 +603,11 @@
     }
 
     /* ---------- transport ---------- */
-    startTransport(s, res, src, dst) {
-      s.mode = 'carry'; s.task = { res: res, src: src, dst: dst, picked: false }; s.tool = null; s.act = null;
+    /* up: de upgrade-bouwplaats (dst.up) waar dit goed heen gaat, anders gewoon het gebouw */
+    startTransport(s, res, src, dst, up) {
+      s.mode = 'carry'; s.task = { res: res, src: src, dst: dst, picked: false, up: up || null }; s.tool = null; s.act = null;
       src.outRes[res] = (src.outRes[res] || 0) + 1; this.sd = true;
-      dst.incoming[res] = (dst.incoming[res] || 0) + 1;
+      const I = (up || dst).incoming; I[res] = (I[res] || 0) + 1;
       if (!this.walkToB(s, src, () => this.pickup(s))) this.failTask(s, true);
     }
     pickup(s) {
@@ -574,10 +624,11 @@
     }
     /* bestemming weg of onbereikbaar: naar een Storehouse dat het aanneemt, anders terug naar de bron */
     redirect(s) {
-      const t = s.task;
-      if (t.dst.alive && t.dst.incoming[t.res]) t.dst.incoming[t.res]--;
+      const t = s.task, I0 = (t.up || t.dst).incoming;
+      if (t.dst.alive && I0[t.res]) I0[t.res]--;
       let st = this.depotFor(t.res, s.x, s.z, t.dst), back = false;
       if (!st && t.src.alive && t.src.built && t.src !== t.dst) { st = t.src; back = !t.src.store; }
+      t.up = null;
       if (st) {
         t.dst = st; t.back = back; st.incoming[t.res] = (st.incoming[t.res] || 0) + 1;
         if (this.walkToB(s, st, () => this.deliver(s))) return;
@@ -594,9 +645,12 @@
       const t = s.task; if (!t) return;
       const d = t.dst;
       if (!d.alive) { this.redirect(s); return; }
-      if (d.incoming[t.res]) d.incoming[t.res]--;
+      if (t.up && d.up !== t.up) { this.redirect(s); return; }       // upgrade intussen klaar of afgebroken
+      const I = (t.up || d).incoming;
+      if (I[t.res]) I[t.res]--;
       this.sd = true;
-      if (!d.built) d.delivered[t.res] = (d.delivered[t.res] || 0) + 1;
+      if (t.up) t.up.delivered[t.res] = (t.up.delivered[t.res] || 0) + 1;
+      else if (!d.built) d.delivered[t.res] = (d.delivered[t.res] || 0) + 1;
       else if (d.store) d.store[t.res] = (d.store[t.res] || 0) + 1;
       else if (t.back) d.output[t.res] = (d.output[t.res] || 0) + 1;
       else if (d.def.recipes && !this.rcp(d).inp[t.res]) d.output[t.res] = (d.output[t.res] || 0) + 1;
@@ -611,7 +665,8 @@
           if (early) t.src.unreach = this.time + 6;
         } else if (s.carry) { this.addGoods(s.carry, 1, s.x, s.z); }
         this.sd = true;
-        if (t.dst.alive && t.dst.incoming[t.res]) t.dst.incoming[t.res]--;
+        const I = (t.up || t.dst).incoming;
+        if (t.dst.alive && I[t.res]) I[t.res]--;
         if (early) t.dst.unreach = this.time + 6;
       }
       s.carry = null; s.task = null; s.mode = 'idle'; s.path = null; s.cb = null; s.wt = 1;
@@ -651,13 +706,15 @@
         cap => {
           let n = 0;
           for (const b of B) {
-            if (!alive(b) || b.built || !b.def.cost) continue;
-            for (const r in b.def.cost) {
-              let need = b.def.cost[r] - (b.delivered[r] || 0) - (b.incoming[r] || 0);
+            if (!alive(b)) continue;
+            const S = this.site(b); if (!S) continue;            // nieuwbouw of upgrade
+            const cost = this.siteCost(S, b), up = S === b ? null : S;
+            for (const r in cost) {
+              let need = cost[r] - (S.delivered[r] || 0) - (S.incoming[r] || 0);
               while (need > 0 && n < cap && idle.length && this.avail(r) > 0) {
                 const src = this.sourceFor(r, b.dx, b.dz); if (!src) break;
                 const s = take(src.dx, src.dz); if (!s) break;
-                this.startTransport(s, r, src, b); need--; n++;
+                this.startTransport(s, r, src, b, up); need--; n++;
               }
             }
           }
@@ -668,9 +725,10 @@
           let n = 0;
           for (const b of B) {
             if (n >= cap || !idle.length) break;
-            if (!alive(b) || b.built || b.builder) continue;
-            let has = -b.used; for (const r in b.delivered) has += b.delivered[r];
-            for (const r in b.incoming) has += b.incoming[r];
+            if (!alive(b) || b.builder) continue;
+            const S = this.site(b); if (!S) continue;
+            let has = -S.used; for (const r in S.delivered) has += S.delivered[r];
+            for (const r in S.incoming) has += S.incoming[r];
             if (has <= 0) continue;
             const s = take(b.dx, b.dz); if (!s) break;
             this.assignBuilder(s, b); n++;
@@ -765,21 +823,29 @@
       if (!ok) { b.builder = null; b.unreach = this.time + 6; s.mode = 'idle'; s.tool = null; }
     }
     updateBuilder(s, dt) {
-      const b = s.work;
-      if (!b || !b.alive || b.built) { s.mode = 'idle'; s.tool = null; s.act = null; s.work = null; return; }
+      const b = s.work, S = b && this.site(b);
+      if (!S || b.builder !== s) { if (b && b.builder === s) b.builder = null; s.mode = 'idle'; s.tool = null; s.act = null; s.work = null; return; }
       if (s.bstate !== 'at') return;
-      let has = 0; for (const r in b.delivered) has += b.delivered[r];
-      if (has - b.used > 0) {
+      let has = 0; for (const r in S.delivered) has += S.delivered[r];
+      if (has - S.used > 0) {
         s.act = 'hammer'; s.ap += dt; s.wt -= dt;
-        if (Math.floor(s.ap / 0.45) !== s.actTick) { s.actTick = Math.floor(s.ap / 0.45); sfx('hammer', s.x, s.z); }
+        if (Math.floor(s.ap / 0.45) !== s.actTick) {
+          s.actTick = Math.floor(s.ap / 0.45); sfx('hammer', s.x, s.z);
+          if (S !== b && s.actTick % 2 === 0) emit('dust', { x: s.x + Math.sin(s.rot) * 0.2, y: b.y + 0.05, z: s.z + Math.cos(s.rot) * 0.2, n: 2, small: true });
+        }
         if (s.wt <= 0) {
-          b.used++; s.wt = 1.1;
-          b.mesh.scale.y = 0.03 + 0.97 * (b.used / b.total);
-          if (b.used >= b.total) this.complete(b);
+          S.used++; s.wt = 1.1;
+          if (S === b) {
+            b.mesh.scale.y = 0.03 + 0.97 * (b.used / b.total);
+            if (b.used >= b.total) this.complete(b);
+          } else {
+            this.upProgress(b);
+            if (S.used >= S.total) this.finishUpgrade(b);
+          }
         }
       } else {
         s.act = null;
-        let inc = 0; for (const r in b.incoming) inc += b.incoming[r];
+        let inc = 0; for (const r in S.incoming) inc += S.incoming[r];
         if (inc === 0) {
           s.waitT = (s.waitT || 0) + dt;
           if (s.waitT > 3) { s.waitT = 0; b.builder = null; s.mode = 'idle'; s.tool = null; s.work = null; s.wt = 0.5; }
@@ -787,8 +853,9 @@
       }
     }
     remainingCost(b) {
-      const c = {}; if (!b.def.cost) return c;
-      for (const r in b.def.cost) { const n = b.def.cost[r] - (b.delivered[r] || 0) - (b.incoming[r] || 0); if (n > 0) c[r] = n; }
+      const c = {}, S = this.site(b); if (!S) return c;
+      const cost = this.siteCost(S, b);
+      for (const r in cost) { const n = cost[r] - (S.delivered[r] || 0) - (S.incoming[r] || 0); if (n > 0) c[r] = n; }
       return c;
     }
 
@@ -1376,7 +1443,8 @@
       const bl = this.buildings.filter(b => b.alive).map(b => ({
         id: b.id, t: b.type, i: b.i, j: b.j, l: b.level, b: b.built ? 1 : 0, u: b.used,
         d: b.built ? {} : Object.assign({}, b.delivered), inp: Object.assign({}, b.input), out: Object.assign({}, b.output), sell: b.sell, keep: b.keep, rc: b.recipe || undefined,
-        st: b.store ? Object.assign({}, b.store) : undefined, ac: b.accept ? VE.RES_ORDER.filter(r => b.accept[r]) : undefined
+        st: b.store ? Object.assign({}, b.store) : undefined, ac: b.accept ? VE.RES_ORDER.filter(r => b.accept[r]) : undefined,
+        up: b.up ? { l: b.up.lvl, c: Object.assign({}, b.up.cost), g: b.up.gold, d: Object.assign({}, b.up.delivered), u: b.up.used } : undefined
       }));
       // wat dragers op dit moment vasthouden, gaat terug naar waar het vandaan kwam (of het dorpshuis):
       // na het laden ligt het daar weer, er raakt niets kwijt
@@ -1432,6 +1500,11 @@
         if (bs.rc && b.def.recipes && b.def.recipes[bs.rc]) b.recipe = bs.rc;
         if (b.store && bs.st && (sv.v || 1) >= 2) for (const r in bs.st) if (VE.RES[r] && bs.st[r] > 0) b.store[r] = bs.st[r];
         if (b.accept && bs.ac) for (const r of VE.RES_ORDER) b.accept[r] = bs.ac.indexOf(r) >= 0 || ((sv.v || 1) < 3 && VE.RES[r].weapon === true);
+        if (bs.up && b.built && bs.up.l > b.level) {                   // lopende upgrade (bouwplaats) gaat gewoon verder
+          const c = {}; let total = 0; for (const r in bs.up.c) if (VE.RES[r] && bs.up.c[r] > 0) { c[r] = bs.up.c[r]; total += c[r]; }
+          b.up = { lvl: bs.up.l, cost: c, gold: bs.up.g || 0, delivered: Object.assign({}, bs.up.d || {}), incoming: {}, used: Math.min(bs.up.u || 0, total), total: total };
+          this.upScaffold(b);
+        }
       }
       // stats.built was re-incremented by instant completes; restore the saved values
       if (sv.stats && sv.stats.built) this.stats.built = Object.assign({}, sv.stats.built);

@@ -786,6 +786,12 @@ def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
         # "slot0", "slot1", ...: vakken waar de game de inhoud van een opslag als nette stapels neerlegt
         for i, p in enumerate(info.get("slots", [])):
             markers.append((f"{prefix}_l{lvl}_slot{i}", p))
+        # "in0", "in1", ...: stapels aangeleverde grondstoffen van een werkplaats (volgorde = VE.RES_ORDER)
+        for i, p in enumerate(info.get("inp", [])):
+            markers.append((f"{prefix}_l{lvl}_in{i}", p))
+        # "rack": voetplank van een wapenrek (midden, bovenkant); de game zet daar de gesmede wapens rechtop
+        if info.get("rack"):
+            markers.append((f"{prefix}_l{lvl}_rack", info["rack"]))
         for name, p in markers:
             emp = bpy.data.objects.new(name, None)
             bpy.context.collection.objects.link(emp)

@@ -6,12 +6,14 @@ Herkenbaar aan:
     (anker 'bellows', beweegt);
   - een aambeeld op een eiken stronk vóór de smidse. Daarop ligt het wapen dat gesmeed wordt
     (anker 'hotblade': gloeit tijdens het smeden, vonken bij elke hamerslag; de smid staat ervoor);
-  - wapenrekken met zwaarden, speren en strijdbijlen, een schild aan de muur en een uithangbord met
+  - een wapenrek met zes gleuven (de echte voorraad), een schild aan de muur en een uithangbord met
     gekruiste zwaarden;
   - een ton met water om te blussen.
-Level 2: slijpsteen, gereedschapsrek met tangen, tweede wapenrek. Level 3: hogere schoorsteen, bogen en
-kruisbogen aan de muur, schildenrek.
-De werkelijke voorraad wapens (max. 6) ligt op de marker 'pile' (VE.StockpileRender).
+Level 2: slijpsteen, gereedschapsrek met tangen. Level 3: hogere schoorsteen, bogen en een kruisboog aan
+de muur, schilden tegen de gevel.
+De werkelijke voorraad (VE.StockpileRender): gesmede wapens (max. 6) rechtop in het wapenrek (marker 'rack'),
+aangeleverde planken en ijzerstaven op hun eigen stapel (markers 'in0' en 'in1'), en wat terug moet naar de
+opslag na het wisselen van wapen op 'pile'.
 
 Bouwen: npm run models -- weaponsmith
 """
@@ -35,36 +37,27 @@ setup(seed=7712, extra_palette={
 })
 
 
-def sword_on_rack(x, z, y0, lean=0.0, rot=0.0):
-    """rechtop staand zwaard (punt omlaag) in een rek"""
-    box(0.016, 0.2, 0.006, "Steel", pos=(x, y0, z), rot=(lean, rot, 0))
-    box(0.07, 0.014, 0.014, "SteelD", pos=(x, y0 + 0.2, z), rot=(lean, rot, 0))
-    box(0.014, 0.05, 0.014, "Grip", pos=(x, y0 + 0.212, z), rot=(lean, rot, 0))
-    blob(0.011, "Gold", (x, y0 + 0.268, z), sub=0, smooth=False)
+def weapon_rack(x, z):
+    """leeg wapenrek voor de echte voorraad (max. 6 wapens, VE.StockpileRender zet ze rechtop):
+    voetplank met zes gleuven, twee staanders en een bovenregel met pinnen waar de wapens tegenaan leunen.
+    Geeft de plek van de voetplank terug (midden, bovenkant): marker 'rack'."""
+    W, top = 0.34, 0.064
+    box(W + 0.02, 0.024, 0.075, "Wood", pos=(x, 0.04, z), bevel=0.003)
+    for k in range(7):                                                  # schotjes tussen de gleuven
+        box(0.008, 0.016, 0.06, "WoodL", pos=(x + (k - 3) * 0.05, top, z))
+    for dx in (-W / 2 - 0.004, W / 2 + 0.004):
+        beam((x + dx, 0.04, z - 0.03), (x + dx, 0.235, z - 0.04), 0.02, "Timber")
+    beam((x - W / 2 - 0.012, 0.215, z - 0.05), (x + W / 2 + 0.012, 0.215, z - 0.05), 0.018, "Timber")
+    for k in range(7):                                                  # pinnen op de bovenregel
+        beam((x + (k - 3) * 0.05, 0.215, z - 0.045), (x + (k - 3) * 0.05, 0.215, z - 0.015), 0.007, "Iron")
+    return (x, top, z)
 
 
-def spear_on_rack(x, z, y0, lean=0.0):
-    cyl(0.006, 0.006, 0.42, 5, "WoodL", pos=(x, y0, z), rot=(lean, 0, 0), smooth=False)
-    cyl(0.0, 0.014, 0.06, 4, "Steel", pos=(x, y0 + 0.42, z + math.sin(lean) * 0.42), rot=(lean, 0, 0), smooth=False)
-
-
-def axe_on_rack(x, z, y0):
-    box(0.012, 0.26, 0.012, "Wood", pos=(x, y0, z))
-    box(0.07, 0.05, 0.008, "Steel", pos=(x + 0.03, y0 + 0.2, z), bevel=0.002)
-    box(0.04, 0.03, 0.008, "SteelD", pos=(x - 0.025, y0 + 0.21, z))
-
-
-def weapon_rack(x, z, lvl, rot=0.0):
-    """rek: twee staanders, een dwarsbalk en een voetplank met gaten; zwaarden en speren"""
-    for dx in (-0.12, 0.12):
-        beam((x + dx, 0.04, z), (x + dx, 0.3, z), 0.02, "Timber")
-    beam((x - 0.13, 0.28, z), (x + 0.13, 0.28, z), 0.018, "Timber")
-    box(0.28, 0.02, 0.06, "Wood", pos=(x, 0.06, z), bevel=0.003)
-    sword_on_rack(x - 0.07, z + 0.012, 0.07, lean=-0.08)
-    sword_on_rack(x - 0.02, z + 0.012, 0.07, lean=-0.06)
-    spear_on_rack(x + 0.04, z + 0.01, 0.07, lean=-0.07)
-    if lvl >= 2:
-        axe_on_rack(x + 0.09, z + 0.012, 0.07)
+def material_bay(x, z, w, d):
+    """lage plank op twee balkjes: hier legt de game de aangeleverde planken of ijzerstaven neer"""
+    for dz in (-d / 2 + 0.02, d / 2 - 0.02):
+        box(w, 0.014, 0.022, "LogD", pos=(x, 0.04, z + dz))
+    return (x, 0.054, z)
 
 
 def smithy(lvl):
@@ -131,7 +124,9 @@ def build(lvl):
     beam((0.4, 0.09, -0.1), (0.36, 0.14, -0.1), 0.01, "Iron")
     bel = (0.44, 0.09, -0.1)
     hot = anvil(0.06, 0.2)
-    weapon_rack(-0.24, 0.22, lvl)
+    rack = weapon_rack(-0.24, 0.3)
+    planks = material_bay(-0.4, 0.1, 0.17, 0.17)       # in0: planken (hout)
+    bars = material_bay(0.3, 0.4, 0.15, 0.13)          # in1: ijzerstaven (metaal)
     # blusvat
     barrel(0.36, 0.22, y=0.04)
     cyl(0.044, 0.044, 0.004, 10, "Water", pos=(0.36, 0.165, 0.22), smooth=False)
@@ -144,13 +139,13 @@ def build(lvl):
         for k in range(3):
             beam((-0.44, 0.27 - k * 0.002, -0.37 + k * 0.03), (-0.44, 0.12, -0.36 + k * 0.03), 0.005, "Iron")
     if lvl >= 3:
-        # schildenrek
+        # schilden tegen de voorgevel
         for k in range(2):
-            cyl(0.045, 0.045, 0.012, 10, "ShieldR" if k else "Shield", pos=(-0.42 + k * 0.08, 0.12, 0.38), rot=(math.pi / 2 - 0.2, 0, 0), smooth=False)
-        beam((-0.46, 0.04, 0.4), (-0.3, 0.04, 0.4), 0.014, "Timber")
+            cyl(0.045, 0.045, 0.012, 10, "ShieldR" if k else "Shield", pos=(-0.17 + k * 0.08, 0.085, -0.02), rot=(math.pi / 2 - 0.2, 0, 0), smooth=False)
     for _ in range(4):
         pebble(rnd.uniform(-0.1, 0.3), rnd.uniform(0.3, 0.42), rnd.uniform(0.012, 0.02), 0.04)
-    return {"smoke": [smoke], "anims": {"glow": coals, "bellows": bel, "hotblade": hot}, "pile": (0.22, 0.04, 0.4)}
+    return {"smoke": [smoke], "anims": {"glow": coals, "bellows": bel, "hotblade": hot}, "pile": (0.45, 0.04, 0.42),
+            "inp": [planks, bars], "rack": rack}
 
 
 build_levels("weaponsmith", build, args)

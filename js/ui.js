@@ -400,7 +400,8 @@
         case 'qtoggle': this.qOpen = !this.qOpen; this.renderQuests(true); break;
         case 'claim': { const q = VE.RANKS[g.rank].quests.find(x => x.id === arg); if (q && g.claim(q)) { this.toast('🎁 Reward collected!'); VE.save(); } this.renderQuests(true); this.refreshHud(true); break; }
         case 'promote': if (g.promote()) { this.renderQuests(true); this.renderBuildBar(); VE.save(); } break;
-        case 'upgrade': if (this.sel && g.upgrade(this.sel)) { this.toast('⭐ ' + this.sel.def.name + ' upgraded to level ' + this.sel.level); VE.save(); } this.renderInfo(true); break;
+        case 'upgrade': if (this.sel && g.upgrade(this.sel)) { if (this.sel.up) this.toast('🏗️ Upgrade started: carriers bring the materials, then a builder arrives'); VE.save(); } this.renderInfo(true); break;
+        case 'cancelUpg': if (this.sel && g.cancelUpgrade(this.sel)) { this.toast('Upgrade cancelled: materials and gold returned'); VE.save(); } this.renderInfo(true); break;
         case 'demolish': if (this.sel) this.confirmDemolish(this.sel); break;
         case 'doDemolish': { const b = g.bmap[arg]; if (b) g.demolish(b); this.closeModal(); this.select(null); break; }
         case 'sell': if (this.sel) { this.sel.sell[arg] = !this.sel.sell[arg]; this.renderInfo(true); } break;
@@ -478,6 +479,16 @@
         if (need) h += '<div class="warn">Not enough materials in storage — keep producing!</div>';
         h += '<div class="ip-desc small">' + (b.builder ? '🔨 A builder is at work.' : 'Carriers bring materials, then a builder arrives.') + '</div>';
       } else {
+        if (b.up) {
+          // upgrade als bouwplaats: voortgang en materialen, net als bij nieuwbouw
+          const u = b.up, pct = Math.round(100 * u.used / Math.max(1, u.total));
+          h += '<div class="ip-sub">🏗️ Upgrading to level ' + u.lvl + '</div><div class="bar up"><i style="width:' + pct + '%"></i><span>' + pct + '%</span></div><div class="ip-row"><b>Materials</b>';
+          for (const r in u.cost) h += '<span class="cost ' + ((u.delivered[r] || 0) >= u.cost[r] ? 'ok' : '') + '">' + VE.icon(r, 15) + (u.delivered[r] || 0) + '/' + u.cost[r] + '</span>';
+          h += '</div>';
+          let need = false; for (const r in u.cost) if ((u.delivered[r] || 0) + (u.incoming[r] || 0) < u.cost[r] && g.avail(r) <= 0) need = true;
+          if (need) h += '<div class="warn">Not enough materials in storage — keep producing!</div>';
+          h += '<div class="ip-desc small">' + (b.builder ? '🔨 A builder is upgrading the building. It keeps working meanwhile.' : 'Carriers bring the materials, then a builder arrives.') + '</div>';
+        }
         h += this.chainHtml(d, b);
         if (d.recipes) {
           // smelterij: kies het metaal
@@ -542,7 +553,8 @@
       }
       h += '<div class="ip-desc small">' + d.desc + '</div><div class="ip-btns">';
       if (b.built && d.cost) {
-        if (b.level < 3) {
+        if (b.up) h += '<button class="btn" data-act="cancelUpg">✖ Cancel upgrade</button>';
+        else if (b.level < 3) {
           const ml = g.maxLevel();
           if (b.level >= ml) h += '<button class="btn" disabled>⭐ Level ' + (b.level + 1) + ' at rank ' + VE.RANKS[b.level === 1 ? 1 : 3].name + '</button>';
           else { const c = VE.levelCost(d, b.level + 1); h += '<button class="btn good" data-act="upgrade" ' + (g.canAfford(c) ? '' : 'disabled') + '>⭐ Upgrade ' + costHtml(c, g) + '</button>'; }
@@ -679,6 +691,7 @@
     openHelp() {
       this.openModal('<h2>How to play</h2><div class="help">' +
         '<p>🏗️ <b>Build</b> from the bar at the bottom. Carriers bring materials and a builder raises the building.</p>' +
+        '<p>⭐ <b>Upgrades</b> work the same way: the gold is paid at once, carriers bring the materials, then a builder with a hammer upgrades the building behind scaffolding. It keeps working meanwhile and reaches the next level when the work is done.</p>' +
         '<p>📦 <b>Storage</b>: your starting supplies lie next to the Village Hall and are never refilled. Producers keep at most 6 of their goods; when that is full they stop working. Build <b>Storehouses</b> (60 goods each) and tick which goods each one keeps: carriers then bring them over. Without room, goods stay at the producer.</p>' +
         '<p>🛤️ <b>Paths</b> are not built: they wear in by themselves where settlers walk back and forth a lot. A trampled trail turns into a real path, and settlers walk faster on it. Paths that nobody uses grow over again.</p>' +
         '<p>🔗 <b>Production chains</b>: trees ➜ logs ➜ planks · wheat ➜ flour ➜ bread · grapes ➜ wine · game ➜ meat · ore + coal ➜ metal bars.</p>' +
