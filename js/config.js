@@ -26,11 +26,13 @@
     battleaxe: { name: 'Battle Axes', price: 34, rank: 2, weapon: true, tip: 'A heavy two-handed battle axe. Stored for future soldiers.' },
     dagger: { name: 'Daggers', price: 15, rank: 2, weapon: true, tip: 'A small iron dagger. Cheap to forge, easy to trade.' },
     bow: { name: 'Bows', price: 14, rank: 2, weapon: true, tip: 'A longbow carved from wood. Needs no iron.' },
-    crossbow: { name: 'Crossbows', price: 32, rank: 2, weapon: true, tip: 'A wooden crossbow with an iron bow. Stored for the defence of the village.' }
+    crossbow: { name: 'Crossbows', price: 32, rank: 2, weapon: true, tip: 'A wooden crossbow with an iron bow. Stored for the defence of the village.' },
+    // trainingsuitrusting: oefenzwaarden, gewatteerde schilden en stompe pijlen voor de kazerne
+    gear: { name: 'Training Gear', price: 8, rank: 2, tip: 'Wooden practice swords, padded shields and blunt arrows from the Weaponsmith. Recruits use it up while they train at the Barracks.' }
   };
   VE.RES_ORDER = ['log', 'stone', 'plank', 'grain', 'flour', 'bread', 'fish', 'grape', 'wine',
     'meat', 'coal', 'ironore', 'copperore', 'goldore', 'ironbar', 'copperbar', 'goldbar',
-    'sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow'];
+    'sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow', 'gear'];
   VE.WEAPONS = ['sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow'];
   /* voedsel waarmee nieuwe bewoners sneller komen (in deze volgorde gebruikt) */
   VE.FOOD = ['bread', 'fish', 'meat'];
@@ -56,7 +58,38 @@
     battleaxe: { name: 'Battle axes', inp: { ironbar: 2, plank: 2 }, out: { battleaxe: 1 }, time: 14 },
     dagger: { name: 'Daggers', inp: { ironbar: 1 }, out: { dagger: 1 }, time: 8 },
     bow: { name: 'Bows', inp: { plank: 3 }, out: { bow: 1 }, time: 10 },
-    crossbow: { name: 'Crossbows', inp: { plank: 2, ironbar: 1 }, out: { crossbow: 1 }, time: 14 }
+    crossbow: { name: 'Crossbows', inp: { plank: 2, ironbar: 1 }, out: { crossbow: 1 }, time: 14 },
+    gear: { name: 'Training gear', inp: { plank: 2 }, out: { gear: 2 }, time: 9 }
+  };
+
+  /* Soldaten (zie js/military.js). Elk type traint met één wapen uit de wapensmederij plus trainingsuitrusting.
+     hp: gezondheid · atk: schade per slag/schot · rate: slagen per seconde · range: bereik (tegels) ·
+     def: verdediging (trekt schade af) · speed: loopsnelheid (× een gewone bewoner) · time: trainingstijd (s).
+     strong: tegen dit type 50% extra schade, pierce: deel van de verdediging dat genegeerd wordt. Kringloop zonder winnaar:
+     bijl > zwaard > speer > bijl, en dolk > kruisboog > boog > dolk.
+     Balans: zware melee (bijl, zwaard) hebben veel leven, afstand (boog, kruisboog) is kwetsbaar maar raakt
+     van ver, de dolk is snel en goedkoop maar breekbaar, de speer houdt met zijn bereik de bijl op afstand. */
+  VE.SOLDIERS = {
+    swordsman: { name: 'Swordsman', icon: '🗡️', weapon: 'sword', gear: 1, gold: 12, time: 34, hp: 120, atk: 13, rate: 1.0, range: 0.6, def: 8, speed: 1.0, strong: 'spearman', drill: 'dummy',
+      tip: 'Sword and round shield. Sturdy all-rounder with the best armour; slips past spear points. Beware of axes.' },
+    archer: { name: 'Archer', icon: '🏹', weapon: 'bow', gear: 2, gold: 8, time: 30, hp: 75, atk: 10, rate: 0.9, range: 6, def: 2, speed: 1.08, strong: 'dagger', drill: 'target',
+      tip: 'Longbow. Shoots from far away and moves quickly, but cannot take many hits. Strong against lightly armoured dagger fighters.' },
+    spearman: { name: 'Spearman', icon: '🔱', weapon: 'spear', gear: 1, gold: 10, time: 28, hp: 115, atk: 11, rate: 0.95, range: 1.2, def: 6, speed: 0.96, strong: 'axeman', drill: 'drill',
+      tip: 'Long spear and kite shield. Keeps heavy axemen at a distance with its reach.' },
+    dagger: { name: 'Dagger Fighter', icon: '🔪', weapon: 'dagger', gear: 1, gold: 6, time: 22, hp: 75, atk: 7, rate: 2.2, range: 0.45, def: 3, speed: 1.3, strong: 'crossbowman', drill: 'dummy',
+      tip: 'Two quick daggers and light leather. The fastest soldier: rushes slow-loading crossbowmen, but fragile.' },
+    axeman: { name: 'Axeman', icon: '🪓', weapon: 'battleaxe', gear: 1, gold: 12, time: 32, hp: 135, atk: 21, rate: 0.62, range: 0.7, def: 4, speed: 0.9, strong: 'swordsman', drill: 'dummy',
+      tip: 'Heavy two-handed battle axe. Slow, mighty blows that split shields; little armour.' },
+    crossbowman: { name: 'Crossbowman', icon: '🎯', weapon: 'crossbow', gear: 2, gold: 12, time: 32, hp: 85, atk: 22, rate: 0.4, range: 7, def: 5, speed: 0.86, pierce: 0.6, strong: 'archer', drill: 'target',
+      tip: 'Crossbow with a long reload. The longest range; outranges archers, and bolts pierce armour.' }
+  };
+  VE.SOLDIER_ORDER = ['swordsman', 'archer', 'spearman', 'dagger', 'axeman', 'crossbowman'];
+  /* Schade van a op d (basis voor gevechten): aanvalskracht, verdediging (deels doorboord) en het voordeel. */
+  VE.soldierDamage = function (a, d) {
+    const A = VE.SOLDIERS[a], D = VE.SOLDIERS[d];
+    if (!A || !D) return 0;
+    const def = D.def * (1 - (A.pierce || 0));
+    return Math.max(1, Math.round((A.atk * (A.strong === d ? 1.5 : 1) - def * 0.5) * 10) / 10);
   };
 
   /* Ertsaders in de bergen (zie js/mining.js). id = waarde in world.ore. */
@@ -75,7 +108,8 @@
     miller: [0xf2efe6, 0xdedad0], baker: [0xf6e2c0, 0xffffff], fisher: [0x3f7fbf, 0x2c4f73],
     vintner: [0x7b3f8f, 0x5a7a2a], merchant: [0xc0392b, 0x2a2a2a], innkeeper: [0x9c4a2b, 0x6b2d1a],
     sawyer: [0xa0703f, 0x5a3a20], guard: [0x4a6fa5, 0x9aa5b1],
-    hunter: [0x4f6b2f, 0x3d5a22], miner: [0x6b5a4a, 0xe0b040], smelter: [0x5a4a42, 0x8a3a2a], blacksmith: [0x4a4a52, 0x2a2a2e]
+    hunter: [0x4f6b2f, 0x3d5a22], miner: [0x6b5a4a, 0xe0b040], smelter: [0x5a4a42, 0x8a3a2a], blacksmith: [0x4a4a52, 0x2a2a2e],
+    recruit: [0x9a8a6a, 0x6a5a3a]
   };
 
   VE.DEFS = {
@@ -134,13 +168,17 @@
     // wapensmederij: de smid smeedt het gekozen wapen aan het aambeeld (iron bars + planks)
     weaponsmith: { name: 'Weaponsmith', icon: '⚔️', cat: 'metal', rank: 2, cost: { plank: 6, stone: 6, ironbar: 1 }, worker: 'blacksmith', recipes: VE.WEAPON_RECIPES, recipe: 'sword',
       inp: VE.WEAPON_RECIPES.sword.inp, out: VE.WEAPON_RECIPES.sword.out, time: VE.WEAPON_RECIPES.sword.time, smoke: true, forge: true,
-      desc: 'A smith forges swords, spears, battle axes, daggers, bows and crossbows from iron bars and planks. Choose which weapon it makes. Weapons are stored for future soldiers, defence and trade.' }
+      desc: 'A smith forges swords, spears, battle axes, daggers, bows, crossbows and training gear from iron bars and planks. Choose what it makes. Weapons go to the Barracks or into storage.' },
+    // kazerne: dorpelingen trainen hier tot soldaat (wapen + trainingsuitrusting, zie VE.SOLDIERS en js/military.js)
+    barracks: { name: 'Barracks', icon: '🛡️', cat: 'military', rank: 2, size: 2, cost: { plank: 10, stone: 10, ironbar: 2 }, barracks: true,
+      desc: 'Settlers train here to become soldiers. Choose which soldiers and how many: carriers bring the weapons and training gear, then volunteers practise on dummies and targets. Your population stays the same.' }
   };
   VE.CATS = [
     { id: 'basic', name: 'Wood & Stone' },
     { id: 'food', name: 'Food' },
     { id: 'wine', name: 'Wine' },
     { id: 'metal', name: 'Mining' },
+    { id: 'military', name: 'Military' },
     { id: 'trade', name: 'Realm' }
   ];
 
@@ -168,7 +206,7 @@
       { id: 'v9', text: "Build a Hunter's Lodge", type: 'build', b: 'hunter', n: 1, reward: R(20) },
       { id: 'v10', text: 'Bring home 20 meat', type: 'produce', res: 'meat', n: 20, reward: R(40) }
     ] },
-    { name: 'Market Town', unlock: ['vineyard', 'winery', 'tavern', 'coalmine', 'ironmine', 'coppermine', 'smelter', 'weaponsmith'], quests: [
+    { name: 'Market Town', unlock: ['vineyard', 'winery', 'tavern', 'coalmine', 'ironmine', 'coppermine', 'smelter', 'weaponsmith', 'barracks'], quests: [
       { id: 'm1', text: 'Harvest 20 grapes', type: 'produce', res: 'grape', n: 20, reward: R(60) },
       { id: 'm2', text: 'Press 12 wine', type: 'produce', res: 'wine', n: 12, reward: R(80) },
       { id: 'm3', text: 'Open a Tavern', type: 'build', b: 'tavern', n: 1, reward: R(80) },

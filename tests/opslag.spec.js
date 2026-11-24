@@ -280,7 +280,7 @@ test.describe('Opslag en productie', () => {
       const midAfter = T.count(m); m.dispose();
       return { before, after, acc, v: sv.v, st: sv.buildings.find(b => b.t === 'warehouse').st, old: res, carriedAtSave, midBefore: mid.c, midAfter };
     });
-    expect(r.v).toBe(3);                              // save-versie 3 sinds de wapens
+    expect(r.v).toBe(4);                              // save-versie 4 sinds de kazerne
     expect(r.carriedAtSave).toBeGreaterThan(1);
     expect(r.midAfter).toEqual(r.midBefore);
     for (const k of Object.keys(r.before)) expect(r.after[k]).toBe(r.before[k]);

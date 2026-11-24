@@ -190,7 +190,9 @@
     // wapens: plat, netjes naast en op elkaar (lengte langs x)
     sword: rows(3, 0.078, 4, 0.016), spear: rows(4, 0.036, 3, 0.016), battleaxe: rows(3, 0.12, 3, 0.017),
     dagger: (() => { const o = []; for (let l = 0; l < 2; l++) for (let c = 0; c < 2; c++) for (let r = 0; r < 3; r++) o.push({ x: (c - 0.5) * 0.15, y: 0.008 + l * 0.014, z: (r - 1) * 0.048, ry: c ? Math.PI : 0 }); return o; })(),
-    bow: rows(3, 0.03, 3, 0.014), crossbow: rows(1, 0, 8, 0.024)
+    bow: rows(3, 0.03, 3, 0.014), crossbow: rows(1, 0, 8, 0.024),
+    // trainingsuitrusting: bundels op hun schildje, 2 × 2 per laag
+    gear: grid(0.11, 0.028, 3)
   };
   function rows(n, sp, layers, h) {   // n wapens naast elkaar per laag, `layers` lagen
     const o = [];
@@ -201,7 +203,7 @@
   // hoogte van één volle stapel: past een goed niet in zijn vakken, dan komt er een tweede laag stapel bovenop
   const LAYER_H = {};
   for (const r in LAYOUT) { let lo = 1, hi = 0; for (const p of LAYOUT[r]) { lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); } LAYER_H[r] = hi + lo; }
-  const NEAT = new Set(['stone', 'plank', 'log', 'ironbar', 'copperbar', 'goldbar', 'flour', 'wine', 'grape', 'sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow']);   // strak gestapeld: geen schuine stukken
+  const NEAT = new Set(['stone', 'plank', 'log', 'ironbar', 'copperbar', 'goldbar', 'flour', 'wine', 'grape', 'sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow', 'gear']);   // strak gestapeld: geen schuine stukken
 
   // één schaal voor alle goederen in de wereld (stapels én lading van dragers): elk stuk is overal even groot
   const PILE_B = VE.ITEM_SCALE;
@@ -302,9 +304,13 @@
         if (!keys.length) continue;
         const md = VE.buildModel(b.type, b.level), spots = (md.inp && md.inp.length ? md.inp : VE.IN_SPOT && VE.IN_SPOT[b.type]) || null;
         if (!spots) continue;
+        // kazerne: wapens rechtop in de rekken (6 per rek, op volgorde van VE.WEAPONS), de rest op de stapels
+        const racks = b.def.barracks ? (md.racks || (VE.RACKS_SPOT && VE.RACKS_SPOT[b.type])) : null, rackAt = {};
+        let rk = 0;
+        if (racks) for (const r of VE.WEAPONS) if (b.input[r] > 0) { rackAt[r] = rk; rk += b.input[r]; sig += 'r' + b.id + r + b.input[r] + ','; }
         const at = {};
-        keys.forEach((r, i) => { if (i < spots.length) { at[r] = spots[i]; sig += 'i' + b.id + r + b.input[r] + ','; } });
-        ins.push({ b: b, at: at }); sig += b.level + ':' + b.y.toFixed(2) + (md.inp ? 'g' : 'p') + ';';
+        keys.filter(r => rackAt[r] === undefined).forEach((r, i) => { if (i < spots.length) { at[r] = spots[i]; sig += 'i' + b.id + r + b.input[r] + ','; } });
+        ins.push({ b: b, at: at, racks: racks, rackAt: rackAt }); sig += b.level + ':' + b.y.toFixed(2) + (md.inp ? 'g' : 'p') + (md.racks ? 'R' : '') + ';';
       }
       // bouwplaatsen: geleverde maar nog niet verbouwde materialen liggen op de grond. De bouwer verbruikt
       // ze één voor één (used); het laatste stuk verdwijnt precies als het gebouw (of de upgrade) klaar is.
@@ -367,6 +373,16 @@
           for (let q = 0; q < amt; q++) put(b, pr.spot[0] + ox, pr.spot[1], pr.spot[2], PILE_B, q, b.id);
         }
         for (const it of ins) {
+          if (it.racks && it.rackAt[r] !== undefined) {
+            const b = it.b, amt = it.b.input[r];
+            for (let q = 0; q < amt && n < INST; q++) {
+              const k = it.rackAt[r] + q, rack = it.racks[Math.floor(k / RACK_N)]; if (!rack) break;
+              rackPose(r, k % RACK_N, rack);
+              _m.compose(_rw.set(b.cx + rack[0] + _rp.x, b.y + rack[1] + _rp.y, b.cz + rack[2] + _rp.z), _q, _s.set(PILE_B, PILE_B, PILE_B));
+              mesh.setMatrixAt(n++, _m);
+            }
+            continue;
+          }
           const sp = it.at[r]; if (!sp) continue;
           const amt = Math.min(L * 2, it.b.input[r]);
           for (let q = 0; q < amt; q++) put(it.b, sp[0], sp[1], sp[2], PILE_B, q, it.b.id * 3);
@@ -691,6 +707,46 @@
   }
   const _e2 = new THREE.Euler(0, 0, 0, 'XYZ'), _q2 = new THREE.Quaternion();
 
+  /* ---------------- Pijlen en bouten (kazerne) ----------------
+     Een schot vliegt in een lage boog naar de schijf, met de punt in de vliegrichting, en blijft daarna een
+     paar seconden in de schijf steken. Eén InstancedMesh voor alles (één draw call). */
+  const _ea = new THREE.Euler(), _qa = new THREE.Quaternion();
+  class Arrows {
+    constructor(root) {
+      const m = new VE.Model(77);
+      m.box(0.16, 0.006, 0.006, 0xa0703f, { x: -0.06, y: -0.003, j: 0 });
+      m.cone(0.008, 0.026, 4, 0x9aa1a8, { x: 0.03, rz: -Math.PI / 2, j: 0 });
+      m.box(0.03, 0.012, 0.002, 0xf2f0e6, { x: -0.13, y: -0.006, j: 0 }); m.box(0.03, 0.002, 0.012, 0xf2f0e6, { x: -0.13, y: -0.001, j: 0 });
+      this.mesh = new THREE.InstancedMesh(m.build(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 4 }), 64);
+      this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.castShadow = true;
+      root.add(this.mesh); this.list = [];
+    }
+    shoot(e) {
+      if (this.list.length >= 64) this.list.shift();
+      const d = Math.hypot(e.tx - e.x, e.tz - e.z);
+      this.list.push({ x0: e.x, y0: e.y, z0: e.z, x1: e.tx, y1: e.ty, z1: e.tz, t: 0, dur: Math.max(0.12, d / (e.bolt ? 9 : 6.5)), arc: e.bolt ? 0.02 : 0.05 + d * 0.03, stuck: 0, s: e.bolt ? 0.8 : 1 });
+    }
+    update(dt) {
+      let n = 0; const keep = [];
+      for (const a of this.list) {
+        if (a.t < 1) {
+          a.t = Math.min(1, a.t + dt / a.dur);
+          if (a.t >= 1) VE.bus.emit('sfx', { n: 'thud2', x: a.x1, z: a.z1 });
+        } else a.stuck += dt;
+        if (a.stuck > 3.5) continue;
+        keep.push(a);
+        const t = a.t, x = VE.lerp(a.x0, a.x1, t), z = VE.lerp(a.z0, a.z1, t), y = VE.lerp(a.y0, a.y1, t) + Math.sin(t * Math.PI) * a.arc;
+        // richting: afgeleide van de baan (punt vooruit, licht omlaag aan het eind)
+        const dx = a.x1 - a.x0, dz = a.z1 - a.z0, dy = (a.y1 - a.y0) + Math.cos(t * Math.PI) * Math.PI * a.arc, h = Math.hypot(dx, dz);
+        _ea.set(0, Math.atan2(-dz, dx), Math.atan2(dy, h), 'YZX'); _qa.setFromEuler(_ea);
+        const back = t >= 1 ? 0.03 : 0;                                // in de schijf: de punt zit erin
+        _m.compose(_p.set(x + dx / (h || 1) * back, y, z + dz / (h || 1) * back), _qa, _s.set(a.s, a.s, a.s));
+        this.mesh.setMatrixAt(n++, _m);
+      }
+      this.list = keep; this.mesh.count = n; this.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
   class FX {
     constructor(root, game) {
       this.root = root; this.game = game;
@@ -712,8 +768,10 @@
         leaves: e => { for (let i = 0; i < 10; i++) { const a = Math.random() * 6.28; this.leaves.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.6, vy: 0.6 + Math.random() * 0.5, vz: Math.sin(a) * 0.6, g: 1.4, life: 1.4, s0: 0.03, s1: 0.035, sy: 0.4 }); } },
         sparks: e => { for (let i = 0; i < 2; i++) { const a = Math.random() * 6.28; this.sparks.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.35, vy: 0.7 + Math.random() * 0.6, vz: Math.sin(a) * 0.35 + 0.15, g: 2.2, life: 0.5 + Math.random() * 0.3, s0: 0.012, s1: 0.004 }); } },
         poof: e => { for (let i = 0; i < 9; i++) { const a = i * 0.7; this.poofs.emit({ x: e.x, y: e.y, z: e.z, vx: Math.cos(a) * 0.5, vy: 0.35 + (i % 3) * 0.15, vz: Math.sin(a) * 0.5, life: 0.8, s0: 0.05, s1: 0.16 }); } },
+        arrow: e => this.arrows.shoot(e),
         splash: e => { for (let i = 0; i < 8; i++) { const a = Math.random() * 6.28; this.splash.emit({ x: e.x, y: 0.03, z: e.z, vx: Math.cos(a) * 0.4, vy: 0.9 + Math.random() * 0.5, vz: Math.sin(a) * 0.4, g: 4, life: 0.6, s0: 0.025, s1: 0.03 }); } }
       };
+      this.arrows = new Arrows(root);
       for (const k in this.handlers) bus.on(k, a => { if (this.game === VE.game) this.handlers[k](a); });
       this.makeClouds();
       this.butterflies = new Butterflies(this.root, this.game);   // vogels: zie js/wildlife.js (zangvogels met echte vlucht)
@@ -734,7 +792,7 @@
       }
     }
     update(dt, t) {
-      this.smoke.update(dt); this.dust.update(dt); this.leaves.update(dt); this.chips.update(dt); this.splash.update(dt); this.sparks.update(dt); this.poofs.update(dt);
+      this.smoke.update(dt); this.dust.update(dt); this.leaves.update(dt); this.chips.update(dt); this.splash.update(dt); this.sparks.update(dt); this.poofs.update(dt); this.arrows.update(dt);
       // clouds
       for (const c of this.clouds) {
         c.mesh.position.x += c.sp * dt;

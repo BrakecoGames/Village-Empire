@@ -39,6 +39,11 @@ setup(seed=8101, extra_palette={
     "Bandaid": (0xF0C9A0, 0.0), "Ribbon": (0xD94A8A, 0.0), "Nest": (0x8A6A3A, 0.0), "EggB": (0xBFE0F0, 0.0),
     "Pencil": (0xF2C14E, 0.0), "Spoon": (0xC9CED4, 0.0), "Quill": (0xF7F3EA, 0.0), "Horse": (0x7A7F86, 0.0),
     "Lantern": (0xFFD27A, 0.0),
+    # soldaten (vaste kleuren; het lijf krijgt in de game de kleur van het soldatentype)
+    "SteelH": (0xB4BCC4, 0.02), "SteelD": (0x7E868E, 0.02), "Mail": (0x8C949C, 0.04), "Leather": (0x7A4E2C, 0.04),
+    "LeatherD": (0x553420, 0.03), "Fur": (0x8A6A4A, 0.06), "FurL": (0xB8A07A, 0.05), "HoodG": (0x3E6B2E, 0.03),
+    "HoodD": (0x3A3446, 0.03), "Plume": (0xC8402F, 0.03), "Banner": (0x2F5FA8, 0.02), "BannerG": (0xE8B73A, 0.02),
+    "Fletch": (0xF2F0E6, 0.0), "ShieldW": (0xA0703F, 0.05), "Bolt": (0x8A6A40, 0.03),
 })
 
 # ------------------------------------------------------------------ rig (game-coördinaten, rustpose)
@@ -50,6 +55,7 @@ NODES = {   # naam: (ouder, wereldpositie in rust)
     "head": ("torso", (0, 0.195, 0)),
     "armR": ("torso", (0.062, 0.18, 0)), "armL": ("torso", (-0.062, 0.18, 0)),
     "tool": ("armR", (0.062, 0.092, 0.012)),
+    "toolL": ("armL", (-0.062, 0.092, 0.012)),          # linkerhand: boog, tweede dolk (soldaten)
     "carry": ("torso", (0, 0.15, 0.09)),
 }
 RIG = {}
@@ -426,6 +432,126 @@ EGGS = {
 for (node, name), fn in EGGS.items():
     P.append(part(node, name, fn))
 
+# ------------------------------------------------------------------ soldaten (kazerne)
+# Uitrusting per soldatentype; het lijf (Tint) krijgt in de game de kleur van het type. Helmen en kappen
+# vervangen de hoed. Wapens komen uit items.glb en zitten in de 'tool'- of 'toolL'-hand.
+def helm_nasal():        # zwaardvechter: spitse stalen helm met neusstuk en maliënnek
+    dome((0, HC + 0.006, 0), HR + 0.011, -0.004, mat="SteelH", sy=1.14)
+    cyl(0.0, 0.03, 0.03, 8, "SteelH", pos=(0, HC + 0.066, 0), smooth=False)
+    cyl(HR + 0.013, HR + 0.013, 0.012, 16, "SteelD", pos=(0, HC + 0.0, 0), cap=False)
+    box(0.011, 0.05, 0.008, "SteelD", pos=(0, HC - 0.03, HR + 0.012), bevel=0.002)
+    blob(0.06, "Mail", (0, HC - 0.035, -0.032), scale=(1.15, 0.75, 0.75), sub=1)
+
+
+def helm_plume():        # speervechter: ronde stalen kap met rode pluim
+    dome((0, HC + 0.006, 0), HR + 0.011, 0.0, mat="SteelH", sy=1.02)
+    cyl(HR + 0.02, HR + 0.02, 0.007, 16, "SteelD", pos=(0, HC + 0.004, 0))
+    cyl(0.006, 0.006, 0.02, 6, "SteelD", pos=(0, HC + HR + 0.012, 0))
+    for k in range(4):
+        blob(0.016, "Plume", (0, HC + HR + 0.034 - k * 0.006, -0.012 - k * 0.016), scale=(0.55, 1.0, 1.25), sub=1)
+
+
+def hood_archer():       # boogschutter: groene kap met puntige slip en een veer
+    dome((0, HC + 0.008, -0.004), HR + 0.012, 0.022, back=0.7, mat="HoodG")
+    cyl(HR + 0.004, HR + 0.012, 0.03, 14, "HoodG", pos=(0, HC - 0.05, -0.004), cap=False)
+    cyl(0.0, 0.026, 0.1, 6, "HoodG", pos=(0, HC + 0.03, -0.06), rot=(-2.0, 0, 0), smooth=False)    # slip naar achteren
+    beam((0.05, HC + 0.03, -0.02), (0.085, HC + 0.12, -0.05), 0.008, "Fletch")
+
+
+def hood_rogue():        # dolkvechter: donkere kap en een sjaal voor de mond
+    dome((0, HC + 0.008, -0.004), HR + 0.013, 0.018, back=0.55, mat="HoodD")
+    cyl(HR + 0.006, HR + 0.014, 0.034, 14, "HoodD", pos=(0, HC - 0.06, -0.004), cap=False)
+    half_tube((0, HC - 0.026, 0.012), (1, 0, 0), (0, -0.25, 1), HR + 0.004, 0.12, "HoodD", seg=8, cap=False)
+
+
+def helm_fur():          # bijlvechter: ronde helm met wangstukken en een bontrand
+    dome((0, HC + 0.006, 0), HR + 0.011, 0.002, mat="SteelD", sy=1.05)
+    cyl(HR + 0.017, HR + 0.017, 0.02, 14, "Fur", pos=(0, HC - 0.004, 0), cap=False)
+    for sx in (-1, 1):
+        box(0.01, 0.04, 0.03, "SteelD", pos=(sx * (HR + 0.008), HC - 0.04, 0.02), bevel=0.003)
+    box(0.012, 0.012, HR * 1.9, "SteelH", pos=(0, HC + HR + 0.004, 0), rot=(0, 0, 0), bevel=0.003)    # kam
+
+
+def helm_brim():         # kruisboogschutter: ijzeren hoed met brede rand en kinriem
+    dome((0, HC + 0.008, 0), HR + 0.011, 0.006, mat="SteelH")
+    cyl(0.105, 0.098, 0.012, 18, "SteelD", pos=(0, HC + 0.01, 0), rot=(-0.06, 0, 0))
+    for sx in (-1, 1):
+        box(0.006, 0.05, 0.01, "LeatherD", pos=(sx * (HR + 0.002), HC - 0.04, 0.0))
+
+
+for name, fn in (("helm_nasal", helm_nasal), ("helm_plume", helm_plume), ("hood_archer", hood_archer),
+                 ("hood_rogue", hood_rogue), ("helm_fur", helm_fur), ("helm_brim", helm_brim)):
+    P.append(part("head", name, fn))
+
+
+def mail():              # maliënkolder: rok onder de riem en schouderstukken (past over beide lijven)
+    cyl(0.064, 0.076, 0.05, 14, "Mail", pos=(0, 0.058, 0), cap=False)
+    for sx in (-1, 1):
+        blob(0.028, "Mail", (sx * 0.056, 0.18, 0), scale=(1.1, 0.8, 1.15), sub=1)
+
+
+def tabard():            # wapenrok in de dorpskleuren met gouden embleem, voor en achter
+    for sz in (1, -1):
+        box(0.072, 0.115, 0.008, "Banner", pos=(0, 0.064, sz * 0.071), rot=(-sz * 0.1, 0, 0), bevel=0.002)
+        box(0.074, 0.012, 0.009, "BannerG", pos=(0, 0.066, sz * 0.073), rot=(-sz * 0.1, 0, 0))
+    box(0.026, 0.03, 0.006, "BannerG", pos=(0, 0.128, 0.078), rot=(-0.1, 0, 0), bevel=0.002)
+    cyl(0.0, 0.015, 0.016, 3, "BannerG", pos=(0, 0.128, 0.078), rot=(math.pi / 2 + 0.1, 0, 0), smooth=False)
+
+
+def quiver():            # pijlkoker op de rug met witte veren, riem schuin over de borst
+    cyl(0.019, 0.021, 0.12, 8, "Leather", pos=(0.025, 0.085, -0.068), rot=(0.28, 0, -0.35), smooth=False)
+    for k in range(5):
+        a = k / 5 * 2 * math.pi
+        box(0.006, 0.03, 0.012, "Fletch", pos=(0.06 + math.cos(a) * 0.008, 0.2, -0.1 + math.sin(a) * 0.008), rot=(0.28, a, -0.35))
+    beam((0.05, 0.19, 0.03), (-0.05, 0.09, 0.06), 0.008, "LeatherD")
+    beam((0.05, 0.19, -0.03), (-0.04, 0.1, -0.06), 0.008, "LeatherD")
+
+
+def boltcase():          # boutenkoker aan de rechterheup
+    box(0.03, 0.06, 0.03, "Leather", pos=(0.068, 0.045, 0.012), rot=(0, 0, -0.12), bevel=0.004)
+    for k in range(3):
+        box(0.005, 0.02, 0.005, "Bolt", pos=(0.064 + (k - 1) * 0.008, 0.105, 0.012), rot=(0, 0, -0.12))
+
+
+def sheaths():           # dolkvechter: twee gekruiste riemen met schedes
+    for sx in (-1, 1):
+        beam((sx * 0.05, 0.19, 0.03), (-sx * 0.055, 0.08, 0.07), 0.008, "LeatherD")
+        beam((sx * 0.05, 0.19, -0.03), (-sx * 0.05, 0.09, -0.065), 0.008, "LeatherD")
+        box(0.016, 0.055, 0.012, "Leather", pos=(sx * 0.07, 0.04, 0.02), rot=(0.2, 0, sx * 0.25), bevel=0.003)
+    box(0.014, 0.014, 0.006, "SteelH", pos=(0, 0.135, 0.068))
+
+
+def fur():               # bijlvechter: bontmantel over de schouders
+    for k in range(9):
+        a = k / 9 * 2 * math.pi
+        blob(0.03, "Fur" if k % 2 else "FurL", (math.cos(a) * 0.05, 0.185, math.sin(a) * 0.045 - 0.004), scale=(1.1, 0.8, 1.0), sub=1)
+    box(0.09, 0.12, 0.012, "Fur", pos=(0, 0.07, -0.07), rot=(0.12, 0, 0), bevel=0.004)
+
+
+for name, fn in (("mail", mail), ("tabard", tabard), ("quiver", quiver), ("boltcase", boltcase), ("sheaths", sheaths), ("fur", fur)):
+    P.append(part("torso", name, fn))
+
+
+def shield_round():      # rond schild in de dorpskleuren, aan de linkerarm (voorkant naar +z)
+    x, y, z = -0.07, 0.115, 0.036
+    cyl(0.056, 0.056, 0.012, 14, "Banner", pos=(x, y, z), rot=(math.pi / 2, 0, 0), center=True, smooth=False)
+    cyl(0.058, 0.058, 0.008, 14, "SteelD", pos=(x, y, z - 0.004), rot=(math.pi / 2, 0, 0), center=True, smooth=False, cap=False)
+    cyl(0.017, 0.017, 0.012, 8, "BannerG", pos=(x, y, z + 0.006), rot=(math.pi / 2, 0, 0), center=True, smooth=False)
+    for a in (0.0, math.pi / 2):
+        box(0.1, 0.008, 0.004, "BannerG", pos=(x, y, z + 0.007), rot=(0, 0, a), base=False)
+
+
+def shield_kite():       # speervechter: langwerpig ruitschild, punt naar beneden
+    x, y, z = -0.07, 0.1, 0.036
+    prism([(-0.045, 0.03), (0.045, 0.03), (0.04, -0.02), (0.0, -0.085), (-0.04, -0.02)], 0.012, "ShieldW", pos=(x, y + 0.03, z), axis="z")
+    prism([(-0.035, 0.025), (0.035, 0.025), (0.031, -0.018), (0.0, -0.072), (-0.031, -0.018)], 0.014, "Plume", pos=(x, y + 0.03, z + 0.001), axis="z")
+    box(0.012, 0.09, 0.006, "Fletch", pos=(x, y - 0.05, z + 0.009))
+
+
+P.append(part("armL", "shield_round", shield_round))
+P.append(part("armL", "shield_kite", shield_kite))
+P.append(part("armR", "bracer", lambda: cyl(0.02, 0.019, 0.03, 8, "Leather", pos=(0.062, 0.1, 0), smooth=False)))
+
 # ------------------------------------------------------------------ animaties
 FPS = 24
 CLIPS = {}
@@ -438,6 +564,8 @@ def clip(name, frames, keys):
     for _, d in keys:
         if "tool" in d and "armR" in d:
             d["tool"] = dict(d["tool"], rx=d["tool"].get("rx", 0.0) - d["armR"].get("rx", 0.0))
+        if "toolL" in d and "armL" in d:
+            d["toolL"] = dict(d["toolL"], rx=d["toolL"].get("rx", 0.0) - d["armL"].get("rx", 0.0))
     CLIPS[name] = (frames, keys)
 
 
@@ -558,6 +686,78 @@ clip("fish", 108, [      # hengel vasthouden, af en toe een rukje
     (0.6, {"tool": k(rx=0.72), "armR": k(rx=-1.05, rz=0.06), "head": k(rx=0.02)}),
     (0.7, {"tool": k(rx=0.85), "armR": k(rx=-0.9, rz=0.06)}),
     (1.0, {"armR": k(rx=-0.9, rz=0.06), "armL": k(rx=-0.85, rz=-0.25), "tool": k(rx=0.85), "torso": k(rx=0.05), "head": k(rx=0.08)}),
+])
+
+
+# ------------------------------------------------------------------ soldaten: houding, marcheren, oefenen
+# 'tool' = rechterhand (zwaard, speer, bijl, dolk, kruisboog), 'toolL' = linkerhand (boog, tweede dolk);
+# hoeken van tool/toolL t.o.v. het lichaam: 0 = rechtop, 1.57 = naar voren, 3.14 = omlaag.
+GUARD = {"armR": k(rx=-0.5, rz=0.12), "tool": k(rx=0.12), "armL": k(rx=-0.42, rz=-0.22), "toolL": k(rx=0.1),
+         "legR": k(rx=-0.1, rz=0.07), "legL": k(rx=0.12, rz=-0.07), "torso": k(ry=0.08, rx=-0.03), "head": k(), "hips": k()}
+clip("guard", 96, [      # stevige wachthouding: wapen voor het lijf, voeten uit elkaar, af en toe rondkijken
+    (0.0, dict(GUARD)),
+    (0.2, {"hips": k(dy=0.002), "torso": k(ry=0.08, rx=-0.05), "head": k(ry=0.3)}),
+    (0.42, {"hips": k(dy=0.0), "torso": k(ry=0.08, rx=-0.03), "head": k(ry=0.32, rx=0.03)}),
+    (0.6, {"head": k()}),
+    (0.75, {"hips": k(dy=0.002), "head": k(ry=-0.34)}),
+    (0.9, {"hips": k(dy=0.0), "head": k(ry=-0.3)}),
+    (1.0, dict(GUARD)),
+])
+ML = 0.62
+clip("march", 24, [      # in de pas: rechterarm houdt het wapen stil, linkerarm zwaait, rechte rug
+    (0.0, {"legR": k(rx=-ML), "legL": k(rx=ML), "armR": k(rx=-0.42, rz=0.1), "tool": k(rx=0.1), "armL": k(rx=0.5, rz=-0.12), "toolL": k(rx=0.1),
+           "hips": k(), "torso": k(ry=0.05, rx=-0.02), "head": k()}),
+    (0.25, {"legR": k(), "legL": k(), "armL": k(rz=-0.12), "hips": k(dy=0.013), "armR": k(rx=-0.44, rz=0.1), "tool": k(rx=0.1)}),
+    (0.5, {"legR": k(rx=ML), "legL": k(rx=-ML), "armL": k(rx=-0.5, rz=-0.12), "hips": k(), "torso": k(ry=-0.05, rx=-0.02), "armR": k(rx=-0.42, rz=0.1), "tool": k(rx=0.1)}),
+    (0.75, {"legR": k(), "legL": k(), "armL": k(rz=-0.12), "hips": k(dy=0.013), "armR": k(rx=-0.44, rz=0.1), "tool": k(rx=0.1)}),
+    (1.0, {"legR": k(rx=-ML), "legL": k(rx=ML), "armR": k(rx=-0.42, rz=0.1), "tool": k(rx=0.1), "armL": k(rx=0.5, rz=-0.12), "toolL": k(rx=0.1),
+           "hips": k(), "torso": k(ry=0.05, rx=-0.02), "head": k()}),
+])
+# zwaard: schild naar voren, hoog uithalen en schuin neerslaan op de pop (klap aan het eind van de cyclus)
+swing("slash", 22, -2.35, -0.5, -0.75, 1.55, 0.55, 0.9, lean=(-0.12, 0.28), two_hands=False, crouch=0.25)
+# strijdbijl: met twee handen ver boven het hoofd en vol neerslaan
+swing("cleave", 32, -2.85, -1.05, -0.35, 2.05, 0.6, 0.9, lean=(-0.22, 0.42), two_hands=True, crouch=0.45)
+D0 = {"armR": k(rx=-1.0, rz=0.12), "tool": k(rx=1.35), "armL": k(rx=-0.95, rz=-0.15), "toolL": k(rx=1.25),
+      "torso": k(ry=0.0, rx=0.08), "legR": k(rx=-0.15), "legL": k(rx=0.2), "hips": k(dy=-0.006)}
+clip("stab", 12, [       # dolken: snel terugtrekken en toesteken, licht gebukt
+    (0.0, dict(D0)),
+    (0.45, {"armR": k(rx=-0.7, rz=0.2), "tool": k(rx=1.1), "armL": k(rx=-1.1, rz=-0.1), "toolL": k(rx=1.4), "torso": k(ry=0.28, rx=0.05), "hips": k(dy=-0.008)}),
+    (0.88, {"armR": k(rx=-1.6, rz=0.0), "tool": k(rx=1.57), "armL": k(rx=-0.85, rz=-0.2), "toolL": k(rx=1.2), "torso": k(ry=-0.22, rx=0.14),
+            "legR": k(rx=-0.3), "hips": k(dy=-0.01)}),
+    (1.0, dict(D0)),
+])
+S0 = {"armR": k(rx=-0.55, rz=0.14), "tool": k(rx=1.55), "armL": k(rx=-1.05, rz=-0.3), "toolL": k(rx=0.2),
+      "torso": k(ry=0.35, rx=0.02), "legR": k(rx=0.25), "legL": k(rx=-0.32), "hips": k(dy=-0.006), "head": k(ry=-0.3)}
+clip("thrust", 25, [     # speer: zijwaartse stand, terugnemen en met een uitval naar voren steken
+    (0.0, dict(S0)),
+    (0.55, {"armR": k(rx=-0.3, rz=0.18), "tool": k(rx=1.5), "armL": k(rx=-0.8, rz=-0.32), "torso": k(ry=0.5, rx=-0.05), "hips": k(dy=-0.008), "head": k(ry=-0.42)}),
+    (0.9, {"armR": k(rx=-1.35, rz=0.05), "tool": k(rx=1.6), "armL": k(rx=-1.45, rz=-0.2), "torso": k(ry=0.1, rx=0.25),
+           "legL": k(rx=-0.7), "legR": k(rx=0.45), "hips": k(dy=-0.016), "head": k(ry=-0.1)}),
+    (1.0, dict(S0)),
+])
+B0 = {"armL": k(rx=-1.25, rz=-0.12), "toolL": k(rx=0.12), "armR": k(rx=-1.3, rz=-0.25), "tool": k(rx=0.0),
+      "torso": k(ry=-0.4), "head": k(ry=0.35), "legR": k(rx=0.12, rz=0.06), "legL": k(rx=-0.12, rz=-0.06)}
+clip("shoot", 46, [      # boog: pijl uit de koker, opleggen, uittrekken, richten en loslaten (aan het eind)
+    (0.0, dict(B0)),
+    (0.14, {"armR": k(rx=-2.75, rz=0.45), "tool": k(rx=0.0), "head": k(ry=0.2)}),
+    (0.3, {"armR": k(rx=-1.4, rz=-0.28), "tool": k(rx=0.0), "armL": k(rx=-1.35, rz=-0.1), "toolL": k(rx=0.1), "head": k(ry=0.35)}),
+    (0.48, {"armL": k(rx=-1.57, rz=0.0), "toolL": k(rx=0.0), "armR": k(rx=-1.55, rz=0.35), "tool": k(rx=0.0), "torso": k(ry=-0.45, rx=-0.02)}),
+    (0.9, {"armR": k(rx=-1.6, rz=0.72), "tool": k(rx=0.0), "armL": k(rx=-1.6, rz=0.0), "toolL": k(rx=0.0), "torso": k(ry=-0.48, rx=-0.04), "head": k(ry=0.4, rx=0.04)}),
+    (0.97, {"armR": k(rx=-1.42, rz=1.05), "tool": k(rx=0.0), "armL": k(rx=-1.52, rz=0.0), "toolL": k(rx=0.05), "torso": k(ry=-0.44, rx=-0.01)}),
+    (1.0, dict(B0)),
+])
+X0 = {"armR": k(rx=-1.45, rz=-0.06), "tool": k(rx=1.57), "armL": k(rx=-1.5, rz=0.38), "toolL": k(rx=0.2),
+      "torso": k(rx=0.05, ry=0.06), "head": k(rx=0.08), "hips": k(), "legR": k(rx=0.15), "legL": k(rx=-0.15)}
+clip("xbow", 62, [       # kruisboog: richten, schieten (terugslag), laten zakken, opspannen en weer richten
+    (0.0, dict(X0)),
+    (0.05, {"armR": k(rx=-1.62, rz=-0.06), "tool": k(rx=1.4), "armL": k(rx=-1.6, rz=0.38), "torso": k(rx=-0.06, ry=0.06)}),
+    (0.16, {"armR": k(rx=-0.55, rz=0.05), "tool": k(rx=2.7), "armL": k(rx=-0.6, rz=0.0), "torso": k(rx=0.2, ry=0.0), "head": k(rx=0.25)}),
+    (0.3, {"armL": k(rx=-0.95, rz=-0.3), "armR": k(rx=-0.55, rz=0.05), "tool": k(rx=2.7), "torso": k(rx=0.35), "hips": k(dy=-0.012)}),
+    (0.44, {"armL": k(rx=-0.55, rz=0.12)}),
+    (0.58, {"armL": k(rx=-0.95, rz=-0.3)}),
+    (0.7, {"armL": k(rx=-0.6, rz=0.1), "armR": k(rx=-0.55, rz=0.05), "tool": k(rx=2.7), "torso": k(rx=0.3), "hips": k(dy=-0.01)}),
+    (0.85, dict(X0)),
+    (1.0, dict(X0)),
 ])
 
 

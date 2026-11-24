@@ -516,6 +516,45 @@
     ex.anims.push({ geo: hot.build(), x: 0.055, y: 0.193, z: 0.2, kind: 'hotblade' });
   };
 
+  /* Kazerne (reserve; de GLB levert het echte model): slaapzaal achterop, omheind oefenterrein met poppen
+     (geanimeerd: 'dummy0', 'dummy1'), schietschijven, een oefenpaal en twee wapenrekken. Zelfde plekken als
+     barracks.py (VE.DRILL_SPOT, VE.RACKS_SPOT, VE.IN_SPOT). */
+  function dummyGeo() {
+    const d = new VE.Model(98);
+    d.box(0.16, 0.02, 0.03, C.timber, {}); d.box(0.03, 0.02, 0.16, C.timber, {});
+    d.cyl(0.016, 0.02, 0.36, 6, C.wood, {});
+    d.ball(0.06, 0xe2c46a, { y: 0.2, sy: 1.35 }, 1);
+    d.ball(0.042, 0xbfa77a, { y: 0.335 }, 1);
+    d.box(0.018, 0.018, 0.26, C.timber, { y: 0.26 });
+    d.cyl(0.05, 0.05, 0.012, 9, C.wood, { x: -0.02, y: 0.24, z: 0.13, rz: PI / 2 });
+    return d.build();
+  }
+  B.barracks = function (m, lvl, ex) {
+    foundation(m, 1.9, 1.9, C.stoneD);
+    m.box(1.78, 0.012, 1.22, 0xd8c08a, { z: 0.32, j: 0.04 });
+    house(m, { x: lvl >= 3 ? -0.1 : 0, z: -0.64, w: lvl >= 3 ? 1.4 : 1.6, d: 0.58, h: 0.4, roof: lvl >= 3 ? C.slate : C.roofR, wall: lvl >= 3 ? C.stone : C.plaster, timber: lvl < 3 });
+    door(m, 0.25, -0.34);
+    for (const x of [-0.62, -0.38, 0.55]) windowAt(m, x, 0.27, -0.34, 'z', x > 0);
+    chimney(m, -0.45, -0.7, 0.55, 0.3); ex.chimneys.push([-0.45, 0.9, -0.7]);
+    fence(m, -0.93, -0.33, -0.93, 0.93, 6); fence(m, 0.93, -0.33, 0.93, 0.93, 6);
+    fence(m, -0.93, 0.93, 0.28, 0.93, 5); fence(m, 0.72, 0.93, 0.93, 0.93, 1);
+    for (const x of [0.3, 0.7]) m.box(0.04, 0.32, 0.04, C.timber, { x: x, z: 0.93 });
+    m.box(0.46, 0.024, 0.024, C.timber, { x: 0.5, y: 0.3, z: 0.93 });
+    m.box(0.11, 0.09, 0.014, 0x2f5fa8, { x: 0.5, y: 0.27, z: 0.945 });
+    // wapenrekken en pallet
+    for (const x of [-0.6, -0.18]) { m.box(0.36, 0.024, 0.075, C.wood, { x: x }); m.box(0.38, 0.018, 0.018, C.timber, { x: x, y: 0.2, z: -0.05 }); for (const dx of [-0.18, 0.18]) m.box(0.02, 0.22, 0.02, C.timber, { x: x + dx, z: -0.04 }); }
+    m.box(0.2, 0.03, 0.15, C.wood, { x: 0.66, z: -0.2 });
+    // schietschijven en oefenpaal
+    const tgt = z => { m.cyl(0.11, 0.11, 0.05, 12, 0xe2c46a, { x: -0.84, y: 0.21, z: z, rz: PI / 2 }); m.cyl(0.062, 0.062, 0.054, 12, 0xc8402f, { x: -0.84, y: 0.21, z: z, rz: PI / 2 }); m.box(0.03, 0.2, 0.03, C.timber, { x: -0.86, z: z }); };
+    tgt(0.14); if (lvl >= 3) tgt(0.42);
+    m.cyl(0.03, 0.035, 0.36, 7, C.woodD, { x: -0.6, z: 0.7 }); m.cyl(0.048, 0.048, 0.05, 8, 0xe2c46a, { x: -0.6, y: 0.18, z: 0.7 });
+    m.cyl(0.012, 0.012, 0.62, 4, C.timber, { x: 0.86, z: -0.28 });
+    ex.anims.push({ geo: flag(0x2f5fa8), x: 0.865, y: 0.62, z: -0.28, kind: 'flag' });
+    ex.anims.push({ geo: dummyGeo(), x: 0.72, y: 0.02, z: 0.08, kind: 'dummy0' });
+    if (lvl >= 2) ex.anims.push({ geo: dummyGeo(), x: 0.72, y: 0.02, z: 0.52, kind: 'dummy1' });
+    barrel(m, 0.43, -0.24);
+  };
+
   VE.modelCache = {};
   /* gehakte bouwsteen (breedte × hoogte × diepte, item-eenheden): overal precies dit formaat */
   VE.STONE_BLOCK = [0.09, 0.05, 0.06];
@@ -550,10 +589,19 @@
     sawmill: [[0.3, 0.06, 0.36]], windmill: [[-0.3, 0.06, 0.34]], bakery: [[-0.33, 0.06, 0.36]],
     winery: [[-0.3, 0.06, 0.36]], tavern: [[-0.32, 0.06, 0.38], [0.06, 0.06, 0.4]],
     smelter: [[0.17, 0.06, 0.37], [0.37, 0.06, 0.37], [-0.36, 0.06, 0.38]],
-    weaponsmith: [[-0.42, 0.06, 0.1], [-0.42, 0.06, 0.34]]
+    weaponsmith: [[-0.42, 0.06, 0.1], [-0.42, 0.06, 0.34]],
+    barracks: [[0.66, 0.072, -0.2]]
   };
   /* wapenrek: [x, y (voetplank), z, draaiing]; Blender-marker 'rack' gaat voor */
   VE.RACK_SPOT = { weaponsmith: [0.2, 0.07, 0.36, 0] };
+  /* kazerne: twee wapenrekken (Blender-markers rack0, rack1 gaan voor) */
+  VE.RACKS_SPOT = { barracks: [[-0.6, 0.064, -0.27, 0], [-0.18, 0.064, -0.27, 0]] };
+  /* oefenplekken per level: [x, y, z, kijkrichting, soort] met .t = pop/schijf (Blender: st<i>_<soort>, tg<i>) */
+  const dr = (x, z, r, k, t) => { const a = [x, 0.04, z, r, k]; a.t = t; return a; };
+  const D0 = dr(0.44, 0.08, PI / 2, 'dummy', [0.72, 0.22, 0.08]), T0 = dr(0, 0.14, -PI / 2, 'target', [-0.82, 0.21, 0.14]),
+    P0 = dr(-0.28, 0.7, -PI / 2, 'drill', [-0.56, 0.22, 0.7]), D1 = dr(0.44, 0.52, PI / 2, 'dummy', [0.72, 0.22, 0.52]),
+    T1 = dr(0, 0.42, -PI / 2, 'target', [-0.82, 0.21, 0.42]);
+  VE.DRILL_SPOT = { barracks: [[D0, T0, P0], [D0, T0, P0, D1], [D0, T0, P0, D1, T1]] };
 
   /* Procedureel model zonder cache (ook gebruikt door glb-models.js voor de geanimeerde delen). */
   VE.buildProcedural = function (type, lvl) {
@@ -889,6 +937,10 @@
       case 'battleaxe': m.box(0.25, 0.014, 0.014, 0xa0703f, { x: -0.02, y: -0.007 }); m.box(0.04, 0.01, 0.13, 0xc4cbd2, { x: 0.085, y: -0.005 }); break;
       case 'dagger': m.box(0.085, 0.006, 0.018, 0xc4cbd2, { x: 0.025, y: -0.003 }); m.box(0.01, 0.012, 0.045, 0x7e868e, { x: -0.022, y: -0.006 }); m.box(0.035, 0.013, 0.013, 0x5a3a24, { x: -0.045, y: -0.0065 }); break;
       case 'bow': m.box(0.26, 0.012, 0.014, 0x8e5e30, { z: -0.02, y: -0.006 }); m.box(0.24, 0.003, 0.003, 0xede3c8, { z: 0.03 }); break;
+      case 'gear': // trainingsuitrusting: bundel houten oefenzwaarden op een gewatteerd schild
+        m.cyl(0.05, 0.05, 0.016, 10, 0x8a5a3a, { y: -0.02 }); m.cyl(0.016, 0.016, 0.02, 6, 0xc9a24a, { y: -0.012 });
+        for (let k = 0; k < 3; k++) m.box(0.15, 0.01, 0.016, 0xc89a5e, { x: 0.005, y: 0.0 + k * 0.011, z: (k - 1) * 0.02, ry: (k - 1) * 0.12 });
+        m.box(0.012, 0.03, 0.06, 0x6a4226, { x: -0.045, y: 0.005 }); break;
       case 'crossbow': m.box(0.19, 0.02, 0.03, 0x8e5e30, { x: -0.01, y: -0.01 }); m.box(0.014, 0.012, 0.17, 0x7e868e, { x: 0.07, y: -0.006 }); break;
       default: m.ball(0.04, 0xf2c443, {});
     }

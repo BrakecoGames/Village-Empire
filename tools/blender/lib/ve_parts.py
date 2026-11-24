@@ -745,8 +745,10 @@ def bake_ao(obj, samples=48, distance=0.12):
 
 
 # ------------------------------------------------------------------ levels bouwen en exporteren
-def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
-    """Bouwt per level één samengevoegde mesh `<prefix>_l<n>` (+ rookmarker), bakt AO en exporteert."""
+def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True, parts=None):
+    """Bouwt per level één samengevoegde mesh `<prefix>_l<n>` (+ rookmarker), bakt AO en exporteert.
+    parts: {naam: fn} losse onderdelen die de game apart beweegt (bijv. een oefenpop), als node
+    `<prefix>_part_<naam>` met de oorsprong op hun draaipunt."""
     built = []
     extra = 0
     for lvl in levels:
@@ -792,10 +794,19 @@ def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
         # "rack": voetplank van een wapenrek (midden, bovenkant); de game zet daar de gesmede wapens rechtop
         if info.get("rack"):
             markers.append((f"{prefix}_l{lvl}_rack", info["rack"]))
+        # "racks": meerdere wapenrekken (kazerne): rack0, rack1, ...
+        for i, p in enumerate(info.get("racks", [])):
+            markers.append((f"{prefix}_l{lvl}_rack{i}", p))
+        # "drill": oefenplekken (stand (x,y,z), kijkrichting om y, soort, doel (x,y,z)) -> st<i>_<soort> + tg<i>
+        rots = {}
+        for i, (stand, ry, kind, tgt) in enumerate(info.get("drill", [])):
+            markers.append((f"{prefix}_l{lvl}_st{i}_{kind}", stand))
+            rots[f"{prefix}_l{lvl}_st{i}_{kind}"] = (0, ry, 0)
+            markers.append((f"{prefix}_l{lvl}_tg{i}", tgt))
         for name, p in markers:
             emp = bpy.data.objects.new(name, None)
             bpy.context.collection.objects.link(emp)
-            place(emp, p)
+            place(emp, p, rots.get(name, (0, 0, 0)))
         tris = ve.triangle_count([obj])
         # geglazuurde golfpannen kosten 20 i.p.v. 6 driehoeken per pan: dat verschil krijgt het model erbij
         budget = args.budget + PANS[0] * 14
@@ -803,6 +814,23 @@ def build_levels(prefix, build_fn, args, levels=(1, 2, 3), ao=True):
         if tris > budget:
             raise SystemExit(f"VE-BLENDER: {prefix}_l{lvl} heeft {tris} driehoeken > budget {budget}")
         built.append((obj, lvl, tris))
+    for pname, fn in (parts or {}).items():
+        LEVEL.clear()
+        fn()
+        objs = list(LEVEL)
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in objs:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = objs[0]
+        if len(objs) > 1:
+            bpy.ops.object.join()
+        obj = bpy.context.view_layer.objects.active
+        obj.data.transform(obj.matrix_world)
+        obj.matrix_world = Matrix.Identity(4)
+        obj.name = obj.data.name = f"{prefix}_part_{pname}"
+        obj.hide_render = True                     # telt niet mee in de AO van de levels
+        print(f"VE-BLENDER-PART {obj.name} tris={ve.triangle_count([obj])}")
+        LEVEL.clear()
     use_ao = ao and not os.environ.get("VE_NO_AO")
     if use_ao:
         for obj, _, _ in built:

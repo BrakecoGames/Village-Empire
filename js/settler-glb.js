@@ -17,7 +17,23 @@
   const S = 1.28;                     // zelfde schaal als de oude dorpelingen
   const TAU = Math.PI * 2;
   // perioden (s) van de werkbewegingen in de simulatie (zie oude SettlerRender.toolAngle / sim.js)
-  const ACT_PERIOD = { hoe: 0.65, chop: 0.75, pick: 0.6, hammer: 0.45, harvest: TAU / 6, dig: TAU / 5, sow: TAU / 5, fish: TAU / 1.4, hunt: 1.8 };
+  const ACT_PERIOD = { hoe: 0.65, chop: 0.75, pick: 0.6, hammer: 0.45, harvest: TAU / 6, dig: TAU / 5, sow: TAU / 5, fish: TAU / 1.4, hunt: 1.8,
+    slash: 0.9, cleave: 1.35, stab: 0.5, thrust: 1.05, shoot: 1.9, xbow: 2.6 };          // oefenen in de kazerne (VE.DRILL_PERIOD)
+  /* Soldaten: kleur van het lijf per type, helm of kap (vervangt de hoed) en uitrusting (vaste kleuren).
+     Wapens komen uit items.glb: in de rechterhand ('tool'), boog en tweede dolk links ('toolL').
+     HOLD: f = greep als deel van de lengte (vanaf het handvat), s = schaal in de hand. */
+  const KIT = {
+    swordsman: { col: 0x3d63b0, helm: 'helm_nasal', torso: ['mail', 'tabard'], armL: 'shield_round' },
+    archer: { col: 0x4f7d34, helm: 'hood_archer', torso: ['quiver'], bracer: true },
+    spearman: { col: 0xb0503a, helm: 'helm_plume', torso: ['mail', 'tabard'], armL: 'shield_kite' },
+    dagger: { col: 0x5a4670, helm: 'hood_rogue', torso: ['sheaths'], bracer: true },
+    axeman: { col: 0x9a6a32, helm: 'helm_fur', torso: ['fur'], bracer: true },
+    crossbowman: { col: 0x2f7f86, helm: 'helm_brim', torso: ['tabard', 'boltcase'] }
+  };
+  for (const t in KIT) KIT[t].c = new THREE.Color(KIT[t].col);
+  VE.SOLDIER_KIT = KIT;
+  const HOLD = { sword: { f: 0.14, s: 0.95 }, dagger: { f: 0.16, s: 1.0 }, spear: { f: 0.36, s: 1.6 }, battleaxe: { f: 0.1, s: 1.15 },
+    bow: { f: 0.5, s: 1.2, left: true }, crossbow: { f: 0.28, s: 1.1, xbow: true } };
   // werkclip die (nog) niet in settler.glb zit: een clip die erop lijkt
   const ACT_ALIAS = { hunt: 'sow' };
   const BLEND = 0.18;                 // overvloeitijd tussen clips (s)
@@ -36,7 +52,8 @@
   const HAT = {
     carrier: 'hat_straw', builder: 'hat_hood', woodcutter: 'hat_beanie', forester: 'hat_feather', mason: 'hat_helmet',
     farmer: 'hat_wide', miller: 'hat_floppy', baker: 'hat_toque', fisher: 'hat_souwester', vintner: 'hat_beret',
-    merchant: 'hat_bycocket', innkeeper: 'hat_bandana', sawyer: 'hat_flatcap', guard: 'hat_kettle', hunter: 'hat_feather', miner: 'hat_helmet', smelter: 'hat_bandana', blacksmith: 'hat_bandana'
+    merchant: 'hat_bycocket', innkeeper: 'hat_bandana', sawyer: 'hat_flatcap', guard: 'hat_kettle', hunter: 'hat_feather', miner: 'hat_helmet', smelter: 'hat_bandana', blacksmith: 'hat_bandana',
+    recruit: 'hat_beanie', soldier: 'hat_kettle'
   };
   const APRON = new Set(['baker', 'miller', 'innkeeper', 'sawyer', 'smelter', 'blacksmith']);
   /* Easter eggs: ~13% van de bewoners krijgt er één (vast per bewoner en beroep).
@@ -159,13 +176,17 @@
       const SHADOW = /^(torso__body|head__face|head__hat|head__hair_long|legR__leg|armR__sleeve|head__egg_tall|head__egg_night)/;
       this.part = {};
       for (const k in A.parts) {
-        const pairs = /^(legR__leg|legR__boot|armR__sleeve|armR__hand)$/.test(k);   // links + rechts
+        const pairs = /^(legR__leg|legR__boot|armR__sleeve|armR__hand|armR__bracer)$/.test(k);   // links + rechts
         this.part[k] = { mesh: mk(A.parts[k].geo, pairs ? cap * 2 : cap, SHADOW.test(k)), node: A.parts[k].node, n: 0 };
       }
       this.tools = {};
       for (const t of ['axe', 'hammer', 'pick', 'spade', 'hoe', 'scythe', 'sickle', 'rod', 'net']) this.tools[t] = { mesh: mk(VE.toolGeo(t), 100, true), n: 0 };
       this.items = {};
       for (const r of VE.RES_ORDER) this.items[r] = { mesh: mk(VE.itemGeo(r), 140, true), n: 0 };
+      // wapens in de hand van rekruten en soldaten (dolkvechters dragen er twee)
+      this.weapons = {};
+      for (const r of VE.WEAPONS || []) this.weapons[r] = { mesh: mk(VE.itemGeo(r), r === 'dagger' ? cap * 2 : cap, true), n: 0 };
+      this.gv = VE.itemGeoVer || 0; this.grips = {};
       this.roleCol = {};
       for (const r in VE.ROLES) this.roleCol[r] = [C(VE.ROLES[r][0]), C(VE.ROLES[r][1])];
       const N = A.nodes.length;
@@ -210,6 +231,10 @@
         if (s.moving) return ['carry', ((s.wp / TAU) % 1) * clips.carry.dur];
         return ['carry_idle', (T + s.id * 0.37) % clips.carry_idle.dur];
       }
+      if (s.mode === 'soldier' && clips.march) {
+        if (s.moving) return ['march', (((s.wp / TAU) % 1) + 1) % 1 * clips.march.dur];
+        return ['guard', (T + s.id * 1.37) % clips.guard.dur];
+      }
       if (s.moving) return ['walk', (((s.wp / TAU) % 1) + 1) % 1 * clips.walk.dur];
       // stilstaan: rustig ademen en rondkijken, af en toe een eigen gebaar
       const tt = T + s.id * 3.1, win = Math.floor(tt / 7), into = tt - win * 7, r = hash(win, s.id) % 100;
@@ -218,6 +243,23 @@
       else if (r < 10) v = 'idle_hat';
       if (v && clips[v] && into < clips[v].dur) return [v, into];
       return ['idle', (T + s.id * 1.37) % clips.idle.dur];
+    }
+
+    /* greep van een wapen: item ligt langs x (punt +x); in de hand wijst het langs de y van de handnode */
+    grip(r) {
+      const g0 = this.grips[r]; if (g0) return g0;
+      const H = HOLD[r] || { f: 0.2, s: 1 }, geo = VE.itemGeo(r);
+      geo.computeBoundingBox();
+      const bb = geo.boundingBox, gx = bb.min.x + (bb.max.x - bb.min.x) * H.f;
+      const M = new THREE.Matrix4(), T = new THREE.Matrix4().makeTranslation(-gx, 0, 0), Sc = new THREE.Matrix4().makeScale(H.s, H.s, H.s);
+      if (H.xbow) M.makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0));   // kolf langs de arm, boog dwars
+      else M.makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1));            // kling omhoog, plat opzij
+      M.multiply(Sc).multiply(T);
+      return (this.grips[r] = M);
+    }
+    putWeapon(r, node) {
+      const w = this.weapons[r]; if (!w || !node || w.n >= w.mesh.instanceMatrix.count) return;
+      _ry.multiplyMatrices(node, this.grip(r)); w.mesh.setMatrixAt(w.n++, _ry);
     }
 
     sample(name, t, out) {
@@ -246,14 +288,21 @@
       for (const k in this.part) this.part[k].n = 0;
       for (const k in this.tools) this.tools[k].n = 0;
       for (const k in this.items) this.items[k].n = 0;
+      for (const k in this.weapons) this.weapons[k].n = 0;
+      if ((VE.itemGeoVer || 0) !== this.gv) {                           // goederen uit Blender later binnen
+        this.gv = VE.itemGeoVer || 0; this.grips = {};
+        for (const k in this.items) this.items[k].mesh.geometry = VE.itemGeo(k);
+        for (const k in this.weapons) this.weapons[k].mesh.geometry = VE.itemGeo(k);
+      }
       const cam = VE.view && VE.view.camera; if (cam) _cam.copy(cam.position);
       let count = 0;
       for (const s of settlers) {
         if (s.hidden || count >= this.cap) continue;
         count++;
         const look = this.look(s);
-        const role = s.mode === 'build' ? 'builder' : (s.mode === 'work' || s.mode === 'goWork') ? s.role : 'carrier';
-        const rc = this.roleCol[role] || this.roleCol.carrier;
+        const role = s.mode === 'build' ? 'builder' : (s.mode === 'work' || s.mode === 'goWork' || s.mode === 'train' || s.mode === 'soldier') ? s.role : 'carrier';
+        const kit = s.mode === 'soldier' && s.sol ? KIT[s.sol.t] : null;
+        const rc = kit ? [kit.c, kit.c] : this.roleCol[role] || this.roleCol.carrier;
         const far = cam ? (s.x - _cam.x) ** 2 + (s.z - _cam.z) ** 2 > LOD_FAR * LOD_FAR : false;
         // ---- pose: clip kiezen, sampelen, overvloeien
         if (!s._pose) { s._pose = new Float32Array(N * 7); s._from = new Float32Array(N * 7); s._blend = 0; s._clip = null; }
@@ -298,11 +347,18 @@
         const beard = egg && egg.beard ? egg.beard : look.beard;
         if (beard && !far) this.put('head__' + beard, W[I.head], look.hairC);
         let hat = egg && egg.hat ? egg.hat : (HAT[role] || 'hat_straw');
-        if (egg && egg.fx === 'tilt') { _rz.makeRotationZ(0.32); _ry.multiplyMatrices(W[I.head], _rz); this.put('head__' + hat, _ry, rc[1]); }
+        if (kit) {
+          // soldaat: helm of kap in plaats van de hoed, uitrusting over het lijf, schild aan de linkerarm
+          this.put('head__' + kit.helm, W[I.head], WHITE);
+          for (const p of kit.torso) this.put('torso__' + p, W[I.torso], WHITE);
+          if (kit.armL) this.put('armL__' + kit.armL, W[I.armL], WHITE);
+          hat = null;
+        } else if (egg && egg.fx === 'tilt') { _rz.makeRotationZ(0.32); _ry.multiplyMatrices(W[I.head], _rz); this.put('head__' + hat, _ry, rc[1]); }
         else this.put('head__' + hat, W[I.head], hat === 'egg_nightcap' ? SOCK_FUN[1] : rc[1]);
         for (const side of ['R', 'L']) {
           this.put('armR__sleeve', W[I['arm' + side]], rc[0]);
           this.put('armR__hand', W[I['arm' + side]], look.skin);
+          if (kit && kit.bracer) this.put('armR__bracer', W[I['arm' + side]], WHITE);
           this.put('legR__leg', W[I['leg' + side]], look.pants);
           const sock = egg && egg.fx === 'socks' ? SOCK_FUN[(side === 'R' ? 0 : 2 + (look.h2 >>> 3) % 2)] : look.boots;
           this.put('legR__boot', W[I['leg' + side]], sock);
@@ -316,6 +372,11 @@
           const tl = this.tools[s.tool];
           if (tl.n < tl.mesh.instanceMatrix.count) { tl.mesh.setMatrixAt(tl.n++, W[I.tool]); }
         }
+        if (s.weapon && this.weapons[s.weapon]) {
+          const left = I.toolL !== undefined ? W[I.toolL] : W[I.tool];
+          this.putWeapon(s.weapon, HOLD[s.weapon] && HOLD[s.weapon].left ? left : W[I.tool]);
+          if (s.weapon === 'dagger') this.putWeapon('dagger', left);
+        }
         if (s.carry && this.items[s.carry]) {
           const it = this.items[s.carry];
           if (it.n < it.mesh.instanceMatrix.count) { _l.makeRotationY(0.08); _l.scale(_sv.set(VE.ITEM_SCALE, VE.ITEM_SCALE, VE.ITEM_SCALE)); _ry.multiplyMatrices(W[I.carry], _l); it.mesh.setMatrixAt(it.n++, _ry); }
@@ -326,6 +387,7 @@
       for (const k in this.part) fin(this.part[k]);
       for (const k in this.tools) fin(this.tools[k]);
       for (const k in this.items) fin(this.items[k]);
+      for (const k in this.weapons) fin(this.weapons[k]);
       this.stats = { settlers: count, instances: inst, drawn: drawn, quality: this.quality, frameMs: +this.ft.toFixed(1) };
     }
 

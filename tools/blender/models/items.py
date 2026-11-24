@@ -40,6 +40,8 @@ setup(seed=7301, extra_palette={
     # wapens
     "Steel": (0xC4CBD2, 0.02), "SteelD": (0x7E868E, 0.03), "Grip": (0x5A3A24, 0.04), "Pommel": (0xD9A93A, 0.02),
     "Shaft": (0xA0703F, 0.04), "BowW": (0x8E5E30, 0.04), "String": (0xEDE3C8, 0.0),
+    # trainingsuitrusting
+    "Pad": (0x8A5A3A, 0.05), "PadL": (0xA8744A, 0.04), "Practice": (0xC89A5E, 0.05), "Tie2": (0xCDB384, 0.03), "Boss": (0xC9A24A, 0.02),
 })
 STONE = (0.09, 0.05, 0.06)
 NODES = []
@@ -235,10 +237,24 @@ def crossbow():
     finish("crossbow")
 
 
+def gear():
+    # trainingsuitrusting: gewatteerd oefenschild met daarop drie houten oefenzwaarden en een bundel stompe pijlen
+    cyl(0.052, 0.052, 0.016, 12, "Pad", pos=(0, -0.026, 0), smooth=False)
+    cyl(0.046, 0.046, 0.004, 12, "PadL", pos=(0, -0.011, 0), smooth=False, cap=False)
+    cyl(0.016, 0.016, 0.006, 8, "Boss", pos=(0, -0.012, 0), smooth=False)
+    for k in range(3):
+        z = (k - 1) * 0.02
+        box(0.13, 0.009, 0.016, "Practice", pos=(0.02, -0.006 + k * 0.004, z), rot=(0, (k - 1) * 0.12, 0), bevel=0.002)
+        box(0.012, 0.012, 0.04, "Pad", pos=(-0.047, -0.006 + k * 0.004, z), rot=(0, (k - 1) * 0.12, 0))
+        box(0.03, 0.011, 0.011, "Grip", pos=(-0.066, -0.006 + k * 0.004, z), rot=(0, (k - 1) * 0.12, 0))
+    cyl(0.01, 0.01, 0.06, 6, "Tie2", pos=(0.0, 0.006, 0), rot=(math.pi / 2, 0, 0), center=True, smooth=False)
+    finish("gear")
+
+
 log(); plank(); stone(); flour(); bread(); fish(); grape(); wine(); meat(); coal()
 ore("ironore", "RockI", "VeinI"); ore("copperore", "RockC", "VeinC"); ore("goldore", "RockG", "VeinG")
 bar("ironbar", "BarI"); bar("copperbar", "BarC"); bar("goldbar", "BarG")
-sword(); spear(); battleaxe(); dagger(); bow(); crossbow()
+sword(); spear(); battleaxe(); dagger(); bow(); crossbow(); gear()
 for obj, tris in NODES:
     print(f"VE-BLENDER-ITEM {obj.name} tris={tris}")
 ve.export_glb(args.out, budget=8000)

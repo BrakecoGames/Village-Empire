@@ -158,7 +158,7 @@ test.describe('Wapensmederij', () => {
     expect(r.qProg).toBeGreaterThanOrEqual(20);
     expect(r.quests).toBe(true);
     expect(r.market).toBe(true);
-    expect(r.loaded.v).toBe(3);
+    expect(r.loaded.v).toBe(4);
     expect(r.loaded.recipe).toBe('crossbow');
     expect(r.loaded.sameStock).toBe(true);
     expect(r.loaded.dagger).toBe(false);
@@ -184,7 +184,7 @@ test.describe('Wapensmederij', () => {
     });
     // infopaneel: 6 wapens om uit te kiezen
     await page.evaluate(() => window.VE.ui.select(window._ws));
-    await expect(page.locator('#infoPanel .recipes.forge .rcp')).toHaveCount(6);
+    await expect(page.locator('#infoPanel .recipes.forge .rcp')).toHaveCount(7);                 // zes wapens + trainingsuitrusting
     await page.locator('#infoPanel [data-act="recipe"][data-arg="crossbow"]').click();
     expect(await page.evaluate(() => window._ws.recipe)).toBe('crossbow');
     await page.locator('#infoPanel [data-act="recipe"][data-arg="sword"]').click();

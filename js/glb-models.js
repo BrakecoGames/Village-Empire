@@ -26,7 +26,7 @@
     vineyard: {}, winery: {}, tavern: {}, warehouse: {}, monument: {},
     // jacht en mijnbouw. De vier mijnen delen één model (mine.glb, nodes mine_l1..l3); de ertsaders
     // in de rots en het bordje (materialen Vein/Vein2) krijgen per mijn de kleur van het erts
-    hunter: {}, smelter: {}, weaponsmith: {},
+    hunter: {}, smelter: {}, weaponsmith: {}, barracks: {},
     coalmine: { file: 'mine', node: 'mine', tint: { Vein: 0x26262b, Vein2: 0x6f7688 } },
     ironmine: { file: 'mine', node: 'mine', tint: { Vein: 0xb0582c, Vein2: 0x6e4a38 } },
     coppermine: { file: 'mine', node: 'mine', tint: { Vein: 0x3fae94, Vein2: 0x6fd6c4 } },
@@ -152,6 +152,15 @@
     if (ui && ui.ghostType === type && ui.setGhost) ui.setGhost(type);
   }
 
+  /* los onderdeel uit dezelfde GLB (één keer gebakken per bestand) */
+  const partCache = {};
+  function partGeo(gltf, name, type) {
+    const key = type + ':' + name;
+    if (partCache[key] !== undefined) return partCache[key];
+    const node = gltf.scene.getObjectByName(name);
+    return (partCache[key] = node ? bakeNode(node, name.length * 13) : null);
+  }
+
   async function loadType(type) {
     const src = SOURCES[type];
     try {
@@ -164,7 +173,7 @@
         if (!geo) throw new Error('node ' + src.levels[lvl] + ' bevat geen meshes');
         // markers uitlezen: rookpunten en ankers voor animaties
         const chimneys = [], anchors = {}, pre = src.levels[lvl] + '_';
-        let pile = null, rack = null; const slots = [], inp = [];
+        let pile = null, rack = null; const slots = [], inp = [], racks = [], drill = [], tg = [];
         gltf.scene.traverse(o => {
           if (!o.name || o.name.indexOf(pre) !== 0) return;
           const rest = o.name.slice(pre.length);
@@ -175,6 +184,11 @@
           else if (/^slot\d+$/.test(rest)) slots[+rest.slice(4)] = [_v.x, _v.y, _v.z];   // vakken van een opslag
           else if (/^in\d$/.test(rest)) inp[+rest.slice(2)] = [_v.x, _v.y, _v.z];      // stapels aangeleverde grondstoffen
           else if (rest === 'rack') { o.getWorldQuaternion(_rq); _re.setFromQuaternion(_rq, 'YXZ'); rack = [_v.x, _v.y, _v.z, _re.y]; }   // wapenrek (voetplank)
+          else if (/^rack\d+$/.test(rest)) { o.getWorldQuaternion(_rq); _re.setFromQuaternion(_rq, 'YXZ'); racks[+rest.slice(4)] = [_v.x, _v.y, _v.z, _re.y]; }   // kazerne: meer rekken
+          else if (/^st\d+_\w+$/.test(rest)) {                                  // oefenplek: stand, kijkrichting, soort
+            const m = /^st(\d+)_(\w+)$/.exec(rest); o.getWorldQuaternion(_rq); _re.setFromQuaternion(_rq, 'YXZ');
+            drill[+m[1]] = [_v.x, _v.y, _v.z, _re.y, m[2]];
+          } else if (/^tg\d+$/.test(rest)) tg[+rest.slice(2)] = [_v.x, _v.y, _v.z];    // pop / schijf van die plek
         });
         // geanimeerde delen (vlag, wieken, zaag) blijven procedureel, op het anker uit het nieuwe model
         let anims = [];
@@ -183,12 +197,18 @@
           proc.geo.dispose();
           anims = proc.anims.map(a => {
             const p = anchors[a.kind];
-            return p ? Object.assign({}, a, { x: p[0], y: p[1], z: p[2] }) : a;
+            // los Blender-onderdeel voor dit soort deel (bijv. <type>_part_dummy voor dummy0, dummy1)
+            const part = partGeo(gltf, (TYPES[type].node || type) + '_part_' + a.kind.replace(/\d+$/, ''), type);
+            const o = part ? Object.assign({}, a, { geo: part }) : a;
+            return p ? Object.assign({}, o, { x: p[0], y: p[1], z: p[2] }) : o;
           });
         }
+        for (let i = 0; i < drill.length; i++) if (drill[i] && tg[i]) drill[i].t = tg[i];
+        const dr = drill.filter(Boolean), rk = racks.filter(Boolean);
         const sl = slots.filter(Boolean); sl.g = true;
         const ip = inp.filter(Boolean);
-        baked[lvl] = { geo: geo, anims: anims, chimneys: chimneys, pile: pile, slots: sl.length ? sl : null, inp: ip.length ? ip : null, rack: rack };
+        baked[lvl] = { geo: geo, anims: anims, chimneys: chimneys, pile: pile, slots: sl.length ? sl : null, inp: ip.length ? ip : null, rack: rack,
+          racks: rk.length ? rk : null, drill: dr.length ? dr : null };
       }
       // pas vervangen als alle levels gelukt zijn: nooit een half GLB / half procedureel gebouw
       let replaced = false;

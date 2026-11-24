@@ -61,7 +61,7 @@
         vol = VE.clamp(1.15 - d / (this.ld * 0.7 + 4), 0, 1) * VE.clamp(1.4 - this.ld / 40, 0.35, 1);
         if (vol < 0.04) return;
       }
-      const minGap = { chop: 0.07, hammer: 0.06, pick: 0.07, coin: 0.09, plant: 0.1, arrive: 0.5 }[name] || 0.03;
+      const minGap = { bow: 0.08, thud2: 0.06, march: 0.6, chop: 0.07, hammer: 0.06, pick: 0.07, coin: 0.09, plant: 0.1, arrive: 0.5 }[name] || 0.03;
       if (this.last[name] && now - this.last[name] < minGap) return;
       this.last[name] = now;
       switch (name) {
@@ -75,6 +75,10 @@
         case 'plant': this.tone('sine', 320, 520, 0.12, 0.15 * vol); break;
         case 'creak': this.tone('sawtooth', 170, 80, 0.9, 0.045 * vol); this.tone('sawtooth', 130, 95, 0.6, 0.03 * vol, now + 0.25); break;   // kraken van de vallende boom
         case 'thud': this.burst('lowpass', 600, 1, 0.45, 0.4 * vol); this.tone('sine', 95, 45, 0.35, 0.4 * vol); break;                         // boom komt neer
+        case 'bow': this.tone('triangle', 420, 160, 0.12, 0.14 * vol); this.burst('highpass', 2400, 1, 0.05, 0.1 * vol); break;          // pees die loslaat
+        case 'thud2': this.burst('lowpass', 900, 1, 0.07, 0.22 * vol); this.tone('sine', 180, 120, 0.06, 0.12 * vol); break;              // pijl in het stro
+        case 'thwack': this.burst('bandpass', 700, 1.5, 0.07, 0.35 * vol); this.tone('triangle', 260, 150, 0.06, 0.2 * vol); break;       // speer in de paal
+        case 'march': [0, 0.16, 0.32].forEach(d => this.burst('lowpass', 380, 1, 0.08, 0.3 * vol, now + d)); break;                       // in de pas
         case 'coin': this.tone('sine', 1318, 1318, 0.12, 0.13 * vol); this.tone('sine', 1760, 1760, 0.2, 0.12 * vol, now + 0.07); break;
         case 'done': [523, 659, 784, 1046].forEach((f, i) => this.tone('triangle', f, f, 0.22, 0.2, now + i * 0.08)); break;
         case 'fanfare': [392, 523, 659, 784, 659, 784, 1046].forEach((f, i) => { this.tone('triangle', f, f, 0.32, 0.22, now + i * 0.13); this.tone('square', f / 2, f / 2, 0.25, 0.03, now + i * 0.13); }); break;

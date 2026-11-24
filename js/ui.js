@@ -142,6 +142,8 @@
         const pt = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, b: e.button, type: e.pointerType, drag: false, anchor: null };
         // linker- of rechterknop / één vinger: het punt op de grond onthouden waar je de wereld 'vastpakt'
         if (e.button === 0 || e.button === 2) { const a = new THREE.Vector3(); if (this.view.cam.groundAt(e.clientX, e.clientY, a)) pt.anchor = a; }
+        // soldaten: kader trekken (shift-slepen of de knop 'Drag to select') i.p.v. de kaart verschuiven
+        if (e.button === 0 && this.boxWanted && this.boxWanted(e)) pt.box = true;
         this.pointers.set(e.pointerId, pt);
         this.moved = 0;
         if (this.pointers.size > 1) this.pinch = null;
@@ -167,6 +169,7 @@
           return;
         }
         this.moved += Math.abs(dx) + Math.abs(dy);
+        if (p.box && this.pointers.size === 1) { this.boxMove(p); return; }
         if (p.b === 1) { this.view.cam.rotate(-dx * 0.008); this.view.cam.tilt(dy * 0.006); return; } // middle drag: orbit + tilt
         // linker- en rechterknop / één vinger: verschuiven, pas na een kleine drempel (klikken blijft klikken;
         // rechts klikken zonder slepen zet het gereedschap uit)
@@ -182,9 +185,12 @@
         if (!p) return;
         this.pointers.delete(e.pointerId);
         if (this.pointers.size === 0) {
-          if (!p.drag && this.moved < 9 && p.b === 0) this.tap(e.clientX, e.clientY, p.type);
+          if (p.box && this.moved >= 9) { this.boxEnd(p, e); this.pinch = null; return; }
+          if (p.box) this.boxCancel();
+          if (!p.drag && this.moved < 9 && p.b === 0) this.tap(e.clientX, e.clientY, p.type, e);
           if (p.drag && p.type === 'mouse') this.hover(e.clientX, e.clientY);
-          if (this.moved < 9 && p.b === 2) this.setTool(null);
+          // rechtsklik: soldaten geselecteerd → daarheen sturen; anders het gereedschap uitzetten
+          if (this.moved < 9 && p.b === 2) { if (this.army && this.army.size && !this.tool) this.orderArmyAt(e.clientX, e.clientY); else this.setTool(null); }
           this.pinch = null;
         } else this.pinch = null;
       };
@@ -194,7 +200,7 @@
       window.addEventListener('keydown', e => {
         if (!VE.playing || e.target.tagName === 'INPUT') return;
         const c = this.view.cam, k = e.key.toLowerCase();
-        if (k === 'escape') { if (!$('modal').classList.contains('hidden')) this.closeModal(); else if (this.tool) this.setTool(null); else this.select(null); }
+        if (k === 'escape') { if (!$('modal').classList.contains('hidden')) this.closeModal(); else if (this.tool) this.setTool(null); else if (this.army && this.army.size) this.clearArmy(); else this.select(null); }
         else if (k === 'q') c.rotate(-Math.PI / 4);
         else if (k === 'e') c.rotate(Math.PI / 4);
         else if (k === '+' || k === '=') c.zoom(0.85);
@@ -258,7 +264,7 @@
       this.rangeRing.scale.set(r, r, r);
       this.rangeRing.position.set(x, this.game.world.heightAt(x, z) + 0.15, z);
     }
-    tap(cx, cy, ptype) {
+    tap(cx, cy, ptype, ev) {
       const g = this.game; if (!g) return;
       const p = this.pick(cx, cy); if (!p) return;
       const w = g.world;
@@ -286,6 +292,7 @@
         this.refreshHud(true);
         return;
       }
+      if (this.tapArmy && this.tapArmy(cx, cy, p, ptype, ev)) return;         // soldaat kiezen of een bevel geven
       this.select(p.b || null);
     }
 
@@ -295,7 +302,7 @@
       this.setGhost(t);
       this.ghost.visible = false; this.tileMark.visible = false;
       if (!this.selRangeShown) this.rangeRing.visible = false;
-      if (t) this.select(null);
+      if (t) { this.select(null); if (this.clearArmy) this.clearArmy(); }
       document.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', b.dataset.tool === (t || 'select')));
       document.querySelectorAll('.card').forEach(c => c.classList.toggle('on', c.dataset.b === t));
       const hint = $('toolHint');
@@ -421,6 +428,7 @@
         case 'mainmenu': this.closeModal(); VE.toMenu(); break;
         case 'newgame': this.confirmNew(); break;
         case 'doNew': this.closeModal(); VE.newGame(); break;
+        default: if (this.onArmyAct) this.onArmyAct(a, arg, el, e);              // kazerne en soldaten (js/army-ui.js)
       }
     }
 
@@ -551,6 +559,7 @@
         }
         if (d.territory) h += '<div class="ip-row"><b>Border</b> radius ' + (d.territory + (b.level - 1) * 1.5) + '</div>';
       }
+      if (d.barracks && b.built && this.barracksHtml) h += this.barracksHtml(b);
       h += '<div class="ip-desc small">' + d.desc + '</div><div class="ip-btns">';
       if (b.built && d.cost) {
         if (b.up) h += '<button class="btn" data-act="cancelUpg">✖ Cancel upgrade</button>';
@@ -564,6 +573,7 @@
       h += '</div>';
       const ae = document.activeElement;
       if (!force && ae && ae.tagName === 'SELECT' && el.contains(ae)) return;
+      if (!force && this.panelDown) return;                // knop wordt net ingedrukt: niet vervangen, anders valt de klik weg
       if (force || h !== this.lastInfo) { el.innerHTML = h; this.lastInfo = h; }
       el.classList.remove('hidden');
     }
@@ -697,6 +707,7 @@
         '<p>🔗 <b>Production chains</b>: trees ➜ logs ➜ planks · wheat ➜ flour ➜ bread · grapes ➜ wine · game ➜ meat · ore + coal ➜ metal bars.</p>' +
         '<p>🦌 <b>Hunters</b> sneak up on rabbits, roe, deer and wild boar. They always leave enough animals to breed, so game recovers over time.</p>' +
         '<p>⛏️ <b>Mines</b> can only be built on the mountain, above a deposit of their ore: coal, iron, copper or gold. The ore lies underground: while you place a mine, or with <b>🔍 Survey</b> in the Mining tab, coloured stripes show what lies below explored mountains (grey = nothing found). A <b>Smelter</b> turns ore and coal into bars.</p>' +
+        '<p>🛡️ <b>Barracks</b>: choose which soldiers to train and how many. Carriers bring a weapon from the Weaponsmith or a Storehouse, plus <b>training gear</b> (also made by the Weaponsmith). A free settler walks over, practises on dummies, targets or the spear post, and becomes a soldier: your population stays the same. Tap a soldier to select it (double-tap: all of that type, ⚔️: all soldiers, shift-drag or <b>Drag to select</b>: a box), then tap the ground to send them there, or choose <b>Patrol</b>.</p>' +
         '<p>👥 <b>Cottages</b> give room for new settlers. They arrive much faster when you have bread, fish or meat.</p>' +
         '<p>⚖️ <b>Marketplace</b>: choose which goods to sell for gold. Gold buys upgrades and watchtowers.</p>' +
         '<p>📜 Complete the <b>Village Charter</b> to rise in rank and unlock new buildings.</p>' +
@@ -737,7 +748,9 @@
         else this.updateBuildBar();
       }
       this.renderQuests(force);
-      if (this.sel) this.renderInfo(force);
+      if (this.army && this.army.size && this.renderArmy) this.renderArmy(force);
+      else if (this.sel) this.renderInfo(force);
+      if (this.armyHud) this.armyHud();
     }
     toast(text) {
       const box = $('toasts');
