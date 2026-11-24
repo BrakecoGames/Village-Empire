@@ -315,3 +315,11 @@ select { font-family: inherit; font-weight: 800; border-radius: 8px; border: 2px
   #infoPanel.armyp .ip-icon { font-size: 24px; }
   #infoPanel.armyp .ip-btns, #infoPanel.armyp .orders { margin: 3px 0; }
 }
+
+/* ---------- minimap (js/minimap.js) ---------- */
+#minimap { position: absolute; right: calc(8px + var(--sar)); bottom: calc(8px + var(--sab)); padding: 5px; border-radius: 12px; line-height: 0; z-index: 4; }
+#minimap canvas { border-radius: 7px; cursor: pointer; touch-action: none; image-rendering: pixelated; }
+#minimap.mob { right: auto; left: calc(8px + var(--sal)); bottom: auto; top: calc(112px + var(--sat)); padding: 3px; border-width: 2px; }
+#mmToggle { position: absolute; left: calc(8px + var(--sal)); top: calc(112px + var(--sat)); width: 40px; height: 40px; font-size: 19px; z-index: 5; }
+#mmToggle.on { left: calc(122px + var(--sal)); }
+@media (max-width: 1250px) and (min-width: 700px) { #minimap { bottom: calc(150px + var(--sab)); } }

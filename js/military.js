@@ -14,7 +14,8 @@
    Gevechten zelf bestaan nog niet; VE.soldierDamage (config.js), hp en bereik zijn de basis daarvoor. */
 'use strict';
 (function (VE) {
-  const N = VE.N, SOL = VE.SOLDIERS;
+  let N = VE.N; const SOL = VE.SOLDIERS;
+  (VE.sizeHooks = VE.sizeHooks || []).push(n => { N = n; });
   const emit = (e, a) => VE.bus.emit(e, a);
   const sfx = (n, x, z) => emit('sfx', { n: n, x: x, z: z });
   const QUEUE_MAX = 30;

@@ -159,9 +159,9 @@ test.describe('camera', () => {
     await page.mouse.move(300, 300); await page.mouse.down();
     for (let i = 1; i <= 30; i++) await page.mouse.move(300 + i * 50, 300 + i * 25);
     await page.mouse.up();
-    const c5 = await cam();
-    expect(c5.tx).toBeGreaterThanOrEqual(1); expect(c5.tx).toBeLessThanOrEqual(63);
-    expect(c5.tz).toBeGreaterThanOrEqual(1); expect(c5.tz).toBeLessThanOrEqual(63);
+    const c5 = await cam(), NN = await page.evaluate(() => window.VE.N);   // camera blijft binnen de wereld (grote wereld: 144)
+    expect(c5.tx).toBeGreaterThanOrEqual(1); expect(c5.tx).toBeLessThanOrEqual(NN - 1);
+    expect(c5.tz).toBeGreaterThanOrEqual(1); expect(c5.tz).toBeLessThanOrEqual(NN - 1);
     expect(checkErrors(errors)).toEqual([]);
   });
 

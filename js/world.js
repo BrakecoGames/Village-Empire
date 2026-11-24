@@ -1,8 +1,13 @@
 /* Village Empire — © 2026 Brakeco Games. All rights reserved. */
 'use strict';
 (function (VE) {
-  const N = 64; VE.N = N;
-  const V1 = N + 1;
+  /* Wereldgrootte (tegels per zijde): 64 voor oude saves, VE.BIG_N voor nieuwe werelden. VE.setWorldSize zet
+     hem vóór het maken van een wereld; alle modules houden hun N bij via VE.sizeHooks. */
+  let N = 64, V1 = N + 1; VE.N = N;
+  VE.BIG_N = 144;
+  VE.sizeHooks = VE.sizeHooks || [];
+  VE.setWorldSize = function (n) { VE.N = n; for (const f of VE.sizeHooks) f(n); };
+  VE.sizeHooks.push(n => { N = n; V1 = n + 1; });
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color(), _up = new THREE.Vector3(0, 1, 0);
   VE.ZERO = ZERO;
@@ -102,6 +107,7 @@
     heightAt(x, z) {
       x = VE.clamp(x, 0, N - 0.0001); z = VE.clamp(z, 0, N - 0.0001);
       const i = Math.floor(x), j = Math.floor(z), fx = x - i, fz = z - j, H = this.H;
+      if (this.deck && this.deck[j * N + i] > -50) return this.deck[j * N + i];   // over de brug
       const ha = H[j * V1 + i], hb = H[j * V1 + i + 1], hc = H[(j + 1) * V1 + i], hd = H[(j + 1) * V1 + i + 1];
       if (fz > fx) return ha + (hd - hc) * fx + (hc - ha) * fz;
       return ha + (hb - ha) * fx + (hd - hb) * fz;
@@ -113,10 +119,11 @@
       return mx - mn;
     }
     // boulders block the way (a mason may still path *to* his own boulder: the pathfinder allows the target tile)
-    walkable(k) { return this.type[k] !== 1 && this.bld[k] === 0 && !this.rock[k]; }
+    walkable(k) { const t = this.type[k]; return t !== 1 && t !== 4 && this.bld[k] === 0 && !this.rock[k] && !(this.lmk && this.lmk[k]); }
     isWater(k) { return this.type[k] === 1; }
 
     generate() {
+      if (N > 64 && this.generateBig) return this.generateBig();          // grote wereld (js/worldgen.js)
       const n = VE.noise(this.seed), n2 = VE.noise(this.seed + 77), n3 = VE.noise(this.seed + 191), n4 = VE.noise(this.seed + 333);
       const cx = this.start.i + 1, cz = this.start.j + 1;
       const ph = (this.seed % 97) * 0.13;
@@ -186,14 +193,44 @@
       this.terrain.receiveShadow = true;
       this.terrain.name = 'terrain';
       this.root.add(this.terrain);
+      this.buildChunks(g, tmat);
       this.buildSkirt();
       this.buildWater();
       this.buildFog();
       this.recolor();
       // border posts
-      this.border = new THREE.InstancedMesh(VE.borderGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5 }), 900);
+      this.borderCap = Math.round(900 * Math.max(1, N / 64));
+      this.border = new THREE.InstancedMesh(VE.borderGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5 }), this.borderCap);
       this.border.count = 0; this.border.castShadow = true; this.border.frustumCulled = false;
       this.root.add(this.border);
+    }
+    /* Grote wereld: het terrein wordt in vakken (chunks) getekend die dezelfde hoekpunten, kleuren en normalen
+       delen, elk met een eigen indexlijst en begrenzing. Wat buiten beeld valt, wordt niet getekend (frustum
+       culling). this.terrain blijft de bron van de gegevens en het doel voor klikken (raycast), maar is zelf
+       onzichtbaar. Kleuren en hoogtes bijwerken (recolor, flatten) werkt dus voor alle chunks tegelijk. */
+    buildChunks(g, mat) {
+      this.chunks = null;
+      if (N <= 64) return;
+      const CH = 24, chunks = [];
+      for (let cj = 0; cj < N; cj += CH) for (let ci = 0; ci < N; ci += CH) {
+        const i1 = Math.min(N, ci + CH), j1 = Math.min(N, cj + CH), idx = [];
+        let lo = 1e9, hi = -1e9;
+        for (let j = cj; j < j1; j++) for (let i = ci; i < i1; i++) {
+          const a = j * V1 + i, b = a + 1, c = a + V1, d = c + 1;
+          idx.push(a, c, d, a, d, b);
+        }
+        for (let z = cj; z <= j1; z++) for (let x = ci; x <= i1; x++) { const h = this.H[z * V1 + x]; lo = Math.min(lo, h); hi = Math.max(hi, h); }
+        const cg = new THREE.BufferGeometry();
+        for (const k of ['position', 'normal', 'color']) cg.setAttribute(k, g.attributes[k]);
+        cg.setIndex(idx);
+        const cx = (ci + i1) / 2, cz = (cj + j1) / 2, cy = (lo + hi) / 2;
+        cg.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, cy, cz), Math.hypot(i1 - ci, j1 - cj, hi - lo + 2) / 2 + 0.5);
+        const m = new THREE.Mesh(cg, mat);
+        m.receiveShadow = true; m.name = 'terrainChunk'; m.frustumCulled = true;
+        this.root.add(m); chunks.push(m);
+      }
+      this.chunks = chunks;
+      this.terrain.visible = false;                       // alleen nog voor gegevens en klikken
     }
     buildSkirt() {
       const pts = [];
@@ -309,7 +346,8 @@
         c.lerp(g3, VE.smooth(0.5, 0.68, this.forest[k]) * 0.75);
         const m = this.mount[k];
         if (m > 0.2) { t.copy(rock).lerp(rock2, gn); c.lerp(t, VE.smooth(0.25, 0.6, m)); }
-        if (h > 4.6) c.lerp(snow, VE.smooth(4.6, 5.6, h));
+        if (this.volc && this.volc[k] > 0) this.volcColor(c, k, h, gn);     // vulkaan, canyonwanden, spleet (js/worldgen.js)
+        else if (h > 4.6) c.lerp(snow, VE.smooth(4.6, 5.6, h));
         if (h < 0.34) c.lerp(sand, VE.smooth(0.34, 0.14, h));
         if (h < 0.0) c.lerp(bed, VE.smooth(0.0, -0.35, h));
         if (this.vertexNearHard(x, z)) c.lerp(dirt, 0.55);
@@ -368,7 +406,7 @@
         let edge = false;
         for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = i + d[0], b = j + d[1]; if (!this.inb(a, b) || !this.owned[b * N + a]) edge = true; }
         if (!edge || (i + j) % 2) continue;
-        if (n >= 900) break;
+        if (n >= this.borderCap) break;
         const x = i + 0.5, z = j + 0.5;
         _e.set(0, (i * 7 + j * 3) % 6, 0); _q.setFromEuler(_e);
         _m.compose(_p.set(x, this.heightAt(x, z), z), _q, _s.set(1, 1, 1));
@@ -464,7 +502,7 @@
   class Nature {
     constructor(world, root) {
       this.w = world; this.root = root;
-      const cap = 1500;
+      const cap = Math.round(1500 * Math.max(1, (N / 64) ** 2 * 0.6));   // grote wereld: meer bomen
       this.cap = cap;
       /* Boomsoorten: elke soort is een pool met eigen InstancedMesh(es). Met de Blender-natuur
          (VE.natureGeo) zijn dat eik, beuk, oude eik, berk, den, spar, fruitbomen, jonge boom en twee
@@ -472,7 +510,7 @@
       this.glb = !!VE.natureGeo;
       this.pools = {};
       this.trees = [];
-      this.rockMesh = new THREE.InstancedMesh(VE.rockGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 8 }), 600);
+      this.rockMesh = new THREE.InstancedMesh(VE.rockGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 8 }), Math.round(600 * Math.max(1, (N / 64) ** 2 * 0.6)));
       this.rockMesh.castShadow = this.rockMesh.receiveShadow = true; this.rockMesh.count = 0; this.rockMesh.frustumCulled = false;
       root.add(this.rockMesh);
       this.rocks = []; this.rockFree = []; this.rockUsed = 0;
@@ -503,7 +541,7 @@
         this.trunkMat = this.trunkMat || new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 3 });
         meshes = [new THREE.InstancedMesh(g.trunk, this.trunkMat, cap), new THREE.InstancedMesh(g.crown, VE.swayMat({ vertexColors: true }, t === 1 ? 0.035 : 0.05, 0.3, 'tree' + t), cap)];
       } else {
-        cap = VE.TREE_CAP[name] || 400;
+        cap = Math.round((VE.TREE_CAP[name] || 400) * Math.max(1, (N / 64) ** 2 * 0.6));   // grote wereld: meer bomen
         const conifer = name === 'tree_pine' || name === 'tree_spruce';
         meshes = [new THREE.InstancedMesh(VE.natureGeo[name], VE.windMat({}, { amp: conifer ? 0.035 : 0.045, flutter: conifer ? 0.002 : 0.007, base: 0.12, pow: 1.5 }, name), cap)];
         meshes[0].setColorAt(0, _c.setHex(0xffffff));

@@ -443,7 +443,10 @@
     home: { s0: 0.08, s1: 0.46, life: 4.6, vy: 0.2, a: 0.62, tint: [0.93, 0.92, 0.9], jitter: 0.015 },
     work: { s0: 0.09, s1: 0.52, life: 4.0, vy: 0.26, a: 0.7, tint: [0.88, 0.87, 0.85], jitter: 0.02 },
     heavy: { s0: 0.13, s1: 0.78, life: 5.2, vy: 0.34, a: 0.85, tint: [0.5, 0.48, 0.46], jitter: 0.03 },
-    smoulder: { s0: 0.07, s1: 0.4, life: 3.8, vy: 0.18, a: 0.45, tint: [0.66, 0.64, 0.62], jitter: 0.015 }
+    smoulder: { s0: 0.07, s1: 0.4, life: 3.8, vy: 0.18, a: 0.45, tint: [0.66, 0.64, 0.62], jitter: 0.015 },
+    // vulkaan: trage, brede grijze pluim uit de krater; stoom: lichte witte wolkjes uit spleten
+    volcano: { s0: 0.7, s1: 3.4, life: 11, vy: 0.42, a: 0.42, tint: [0.56, 0.54, 0.53], jitter: 0.2 },
+    steam: { s0: 0.12, s1: 0.85, life: 3.4, vy: 0.5, a: 0.3, tint: [0.98, 0.98, 0.99], jitter: 0.05 }
   };
   VE.SMOKE_KIND = SMOKE_KIND;
   class Smoke {

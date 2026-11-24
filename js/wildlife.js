@@ -18,7 +18,8 @@
    eenvoudige procedurele reserve de dieren (zelfde gedrag). */
 'use strict';
 (function (VE) {
-  const N = VE.N, TAU = Math.PI * 2;
+  let N = VE.N; const TAU = Math.PI * 2;
+  (VE.sizeHooks = VE.sizeHooks || []).push(n => { N = n; });
   const MOB = VE.isMobile ? 0.65 : 1;
 
   /* ---------------- soorten ---------------- */
@@ -39,7 +40,9 @@
     tit: { name: 'Blue tit', habitat: 'trees', group: [2, 4], target: 7, walk: 0.35, run: 0.9, alert: 1.5, alertHunter: 1.5, home: 7, size: 1.5, fly: 2.4, perch: 0.6 },
     blackbird: { name: 'Blackbird', habitat: 'edge', group: [1, 2], target: 5, walk: 0.4, run: 1.0, alert: 1.9, alertHunter: 1.9, home: 9, size: 1.4, fly: 2.2, perch: 0.3 }
   };
-  for (const k in SPECIES) { SPECIES[k].key = k; SPECIES[k].target = Math.max(2, Math.round(SPECIES[k].target * MOB)); }
+  for (const k in SPECIES) { SPECIES[k].key = k; SPECIES[k].base = SPECIES[k].target = Math.max(2, Math.round(SPECIES[k].target * MOB)); }
+  // grote wereld: meer dieren (niet evenredig met de oppervlakte: buiten beeld kosten ze weinig, maar toch)
+  VE.sizeHooks.push(n => { const f = Math.max(1, (n / 64) ** 2 * 0.6); for (const k in SPECIES) SPECIES[k].target = Math.round(SPECIES[k].base * f); });
   VE.SPECIES = SPECIES;
   const ORDER = Object.keys(SPECIES);
 
@@ -57,7 +60,7 @@
       else this.populate();
     }
     /* tegels waar een dier kan staan: land (geen berg/water), geen gebouw, rotsblok of ingang */
-    passable(k) { const w = this.w, t = w.type[k]; return (t === 0 || t === 3) && !w.bld[k] && !w.rock[k] && !w.door[k]; }
+    passable(k) { const w = this.w, t = w.type[k]; return (t === 0 || t === 3) && !w.bld[k] && !w.rock[k] && !w.door[k] && !(w.lmk && w.lmk[k]); }
     passXZ(x, z) { if (x < 0.3 || z < 0.3 || x > N - 0.3 || z > N - 0.3) return false; return this.passable((Math.floor(z)) * N + Math.floor(x)); }
     /* vrij pad in een rechte lijn (stappen van een derde tegel) */
     clear(x0, z0, x1, z1) {
@@ -363,8 +366,9 @@
       let best = null, bd = 1e9;
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
         const ci = gi + di, cj = gj + dj;
-        if (ci < 0 || cj < 0 || ci > 15 || cj > 15) continue;
-        const cell = grid[cj * 16 + ci]; if (!cell) continue;
+        const GW = Math.ceil(N / 4);
+        if (ci < 0 || cj < 0 || ci >= GW || cj >= GW) continue;
+        const cell = grid[cj * GW + ci]; if (!cell) continue;
         for (const s of cell) {
           const stalking = s.role === 'hunter' && s.mode === 'work';
           const r = stalking ? sp.alertHunter : sp.alert;
@@ -488,10 +492,10 @@
       this.habT -= dt; if (this.habT <= 0) { this.habT = 30; this.updateHabitat(); }
       this.breedT -= dt; if (this.breedT <= 0) { this.breedT = 14; this.breed(); }
       // bewoners in een rooster van 4×4 tegels (snel zoeken)
-      const grid = this.sgrid = new Array(256);
+      const GW = Math.ceil(N / 4), grid = this.sgrid = new Array(GW * GW);
       for (const s of this.g.settlers) {
         if (s.hidden) continue;
-        const c = Math.floor(s.z / 4) * 16 + Math.floor(s.x / 4);
+        const c = Math.floor(s.z / 4) * GW + Math.floor(s.x / 4);
         (grid[c] || (grid[c] = [])).push(s);
       }
       let dead = false;

@@ -19,7 +19,8 @@ test.describe('Blender-modellen', () => {
       expect(r.meshes).toBeGreaterThan(0);
       expect(r.tris).toBeGreaterThan(0);
       // oorsprong op maaiveld; een fundering mag tot 0.25 onder de grond zakken (zoals de gebouwen in de game)
-      expect(r.min[1], 'onderkant tussen -0.25 en 0').toBeGreaterThanOrEqual(-0.25);
+      // landschapsobjecten (brug met pijlers tot in de canyon, waterval langs de wand) reiken dieper
+      expect(r.min[1], 'onderkant tussen -0.25 en 0').toBeGreaterThanOrEqual(name === 'landmarks' ? -4 : -0.25);
       expect(r.min[1], 'onderkant tussen -0.25 en 0').toBeLessThan(0.01);
       fs.mkdirSync(path.join(__dirname, 'screenshots', 'models'), { recursive: true });
       await page.waitForTimeout(300);

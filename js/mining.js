@@ -17,7 +17,8 @@
    en haalt er één brok per keer uit. Op = melding en status. */
 'use strict';
 (function (VE) {
-  const N = VE.N;
+  let N = VE.N;
+  (VE.sizeHooks = VE.sizeHooks || []).push(n => { N = n; });
   const _c = new THREE.Color();
 
   /* aders per soort: aantal groepjes, tegels per groepje, voorraad per tegel, waar (rangorde van afstand tot het dorp, 0..1) */
@@ -64,14 +65,22 @@
       return true;
     },
     generate(w) {
-      const rnd = VE.rng((w.seed ^ 0x0e5a1173) >>> 0);
-      const cx = w.start.i + 1, cz = w.start.j + 1;
+      // grote wereld: rond elke startplek dezelfde aders (eerlijke start), elk binnen zijn eigen bergen
+      if (w.starts && w.starts.length > 1) {
+        w.starts.forEach((s, n) => this.generateAt(w, s.i + 1, s.j + 1, 34, VE.rng((w.seed ^ 0x0e5a1173 ^ (n * 0x9e37)) >>> 0)));
+        return;
+      }
+      this.generateAt(w, w.start.i + 1, w.start.j + 1, 1e9, VE.rng((w.seed ^ 0x0e5a1173) >>> 0));
+    },
+    generateAt(w, cx, cz, maxR, rnd) {
       const cand = [];
       for (let j = 1; j < N - 1; j++) for (let i = 1; i < N - 1; i++) {
         const k = j * N + i;
         if (w.type[k] !== 2 || w.rock[k]) continue;
         if (w.slope(i, j, 1) > 2.6) continue;
-        cand.push({ k: k, i: i, j: j, d: Math.hypot(i + 0.5 - cx, j + 0.5 - cz) });
+        const dd = Math.hypot(i + 0.5 - cx, j + 0.5 - cz);
+        if (dd > maxR || w.ore[k]) continue;
+        cand.push({ k: k, i: i, j: j, d: dd });
       }
       if (!cand.length) return;
       cand.sort((a, b) => a.d - b.d || a.k - b.k);

@@ -1,7 +1,8 @@
 /* Village Empire — © 2026 Brakeco Games. All rights reserved. */
 'use strict';
 (function (VE) {
-  const N = VE.N, DEFS = VE.DEFS;
+  let N = VE.N; const DEFS = VE.DEFS;
+  (VE.sizeHooks = VE.sizeHooks || []).push(n => { N = n; });
   const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
   const MAX_POP = 160;
   // voetpaden: zie js/paths.js (slijtage per 1/4 tegel op de echte looproute, vijf stadia, langzaam herstel)
@@ -20,6 +21,7 @@
       this.w = w; const n = N * N;
       this.g = new Float32Array(n); this.from = new Int32Array(n); this.seen = new Uint32Array(n); this.closed = new Uint32Array(n);
       this.stamp = 0; this.hk = []; this.hf = [];
+      this.maxIter = Math.max(5000, Math.round(n * 0.6));          // grote wereld: verder zoeken (lange routes)
     }
     // worn paths are cheaper, so settlers keep using (and deepening) the routes that already exist
     cost(k) { const w = this.w, r = w.road[k]; if (r === 2) return 0.6; if (r === 1) return 0.8; return w.type[k] === 2 ? 1.5 : 1.0; }
@@ -51,7 +53,7 @@
         if (this.closed[c] === st) continue;
         this.closed[c] = st;
         if (c === t) { found = true; break; }
-        if (++iter > 5000) break;
+        if (++iter > this.maxIter) break;
         const ci = c % N, cj = (c / N) | 0, cc = this.cost(c);
         for (let q = 0; q < 8; q++) {
           const d = DIRS[q], ni = ci + d[0], nj = cj + d[1];
@@ -81,6 +83,7 @@
       this.carry = null; this.tool = null; this.act = null; this.ap = 0; this.wp = Math.random() * 6;
       this.moving = false; this.hidden = false; this.wt = 0.5 + Math.random() * 2;
       this.task = null; this.work = null; this.wstate = null; this.resv = null; this.onAct = null; this.actTick = 0;
+      this.owner = 0;                                              // speler (multiplayer-voorbereiding)
     }
   }
 
@@ -89,6 +92,9 @@
     constructor(scene) { this.scene = scene; }
 
     init(save) {
+      // wereldgrootte: oude saves 64 × 64; nieuwe werelden groot (VE.BIG_N), tenzij ?small in de URL (tests/oud)
+      const small = typeof location !== 'undefined' && /[?&]small(&|$|=)/.test(location.search);
+      VE.setWorldSize(save ? (save.n || 64) : (small ? 64 : VE.BIG_N));
       this.root = new THREE.Group();
       this.scene.add(this.root);
       this.seed = save ? save.seed : ((Math.random() * 1e9) >>> 0);
@@ -99,6 +105,12 @@
       w.buildDecor(rand);
       this.nature = new VE.Nature(w, this.root);
       this.pf = new Pathfinder(w);
+      /* Spelers (voorbereiding op multiplayer, max. 3): elk een eigen startplek; speler 0 ben jij. Gebouwen en
+         bewoners hebben een eigenaar (owner, nu altijd 0). AI en online spelen bestaan nog niet. */
+      const starts = w.starts || [w.start];
+      const SP = save && Array.isArray(save.players) ? save.players : null;
+      this.players = starts.map((st, id) => Object.assign({ id: id, kind: id === 0 ? 'human' : 'open', name: id === 0 ? 'You' : 'Free land',
+        color: [0x3d63b0, 0xb0503a, 0x4f7d34][id], start: { i: st.i, j: st.j } }, SP && SP[id] ? { kind: SP[id].kind, name: SP[id].name } : {}));
       this.buildings = []; this.bmap = {}; this.settlers = [];
       this.bid = 0; this.sid = 0; this.time = 0;
       /* Voorraad ligt altijd ergens: in een Storehouse, op de startstapel, in het dorpshuis (beloningen en
@@ -325,6 +337,9 @@
         const k = b * N + a;
         if (!w.owned[k]) return { ok: false, why: 'Outside your borders' };
         if (w.type[k] === 1) return { ok: false, why: 'Cannot build on water' };
+        if (w.type[k] === 4) return { ok: false, why: 'Too steep: a cliff' };
+        if (w.type[k] === 5) return { ok: false, why: 'Cannot build on the bridge' };
+        if (w.lmk && w.lmk[k]) return { ok: false, why: 'A landmark is in the way' };
         if (def.mountain) {
           if (w.type[k] !== 2) return { ok: false, why: 'Mines can only be built on the mountain' };
           if (w.road[k]) return { ok: false, why: 'A path is in the way' };
@@ -338,7 +353,7 @@
       const di = i + (size > 1 ? 1 : 0), dj = j + size;
       if (!w.inb(di, dj)) return { ok: false, why: 'No room for an entrance' };
       const dk = dj * N + di;
-      if (w.type[dk] === 1 || w.bld[dk] || w.rock[dk]) return { ok: false, why: 'Entrance is blocked' };
+      if (w.type[dk] === 1 || w.type[dk] === 4 || w.bld[dk] || w.rock[dk] || (w.lmk && w.lmk[dk])) return { ok: false, why: 'Entrance is blocked' };
       if (def.mountain) {
         const M = VE.Mining, ore = VE.ORES[def.ore];
         if (M && !M.near(w, i + 0.5, j + 0.5, def.ore, def.radius)) {
@@ -369,7 +384,7 @@
       const b = {
         id: ++this.bid, type: type, def: def, i: i, j: j, size: size, level: 1, built: false, alive: true, used: 0, total: 0,
         delivered: {}, incoming: {}, input: {}, output: {}, outRes: {}, worker: null, builder: null, wt: 0, working: false,
-        sell: {}, keep: 10, fields: [], status: '', sellIdx: 0, unreach: 0
+        sell: {}, keep: 10, fields: [], status: '', sellIdx: 0, unreach: 0, owner: 0
       };
       b.cx = i + size / 2; b.cz = j + size / 2;
       b.doorI = i + (size > 1 ? 1 : 0); b.doorJ = j + size; b.doorK = b.doorJ * N + b.doorI;
@@ -578,7 +593,7 @@
 
     /* ---------- settlers ---------- */
     spawnSettler(near) {
-      if (this.settlers.length >= MAX_POP) return null;
+      if (this.settlers.length >= (this.maxPop || MAX_POP)) return null;   // maxPop: per spel instelbaar (tests: drie volle dorpen)
       const hq = near || this.hq;
       const s = new Settler(++this.sid, hq.dx + (Math.random() - 0.5) * 0.8, hq.dz + 0.3 + Math.random() * 0.6);
       this.settlers.push(s);
@@ -1499,7 +1514,7 @@
       if (carried) for (const s of this.settlers) if (s.task && s.task.picked && s.carry) stock[s.carry] = (stock[s.carry] || 0) + 1;
       for (const r in inHand) stock[r] = (stock[r] || 0) + inHand[r];
       return {
-        v: 4, seed: this.seed, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
+        v: 4, n: VE.N, seed: this.seed, players: this.players ? this.players.map(p => ({ id: p.id, kind: p.kind, name: p.name })) : undefined, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
         stats: this.stats, upg: this.upg, pop: this.settlers.length, speed: this.speed,
         buildings: bl,
         ore: VE.Mining ? VE.Mining.serialize(w) : undefined, wild: this.wild ? this.wild.serialize() : undefined,

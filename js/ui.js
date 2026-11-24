@@ -2,7 +2,8 @@
 'use strict';
 (function (VE) {
   const $ = id => document.getElementById(id);
-  const N = VE.N;
+  let N = VE.N;
+  (VE.sizeHooks = VE.sizeHooks || []).push(n => { N = n; });
   /* een goed staat in de balk (en bij handel/markt) zodra je het kunt gebruiken of al hebt */
   VE.resVisible = (g, r) => { const d = VE.RES[r]; return !d.rank || g.rank >= d.rank || (g.stock[r] || 0) > 0 || ((g.stats.produced || {})[r] || 0) > 0; };
   const resTip = r => VE.RES[r].name + (VE.RES[r].tip ? ': ' + VE.RES[r].tip : '');
@@ -42,7 +43,7 @@
       this.tx += -rx * dx * s + fx * dy * s * 1.25;
       this.tz += -rz * dx * s + fz * dy * s * 1.25;
     }
-    zoom(f) { this.tdist = VE.clamp(this.tdist * f, 6.5, 42); }
+    zoom(f) { this.tdist = VE.clamp(this.tdist * f, 6.5, VE.N > 64 ? 58 : 42); }
     /* punt op het maaiveld (vlak y = ty) onder schermpositie (clientX, clientY); null als je boven de horizon wijst */
     groundAt(cx, cy, out, planeY) {
       const el = VE.view && VE.view.renderer.domElement; if (!el) return null;

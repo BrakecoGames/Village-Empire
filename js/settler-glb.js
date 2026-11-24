@@ -162,7 +162,8 @@
 
   class SettlerRenderGLB {
     constructor(root, A, cap) {
-      cap = cap || 200; this.cap = cap; this.root = root; this.A = A;
+      // grote wereld: plek voor drie volle dorpen
+      cap = cap || (VE.N > 64 ? 520 : 200); this.cap = cap; this.root = root; this.A = A;
       this.mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 6, specular: 0x141414 });
       this.meshes = [];
       const mk = (geo, n, shadow) => {

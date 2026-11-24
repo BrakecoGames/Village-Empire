@@ -76,6 +76,9 @@ test('eekhoorns: model, klimmen zonder door de stam te gaan, takken, sprongen en
     const VE = window.VE, g = VE.game, W = g.wild, a = W.list.find(x => x.key === 'squirrel' && !x.dead);
     for (const o of W.list) if (o !== a) o.dead = true;
     if (a.sq.mode === 'ground' && !VE.Squirrel.toTree(W, a, 'spawn')) return;
+    // een loofboom (bij een spar verdwijnt hij tussen de naalden)
+    const leafy = g.nature.trees.filter(t => !t.dead && t.growth >= 1 && /oak$|birch|beech$/.test(t.sp || ''));
+    if (leafy.length) a.sq.t = leafy.reduce((b, t) => ((t.x - a.wx) ** 2 + (t.z - a.wz) ** 2 < (b.x - a.wx) ** 2 + (b.z - a.wz) ** 2 ? t : b));
     const t = a.sq.t; a.sq.mode = 'cling'; a.sq.wait = 1e9; a.sq.d = 0.25; a.sq.dir = 1;
     for (const o of g.nature.trees) if (o !== t && !o.dead && (o.x - t.x) ** 2 + (o.z - t.z) ** 2 < 6) g.nature.removeTree(o);
     for (let i = 0; i < 6; i++) { g.arriveT = 1e9; a.vis = true; g.update(0.05); }

@@ -115,8 +115,12 @@ test.describe('wildlife & mijnbouw: logica', () => {
       for (let s = 1; s <= 30; s++) {
         const W = new VE.World((s * 2654435761) >>> 0, new THREE.Group()); W.generate();
         W.ore = new Array(N * N).fill(null); W.deposits = []; M.generate(W);
-        const c = spotNear(W, 1), i = spotNear(W, 2);
-        out.seeds.push(c && i ? Math.max(c[2], i[2]) : 999);
+        // afstand vanaf de startplek van díe wereld (in de grote wereld ligt de start per seed ergens anders)
+        const sx = W.start.i + 1, sz = W.start.j + 1;
+        const near = t => { const ds = W.deposits.filter(d => d.type === t).sort((a, b) => Math.hypot(a.x - sx, a.z - sz) - Math.hypot(b.x - sx, b.z - sz));
+          for (const d of ds) for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) if (Math.hypot(di, dj) <= 2.4 && M.mineSpot(W, d.i + di, d.j + dj)) return Math.hypot(d.x - sx, d.z - sz);
+          return 999; };
+        out.seeds.push(Math.max(near(1), near(2)));
       }
       // bouwregels (territorium overal, rang 2)
       g.rank = 2; w.owned.fill(1);

@@ -159,7 +159,7 @@ test.describe('Natuur', () => {
     console.log('prestaties natuur NIEUW:', JSON.stringify(m));
     console.log('prestaties natuur OUD  :', JSON.stringify(old));
     expect(m.src).toBe('glb'); expect(old.src).toBe('procedural');
-    expect(m.zoom19.calls).toBeLessThan(old.zoom19.calls + 40);
+    expect(m.zoom19.calls).toBeLessThan(old.zoom19.calls + 60);     // grote wereld: meer soorten tegelijk in beeld
     expect(m.zoom19.syncMs, 'culling kost weinig CPU').toBeLessThan(25);
   });
 

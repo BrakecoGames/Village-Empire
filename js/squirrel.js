@@ -20,7 +20,8 @@
    Prestaties: buiten beeld krijgt hij (net als andere dieren) twee keer per seconde een update. */
 'use strict';
 (function (VE) {
-  const N = VE.N, TAU = Math.PI * 2;
+  let N = VE.N; const TAU = Math.PI * 2;
+  (VE.sizeHooks = VE.sizeHooks || []).push(n => { N = n; });
   let CLIMB = null;
   const load = (window.fetch ? fetch('public/models/nature-climb.json' + (VE.VERSION ? '?v=' + VE.VERSION : '')).then(r => r.ok ? r.json() : null) : Promise.resolve(null))
     .then(j => { CLIMB = j; }).catch(() => { CLIMB = null; });

@@ -14,7 +14,8 @@
    stenen in het bergland. Langs gelopen paden en rond gebouwen groeien wat bloemen en plantjes. */
 'use strict';
 (function (VE) {
-  const N = VE.N || 64;
+  let N = VE.N || 64;
+  (VE.sizeHooks = VE.sizeHooks || []).push(n => { N = n; });
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _y = new THREE.Vector3(0, 1, 0);
 
@@ -125,7 +126,7 @@
       this.tr = new Float32Array(N * N);                // platgetrapt per tegel (0 = ongerept, 1 = weg), zie js/paths.js
       const mob = VE.isMobile ? 1 : 0;
       this.kinds = NAMES.map((name, id) => {
-        const def = KINDS[name], cap = def.cap[mob];
+        const def = KINDS[name], cap = Math.round(def.cap[mob] * Math.max(1, (N / 64) ** 2 * 0.85));   // grote wereld: meer plek
         const mat = def.wind ? VE.windMat({}, def.wind, 'veg_' + name) : new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5, specular: 0x111111 });
         const mesh = new THREE.InstancedMesh(geos[name], mat, cap);
         mesh.setColorAt(0, _c.setHex(0xffffff));        // instanceColor bestaat altijd (VE-001); r128: vóór count = 0, anders is de buffer leeg
@@ -217,7 +218,11 @@
       for (let n = order.length - 1; n > 0; n--) { const q = Math.floor(rs() * (n + 1)); const t = order[n]; order[n] = order[q]; order[q] = t; }
       for (const k of order) {
         const i = k % N, j = (k / N) | 0, ty = w.type[k];
-        if (ty === 1) continue;
+        if (ty === 1 || ty >= 4) continue;                            // water, klif, brug: niets
+        if (w.volc && w.volc[k]) {                                    // vulkaan: kaal gesteente, een enkel steentje
+          if (w.volc[k] === 1 && r() < 0.12) group('d_stones', k, i, j, 1, 0.2, 0.8, 1.3);
+          continue;
+        }
         const f = w.forest[k], m = w.mount[k];
         const dStart = Math.hypot(i + 0.5 - cx, j + 0.5 - cz);
         const near = dStart < 3.6;                                    // rond het hoofdkwartier: alleen wat gras

@@ -16,7 +16,8 @@
    geometrie, dus geen hoekige vlakken en geen extra draw calls. */
 'use strict';
 (function (VE) {
-  const N = VE.N, R = 4, M = N * R;
+  const R = 4; let N = VE.N, M = N * R;
+  (VE.sizeHooks = VE.sizeHooks || []).push(n => { N = n; M = n * R; });
   // drempels in passages per cel (afgestemd op loopsnelheid en dorpsgrootte, zie tests/verbeteringen.spec.js)
   const CFG = VE.PATHS = { R: R, stage: [0, 6, 18, 42, 90], max: 200, decayMul: 0.993, decayLin: 0.015, apron: 70 };
   VE.PATH = { TRAIL_ON: CFG.stage[3], PATH_ON: CFG.stage[4], PATH_MAX: CFG.max };
@@ -220,6 +221,6 @@
         '}'
       ].join('\n'));
     };
-    mat.customProgramCacheKey = () => 'terrain_paths_v1';
+    const nn = N; mat.customProgramCacheKey = () => 'terrain_paths_v1_' + nn;   // N zit in de shader
   };
 })(window.VE);
