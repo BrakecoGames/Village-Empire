@@ -70,11 +70,43 @@ TAU = 2 * math.pi
 
 
 # ------------------------------------------------------------------ bouwstenen
+# Klimdata voor eekhoorns (public/models/nature-climb.json): per boomsoort de echte stamlijn (punten + straal)
+# en de beloopbare takken, rechtstreeks uit de vormen hieronder (chain/limb). De game legt de eekhoorn daar
+# precies tegenaan, dus nooit door de schors heen.
+CLIMB = {}
+CUR = [None]
+
+
+def climb_rec(kind, *data):
+    c = CUR[0]
+    if c is None:
+        return
+    r = lambda v: round(v, 4)
+    if kind == "trunk":
+        pts, radii = data
+        if not c["trunk"]:
+            c["trunk"] = [[r(p[0]), r(p[1]), r(p[2]), r(rr)] for p, rr in zip(pts, radii)]
+    elif kind == "limb":
+        p0, p1, r0, r1, mat = data
+        if not mat.startswith(("Bark", "Twig")):
+            return
+        if p0[1] <= 0.0 and not c["trunk"]:                 # rechte stam vanaf de grond (beuk, spar, jonge boom)
+            c["trunk"] = [[r(p0[0]), r(p0[1]), r(p0[2]), r(r0)], [r(p1[0]), r(p1[1]), r(p1[2]), r(r1)]]
+            return
+        dx, dy, dz = p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]
+        hor = math.hypot(dx, dz)
+        # beloopbare tak: dik genoeg, niet te steil en lang genoeg (geen stamverlengstuk of twijgje)
+        if p0[1] > 0.1 and r0 >= 0.012 and hor >= 0.06 and dy <= hor * 2.0:
+            c["br"].append([r(p0[0]), r(p0[1]), r(p0[2]), r(p1[0]), r(p1[1]), r(p1[2]), r(r0), r(r1)])
+
+
 def node(name, fn, seed):
     """Bouwt één asset en voegt de delen samen tot node `name` (oorsprong = grond, midden)."""
     LEVEL.clear()
     rnd.seed(seed)
+    CUR[0] = CLIMB.setdefault(name, {"trunk": [], "br": []}) if name.startswith("tree_") else None
     fn()
+    CUR[0] = None
     objs = list(LEVEL)
     bpy.ops.object.select_all(action="DESELECT")
     for o in objs:
@@ -100,6 +132,7 @@ def limb(p0, p1, r0, r1, mat, seg=6, cap=True, smooth=True, collar=True):
     """Taps toelopende tak/stam tussen twee game-punten (normalen naar buiten).
     Naadloos: de voet begint een stukje binnen de stam of tak waar hij uit groeit, en takken boven de grond
     krijgen een kleine kraag (verdikking) op het aanhechtpunt, zodat er nooit een kier of zwevende tak is."""
+    climb_rec("limb", tuple(p0), tuple(p1), r0, r1, mat)
     p0, p1 = Vector(p0), Vector(p1)
     ax = (p1 - p0).normalized()
     if collar and p0.y > 0.03 and r0 >= 0.008 and mat.startswith(("Bark", "Twig", "Root")):
@@ -134,6 +167,7 @@ def chain(pts, radii, mat, seg=6):
     """Kromme stam als één doorlopende buis: bij elke knik staat de ring schuin (gemiddelde richting van
     beide stukken, met verbrede 'verstek'-straal), dus geen wigvormige kieren tussen de stukken.
     Onderaan open (zit in de grond), bovenaan dicht."""
+    climb_rec("trunk", [tuple(p) for p in pts], list(radii))
     P = [Vector(p) for p in pts]
     n = len(P)
     tang = []
@@ -745,4 +779,8 @@ if use_ao:
 for n, (name, obj) in enumerate(NODES):
     obj.matrix_world = Matrix.Translation(M3 @ Vector(((n % 8) * 1.1, 0, (n // 8) * 1.1)))
 
+import json  # noqa: E402
+with open(os.path.join(os.path.dirname(os.path.abspath(args.out)), "nature-climb.json"), "w", encoding="utf-8") as fh:
+    json.dump({k: v for k, v in CLIMB.items() if v["trunk"]}, fh, separators=(",", ":"))
+print("VE-CLIMB", {k: (len(v["trunk"]), len(v["br"])) for k, v in CLIMB.items()})
 ve.export_glb(args.out, budget=sum(BUDGET[name.split("_")[0]] + 200 for name, _ in NODES), vertex_colors=use_ao)

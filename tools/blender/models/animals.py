@@ -39,7 +39,7 @@ setup(seed=4401, extra_palette={
     # vos
     "Fox": (0xE0722E, 0.03), "FoxD": (0xB5521E, 0.03), "Sock": (0x2E2420, 0.02),
     # eekhoorn
-    "Sq": (0xB4542A, 0.03), "SqL": (0xF0DDBE, 0.02), "Nut": (0x8A5A2B, 0.03),
+    "Sq": (0xB4542A, 0.012), "SqL": (0xF0DDBE, 0.008), "SqD": (0x8E3E1E, 0.012), "Nut": (0x8A5A2B, 0.03),
     # vogel
     "Bird": (0x8A6A4A, 0.03), "BirdL": (0xE6D2B2, 0.02), "BirdD": (0x5E4632, 0.03), "Beak": (0xF0A23A, 0.0), "Robin": (0xE07A3A, 0.02),
     "TitG": (0x8FA65A, 0.03), "TitY": (0xF2D24A, 0.02), "TitB": (0x3F7FD0, 0.02), "TitW": (0x5A8AC8, 0.03), "TitBk": (0x2A2A30, 0.0),
@@ -445,46 +445,152 @@ def fox():
 
 # ================================================================== eekhoorn
 def squirrel():
+    """Rode eekhoorn (nieuw): slank lijf met lichte buik, sterke achterpoten (dijen), kleine voorpootjes met
+    vingertjes, oortjes met pluimen en een grote, volle staart in een S-boog in drie delen (tail1-3), zodat hij
+    vloeiend golft, sleept bij het klimmen en wappert bij een sprong. Rond 1.000 driehoeken.
+    Clips: idle, walk (huppen), run (galop), forage (snuffelen/graven), sit (rechtop met nootje), alert,
+    rest, climb (kop omhoog tegen de stam), descend (kop omlaag), jump (sprong tussen takken), perch."""
     sp, hb = "squirrel", 0.03
-    make_rig(sp, quad_nodes(hb, 0.06, 0.013, -0.008, (0, 0.022, 0.028), (0, 0.002, -0.028)))
-    part(sp, "body", "body", lambda: (
-        blob(0.026, "Sq", (0, hb + 0.004, 0), scale=(0.8, 0.85, 1.25), sub=2),
-        blob(0.016, "SqL", (0, hb - 0.002, 0.014), scale=(0.8, 0.8, 1.0), sub=1)))
+    nodes = {
+        "root": (None, (0, 0, 0)),
+        "body": ("root", (0, hb, 0)),
+        "head": ("body", (0, hb + 0.016, 0.03)),
+        "tail1": ("body", (0, hb + 0.004, -0.03)),
+        "tail2": ("tail1", (0, hb + 0.03, -0.05)),
+        "tail3": ("tail2", (0, hb + 0.06, -0.046)),
+        "legFL": ("body", (-0.011, hb - 0.004, 0.019)), "legFR": ("body", (0.011, hb - 0.004, 0.019)),
+        "legBL": ("body", (-0.013, hb - 0.002, -0.017)), "legBR": ("body", (0.013, hb - 0.002, -0.017)),
+    }
+    make_rig(sp, nodes)
+
+    def body():
+        blob(0.025, "Sq", (0, hb + 0.003, 0.002), scale=(0.74, 0.8, 1.4), sub=2)            # slank, lang lijf
+        blob(0.017, "SqL", (0, hb - 0.004, 0.012), scale=(0.78, 0.7, 1.25), sub=1)           # lichte buik/borst
+        blob(0.0135, "Sq", (0, hb + 0.012, 0.024), scale=(0.9, 1.0, 1.1), sub=1)            # nek: kop en lijf vloeien in elkaar
+    part(sp, "body", "body", body)
+
     def head():
-        y, z = hb + 0.03, 0.035
-        blob(0.019, "Sq", (0, y, z), sub=2)
-        blob(0.009, "SqL", (0, y - 0.006, z + 0.014), scale=(1.1, 0.8, 0.9), sub=1)
-        blob(0.0035, "Nose", (0, y - 0.002, z + 0.022), sub=0)
-        eyes(0, y + 0.004, z + 0.008, 0.014, 0.0055, fwd=0.002)
+        y, z = hb + 0.024, 0.04
+        blob(0.0165, "Sq", (0, y, z), scale=(0.95, 0.92, 1.12), sub=2)                      # schedel
+        blob(0.0105, "Sq", (0, y - 0.003, z + 0.013), scale=(0.95, 0.85, 1.05), sub=1)      # snuit
+        blob(0.008, "SqL", (0, y - 0.008, z + 0.011), scale=(1.15, 0.6, 1.0), sub=0)        # witte wangen/kin
+        blob(0.0032, "Nose", (0, y - 0.001, z + 0.0225), sub=0)
         for s in (-1, 1):
-            cyl(0.0, 0.006, 0.02, 4, "Sq", pos=(s * 0.009, y + 0.013, z - 0.004), smooth=False)
-            blob(0.003, "SqL", (s * 0.009, y + 0.034, z - 0.004), sub=0)                       # pluimpjes
+            blob(0.0042, "Eye", (s * 0.0098, y + 0.004, z + 0.007), scale=(0.75, 1.0, 1.0), sub=0)
+            blob(0.0014, "Spark", (s * 0.0112, y + 0.0058, z + 0.0095), sub=0)
+            # oortje met een pluim (eekhoorns hebben pluimpjes op de oren)
+            cyl(0.0, 0.0055, 0.016, 5, "Sq", pos=(s * 0.0085, y + 0.011, z - 0.003), rot=(-0.15, 0, s * -0.28), smooth=False)
+            blob(0.0032, "SqD", (s * 0.0122, y + 0.027, z - 0.006), scale=(0.8, 1.6, 0.8), sub=0)
     part(sp, "head", "head", head)
-    def tail():
-        pts = [(0, hb + 0.0, -0.03, 0.013), (0, hb + 0.02, -0.045, 0.017), (0, hb + 0.045, -0.05, 0.019), (0, hb + 0.068, -0.04, 0.017), (0, hb + 0.078, -0.022, 0.012)]
-        for i, (x, y, z, r) in enumerate(pts):
-            blob(r, "Sq" if i % 2 == 0 else "SqL" if i == 3 else "Sq", (x, y, z), scale=(0.8, 1.0, 1.0), sub=1)
-    part(sp, "tail", "tail", tail)
-    part(sp, "legF", "leg", lambda: leg(-0.013, hb - 0.008, 0.0, 0.004, "Sq", paw="SqL", z=0.02))
-    part(sp, "legB", "leg", lambda: (blob(0.012, "Sq", (-0.014, hb - 0.012, -0.018), scale=(0.7, 1.0, 1.2), sub=1),
-                                     leg(-0.013, hb - 0.014, 0.0, 0.004, "Sq", paw="SqL", z=-0.02)))
+
+    # staart: drie delen, samen een grote S-boog; elk deel twee volle bollen (licht aan de onderkant)
+    def tail1():
+        limb((0, hb + 0.004, -0.026), (0, hb + 0.022, -0.05), 0.009, 0.0165, "Sq", seg=8)
+        blob(0.0165, "Sq", (0, hb + 0.022, -0.05), scale=(0.9, 1.0, 1.0), sub=1)
+    def tail2():
+        limb((0, hb + 0.022, -0.05), (0, hb + 0.058, -0.054), 0.0168, 0.0195, "Sq", seg=8)
+        limb((0, hb + 0.026, -0.058), (0, hb + 0.056, -0.064), 0.011, 0.012, "SqD", seg=6)  # donkerder rugzijde
+        blob(0.0195, "Sq", (0, hb + 0.058, -0.054), scale=(0.9, 1.0, 1.0), sub=2)
+    def tail3():
+        limb((0, hb + 0.058, -0.054), (0, hb + 0.081, -0.03), 0.0195, 0.012, "Sq", seg=8)
+        blob(0.0125, "Sq", (0, hb + 0.081, -0.029), scale=(0.9, 0.95, 1.1), sub=1)          # krul naar voren
+        blob(0.0062, "SqL", (0, hb + 0.083, -0.018), scale=(0.9, 0.8, 1.0), sub=0)
+    part(sp, "tail1", "tail", tail1)
+    part(sp, "tail2", "tail", tail2)
+    part(sp, "tail3", "tail", tail3)
+
+    def legF():                                  # klein voorpootje met handje
+        x, top, z = -0.011, hb - 0.004, 0.019
+        limb((x, top, z), (x, 0.012, z + 0.004), 0.0042, 0.003, "Sq", seg=5)
+        blob(0.0042, "SqL", (x, 0.004, z + 0.007), scale=(1.0, 0.6, 1.35), sub=0)
+    def legB():                                  # sterke dij en lange achtervoet
+        x, top, z = -0.013, hb - 0.002, -0.017
+        blob(0.0115, "Sq", (x - 0.002, top - 0.004, z + 0.002), scale=(0.7, 1.0, 1.2), sub=1)
+        limb((x, top - 0.01, z - 0.002), (x, 0.006, z + 0.002), 0.0048, 0.0034, "Sq", seg=5)
+        blob(0.0048, "SqL", (x, 0.004, z + 0.01), scale=(0.85, 0.55, 1.9), sub=0)
+    part(sp, "legF", "leg", legF)
+    part(sp, "legB", "leg", legB)
+
+    # ---- animaties (staart met faseverschil: tail1 → tail2 → tail3 golft na)
+    def T(a, b, c):
+        return {"tail1": k(rx=a), "tail2": k(rx=b), "tail3": k(rx=c)}
+
+    def merge(*ds):
+        out = {}
+        for d in ds:
+            out.update(d)
+        return out
     clip(sp, "idle", 72, [
-        (0.0, {"head": k(), "tail": k(), "body": k()}),
-        (0.15, {"tail": k(rx=-0.3)}), (0.22, {"tail": k(rx=0.1)}), (0.29, {"tail": k(rx=-0.3)}), (0.36, {"tail": k()}),   # staartje trilt
-        (0.5, {"head": k(ry=0.6, rx=-0.15)}),
-        (0.7, {"head": k(ry=-0.5, rx=-0.1)}),
-        (1.0, {"head": k(), "tail": k(), "body": k()}),
+        (0.0, merge({"head": k(), "body": k()}, T(0, 0, 0))),
+        (0.12, T(-0.25, 0.15, 0.25)), (0.18, T(0.12, -0.2, -0.2)), (0.24, T(-0.25, 0.15, 0.25)), (0.3, T(0, 0, 0)),   # staart trilt
+        (0.5, merge({"head": k(ry=0.6, rx=-0.15)}, T(0.05, 0.05, -0.08))),
+        (0.7, merge({"head": k(ry=-0.5, rx=-0.1)}, T(-0.05, 0.08, 0.1))),
+        (1.0, merge({"head": k(), "body": k()}, T(0, 0, 0))),
     ])
-    clip(sp, "walk", 10, gallop_keys(0.7, 0.8, 0.012, 0.15))
-    clip(sp, "run", 8, gallop_keys(0.95, 1.0, 0.02, 0.2))
-    # rechtop met een nootje
-    def nut_pose(extra):
-        d = {"body": k(rx=-1.0, dy=0.012), "head": k(rx=0.85), "legFL": k(rx=-1.6), "legFR": k(rx=-1.6), "legBL": k(rx=-0.9), "legBR": k(rx=-0.9), "tail": k(rx=1.25)}
+    # huppen: achterpoten samen, voorpoten samen; de staart golft mee
+    def bound(n, F, B, lift, tilt):
+        return [
+            (0.0, merge({"legFL": k(rx=-F), "legFR": k(rx=-F * 0.85), "legBL": k(rx=B * 0.7), "legBR": k(rx=B * 0.6), "body": k(rx=tilt), "head": k(rx=0.12)}, T(-0.55, 0.3, 0.25))),
+            (0.3, merge({"legFL": k(rx=F * 0.5), "legFR": k(rx=F * 0.6), "legBL": k(rx=-B), "legBR": k(rx=-B * 0.9), "body": k(rx=-tilt, dy=lift), "head": k(rx=-0.1)}, T(-0.75, 0.15, 0.1))),
+            (0.6, merge({"legFL": k(rx=F * 0.8), "legFR": k(rx=F * 0.7), "legBL": k(rx=-B * 0.3), "legBR": k(rx=-B * 0.2), "body": k(dy=lift * 0.5), "head": k()}, T(-0.6, 0.35, 0.3))),
+            (1.0, merge({"legFL": k(rx=-F), "legFR": k(rx=-F * 0.85), "legBL": k(rx=B * 0.7), "legBR": k(rx=B * 0.6), "body": k(rx=tilt), "head": k(rx=0.12)}, T(-0.55, 0.3, 0.25))),
+        ]
+    clip(sp, "walk", 12, bound(0, 0.7, 0.8, 0.01, 0.12))
+    clip(sp, "run", 8, bound(0, 1.0, 1.05, 0.018, 0.2))
+    # snuffelen en graven: neus in het gras, voorpootjes krabben om beurten
+    F0 = merge({"head": k(rx=0.75), "body": k(rx=0.2, dy=-0.004), "legFL": k(rx=-0.3), "legFR": k(rx=0.2)}, T(-0.3, 0.25, 0.3))
+    clip(sp, "forage", 30, [
+        (0.0, F0),
+        (0.25, merge({"head": k(rx=0.85, ry=0.12), "legFL": k(rx=0.25), "legFR": k(rx=-0.35)}, T(-0.25, 0.3, 0.35))),
+        (0.5, merge({"head": k(rx=0.7, ry=-0.1), "legFL": k(rx=-0.35), "legFR": k(rx=0.25)}, T(-0.35, 0.2, 0.25))),
+        (0.75, merge({"head": k(rx=0.9), "legFL": k(rx=0.2), "legFR": k(rx=-0.3)}, T(-0.3, 0.28, 0.32))),
+        (1.0, F0),
+    ])
+    # rechtop met een nootje (op de achterpoten, staart tegen de rug)
+    def up(extra):
+        d = merge({"body": k(rx=-1.0, dy=0.012), "head": k(rx=0.85), "legFL": k(rx=-1.65), "legFR": k(rx=-1.65), "legBL": k(rx=-0.95), "legBR": k(rx=-0.95)},
+                  T(1.15, 0.25, 0.3))
         d.update(extra)
         return d
-    clip(sp, "eat", 36, [(0.0, nut_pose({})), (0.25, nut_pose({"head": k(rx=0.95)})), (0.5, nut_pose({})), (0.75, nut_pose({"head": k(rx=0.95, ry=0.1)})), (1.0, nut_pose({}))])
-    clip(sp, "alert", 40, [(0.0, nut_pose({"head": k(rx=0.75)})), (0.4, nut_pose({"head": k(rx=0.75, ry=0.7)})), (0.8, nut_pose({"head": k(rx=0.75, ry=-0.6)})), (1.0, nut_pose({"head": k(rx=0.75)}))])
-    clip(sp, "rest", 60, rest_keys(hb, 1.2))
+    clip(sp, "sit", 36, [(0.0, up({})), (0.25, up({"head": k(rx=0.95), "legFL": k(rx=-1.75), "legFR": k(rx=-1.75)})), (0.5, up({})),
+                         (0.75, up({"head": k(rx=0.95, ry=0.12), "legFL": k(rx=-1.75), "legFR": k(rx=-1.75)})), (1.0, up({}))])
+    clip(sp, "eat", 36, [(0.0, up({})), (0.5, up({"head": k(rx=0.95)})), (1.0, up({}))])
+    clip(sp, "alert", 40, [(0.0, up({"head": k(rx=0.75)})), (0.4, up({"head": k(rx=0.75, ry=0.7)})), (0.8, up({"head": k(rx=0.75, ry=-0.6)})), (1.0, up({"head": k(rx=0.75)}))])
+    R0 = merge({"body": k(dy=-0.012), "head": k(rx=0.25, ry=0.3), "legFL": k(rx=1.2), "legFR": k(rx=1.2), "legBL": k(rx=-1.1), "legBR": k(rx=-1.1)},
+               {"tail1": k(rx=0.6, ry=0.4), "tail2": k(rx=0.6), "tail3": k(rx=0.4)})
+    clip(sp, "rest", 60, [(0.0, R0), (0.5, {"body": k(dy=-0.0105)}), (1.0, R0)])
+    # klimmen (kop omhoog): de game draait hem met de buik tegen de stam. Poten wijd (grijpen om de stam),
+    # om beurten voor- en achterpaar; de staart sleept laag achter hem aan en golft
+    G = 0.45
+    clip(sp, "climb", 14, [
+        (0.0, merge({"legFL": k(rx=-1.1, rz=G), "legFR": k(rx=-1.0, rz=-G), "legBL": k(rx=0.6, rz=G), "legBR": k(rx=0.5, rz=-G), "body": k(rx=0.1), "head": k(rx=-0.2)}, T(-1.25, 0.25, 0.3))),
+        (0.4, merge({"legFL": k(rx=0.4, rz=G), "legFR": k(rx=0.5, rz=-G), "legBL": k(rx=-0.9, rz=G), "legBR": k(rx=-1.0, rz=-G), "body": k(rx=-0.12, dy=0.006), "head": k(rx=-0.05)}, T(-1.15, 0.12, 0.2))),
+        (0.7, merge({"legFL": k(rx=0.6, rz=G), "legFR": k(rx=0.6, rz=-G), "legBL": k(rx=-0.2, rz=G), "legBR": k(rx=-0.3, rz=-G), "body": k(dy=0.003)}, T(-1.3, 0.32, 0.38))),
+        (1.0, merge({"legFL": k(rx=-1.1, rz=G), "legFR": k(rx=-1.0, rz=-G), "legBL": k(rx=0.6, rz=G), "legBR": k(rx=0.5, rz=-G), "body": k(rx=0.1), "head": k(rx=-0.2)}, T(-1.25, 0.25, 0.3))),
+    ])
+    # afdalen (kop omlaag): achtervoeten naar achteren gedraaid (houden zich vast boven hem), voorpoten tasten
+    # omlaag, kopje omhoog om rond te kijken; de staart wijst omhoog langs de stam
+    clip(sp, "descend", 18, [
+        (0.0, merge({"legFL": k(rx=-0.9, rz=G), "legFR": k(rx=-0.6, rz=-G), "legBL": k(rx=1.35, rz=G), "legBR": k(rx=1.2, rz=-G), "body": k(rx=0.05), "head": k(rx=-0.45)}, T(-1.2, 0.2, 0.3))),
+        (0.5, merge({"legFL": k(rx=-0.6, rz=G), "legFR": k(rx=-0.95, rz=-G), "legBL": k(rx=1.2, rz=G), "legBR": k(rx=1.4, rz=-G), "body": k(rx=0.0, dy=0.003), "head": k(rx=-0.35, ry=0.2)}, T(-1.1, 0.1, 0.18))),
+        (1.0, merge({"legFL": k(rx=-0.9, rz=G), "legFR": k(rx=-0.6, rz=-G), "legBL": k(rx=1.35, rz=G), "legBR": k(rx=1.2, rz=-G), "body": k(rx=0.05), "head": k(rx=-0.45)}, T(-1.2, 0.2, 0.3))),
+    ])
+    # sprong (niet herhalend, 0 → 1 = afzet → vlucht → landing): gestrekt, staart als roer recht naar achteren
+    clip(sp, "jump", 24, [
+        (0.0, merge({"body": k(dy=-0.006, rx=0.15), "legFL": k(rx=-0.4), "legFR": k(rx=-0.4), "legBL": k(rx=0.8), "legBR": k(rx=0.8), "head": k(rx=0.15)}, T(-0.5, 0.25, 0.2))),
+        (0.2, merge({"body": k(rx=-0.3), "legFL": k(rx=-1.4), "legFR": k(rx=-1.4), "legBL": k(rx=1.3), "legBR": k(rx=1.3), "head": k(rx=-0.15)}, T(-1.35, 0.1, 0.05))),
+        (0.7, merge({"body": k(rx=0.15), "legFL": k(rx=-1.3), "legFR": k(rx=-1.25), "legBL": k(rx=0.9), "legBR": k(rx=0.95), "head": k(rx=0.05)}, T(-1.2, 0.15, 0.15))),
+        (1.0, merge({"body": k(dy=-0.004, rx=0.2), "legFL": k(rx=-0.3), "legFR": k(rx=-0.3), "legBL": k(rx=0.5), "legBR": k(rx=0.5), "head": k(rx=0.1)}, T(-0.6, 0.2, 0.15))),
+    ])
+    # op een tak zitten: ineengedoken, staart als een vraagteken over de rug, af en toe rondkijken
+    P0 = merge({"body": k(dy=-0.006, rx=-0.12), "head": k(rx=-0.05), "legFL": k(rx=0.5), "legFR": k(rx=0.5), "legBL": k(rx=-0.6), "legBR": k(rx=-0.6)}, T(0.2, 0.3, 0.45))
+    clip(sp, "perch", 80, [
+        (0.0, P0),
+        (0.3, merge({"head": k(ry=0.55, rx=-0.1)}, T(0.25, 0.25, 0.5))),
+        (0.45, T(0.1, 0.4, 0.3)), (0.5, T(0.3, 0.2, 0.55)), (0.55, T(0.12, 0.38, 0.35)),
+        (0.75, merge({"head": k(ry=-0.5, rx=-0.05)}, T(0.2, 0.3, 0.45))),
+        (1.0, P0),
+    ])
 
 
 # ================================================================== zangvogel

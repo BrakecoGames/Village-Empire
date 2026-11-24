@@ -34,7 +34,7 @@
     boar: { name: 'Wild boar', hunt: true, meat: 3, catch: 0.5, effort: 1.45, minKeep: 3, habitat: 'forest', group: [2, 4], target: 8,
       walk: 0.4, run: 2.1, alert: 1.9, alertHunter: 1.05, home: 6, size: 1 },
     fox: { name: 'Fox', habitat: 'edge', group: [1, 1], target: 4, walk: 0.42, run: 2.7, alert: 2.6, alertHunter: 2.6, home: 8, size: 1.15 },
-    squirrel: { name: 'Squirrel', habitat: 'trees', group: [1, 1], target: 10, walk: 0.7, run: 2.2, alert: 1.7, alertHunter: 1.7, home: 4, size: 1.6 },
+    squirrel: { name: 'Squirrel', habitat: 'trees', group: [1, 1], target: 10, walk: 0.7, run: 2.2, alert: 1.7, alertHunter: 1.7, home: 4, size: 1.35 },
     bird: { name: 'Robin', habitat: 'open', group: [2, 3], target: 7, walk: 0.35, run: 0.9, alert: 1.7, alertHunter: 1.7, home: 9, size: 1.5, fly: 2.3 },
     tit: { name: 'Blue tit', habitat: 'trees', group: [2, 4], target: 7, walk: 0.35, run: 0.9, alert: 1.5, alertHunter: 1.5, home: 7, size: 1.5, fly: 2.4, perch: 0.6 },
     blackbird: { name: 'Blackbird', habitat: 'edge', group: [1, 2], target: 5, walk: 0.4, run: 1.0, alert: 1.9, alertHunter: 1.9, home: 9, size: 1.4, fly: 2.2, perch: 0.3 }
@@ -626,6 +626,13 @@
   /* welke clip en tijd voor een dier */
   function choose(A, a, T) {
     const C = A.clips, st = a.state;
+    // eekhoorn (js/squirrel.js): de besturing kiest zelf de clip; loopclips volgen de afgelegde weg (a.cyc)
+    if (a.clipWant && C[a.clipWant]) {
+      const c = C[a.clipWant], w = a.clipWant;
+      if (w === 'jump') return [w, Math.min(0.999, a.clipP || 0) * c.dur];
+      if (w === 'walk' || w === 'run' || w === 'climb' || w === 'descend') return [w, ((a.cyc % 1) + 1) % 1 * c.dur];
+      return [w, (T + a.id * 1.7) % c.dur];
+    }
     let want = st === 'walk' ? 'walk' : (st === 'flee' || st === 'toTree') ? 'run' : st === 'eat' ? 'eat' : st === 'rest' ? 'rest'
       : (st === 'alert' || st === 'held') ? 'alert' : st === 'fly' ? (a.glide && C.glide ? 'glide' : 'fly') : st === 'pounce' ? 'pounce' : (st === 'up' || st === 'down') ? 'climb' : 'idle';
     if (!C[want]) want = (want === 'run' || want === 'fly') && C.walk ? 'walk' : want === 'climb' && C.run ? 'run' : 'idle';
@@ -695,7 +702,7 @@
         if (a.dead) continue;
         const S = this.sp[a.key]; if (!S) { a.vis = false; continue; }
         const gy = w.heightAt(a.x, a.z);
-        _sph.center.set(a.x, gy + 0.2 + a.y, a.z); _sph.radius = 0.6;
+        _sph.center.set(a.x, gy + 0.2 + (a.y || 0), a.z); _sph.radius = 0.6;
         a.vis = camera ? _fr.intersectsSphere(_sph) : true;
         // onder de wolken (onontdekt land): niet tekenen
         const k = Math.floor(a.z) * N + Math.floor(a.x);
@@ -706,7 +713,7 @@
         // loopfase volgt de afgelegde weg (geen glijdende poten)
         const moving = a.state === 'walk' || a.state === 'flee' || a.state === 'toTree' || a.state === 'fly';
         const spd = a.state === 'walk' ? a.spd : a.state === 'fly' ? 1.4 : a.sp.run;
-        a.ph = (a.ph || 0) + (moving ? dt * (a.state === 'fly' ? (a.glide ? 1 : 1.15) : spd * 1.1 + 0.5) : 0);
+        if (!a.ownPh) a.ph = (a.ph || 0) + (moving ? dt * (a.state === 'fly' ? (a.glide ? 1 : 1.15) : spd * 1.1 + 0.5) : 0);
         if (!a._pose) { a._pose = new Float32Array(nodes.length * 7); a._from = new Float32Array(nodes.length * 7); a._blend = 0; a._clip = null; }
         const far = (a.x - cx) ** 2 + (a.z - cz) ** 2 > 900;
         if (A.proc) this.procPose(A, a, T, a._pose);
@@ -730,17 +737,23 @@
         }
         // wereldmatrix: positie, richting, schaal (jongen kleiner), eekhoorn tegen de stam omhoog
         let y = gy, pitch = 0;
-        if (a.key === 'squirrel' && (a.state === 'up' || a.state === 'down')) {
+        if (a.q && a.wy !== undefined) {
+          // eekhoorn: echte houding op de stam, tak of grond (js/squirrel.js)
+          const sc = a.sc * a.sp.size * (0.55 + 0.45 * a.age);
+          _m.compose(_p.set(a.wx, a.wy, a.wz), a.q, _s.set(sc, sc, sc));
+        } else if (a.key === 'squirrel' && (a.state === 'up' || a.state === 'down')) {
           if (a.state === 'up' && a.y < 0.45) a.y = Math.min(0.45, a.y + dt * 0.7);
           y += a.y; pitch = a.y > 0.02 && a.y < 0.44 ? -1.25 : 0;
           if (a.tree) a.rot = Math.atan2(a.tree.x - a.x, a.tree.z - a.z);
           if (a.state === 'down') pitch = 1.25;
         } else if (a.sp.fly) y += a.y;                                       // vogels: in de lucht of in een boomkruin
-        const sc = a.sc * a.sp.size * (0.55 + 0.45 * a.age);        // kleine dieren iets groter: leesbaar van boven
-        _q.setFromAxisAngle(UP, a.rot);
-        if (pitch) { _q2.setFromAxisAngle(_x, pitch); _q.multiply(_q2); }
-        if (a.state === 'fly' && a.bank) { _q2.setFromAxisAngle(_zf, a.bank); _q.multiply(_q2); }   // hellen in de bocht
-        _m.compose(_p.set(a.x, y, a.z), _q, _s.set(sc, sc, sc));
+        if (!(a.q && a.wy !== undefined)) {
+          const sc = a.sc * a.sp.size * (0.55 + 0.45 * a.age);        // kleine dieren iets groter: leesbaar van boven
+          _q.setFromAxisAngle(UP, a.rot);
+          if (pitch) { _q2.setFromAxisAngle(_x, pitch); _q.multiply(_q2); }
+          if (a.state === 'fly' && a.bank) { _q2.setFromAxisAngle(_zf, a.bank); _q.multiply(_q2); }   // hellen in de bocht
+          _m.compose(_p.set(a.x, y, a.z), _q, _s.set(sc, sc, sc));
+        }
         const P = a._pose, W = S.world;
         for (let i = 0; i < nodes.length; i++) {
           const o = i * 7;
