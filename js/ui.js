@@ -147,7 +147,11 @@
         if (e.button === 0 && this.boxWanted && this.boxWanted(e)) pt.box = true;
         this.pointers.set(e.pointerId, pt);
         this.moved = 0;
-        if (this.pointers.size > 1) this.pinch = null;
+        // tweede vinger erbij: het gebaar begint hier (afstand, hoek, midden), niet pas bij de eerste beweging
+        if (this.pointers.size === 2) {
+          const [a, b] = [...this.pointers.values()];
+          this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), a: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+        } else if (this.pointers.size > 2) this.pinch = null;
       });
       el.addEventListener('pointermove', e => {
         if (!VE.playing) return;
@@ -161,8 +165,11 @@
           if (this.pinch) {
             this.view.cam.zoom(this.pinch.d / Math.max(10, d));
             let da = ang - this.pinch.a; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
-            this.view.cam.rotate(-da);
-            this.view.cam.pan(mx - this.pinch.mx, my - this.pinch.my);
+            // twee vingers draaien: de kaart draait mee met de vingers (zelfde richting als op een echte kaart)
+            this.view.cam.rotate(da);
+            // twee vingers samen omhoog of omlaag vegen: kantelen (omhoog = meer naar de horizon, omlaag = meer van bovenaf),
+            // net als de middelste muisknop. Eén vinger verschuift de kaart.
+            this.view.cam.tilt((my - this.pinch.my) * 0.006);
           }
           this.pinch = { d: d, a: ang, mx: mx, my: my };
           for (const q of this.pointers.values()) { q.drag = true; q.anchor = null; }   // na knijpen geen tik of sprong
@@ -712,7 +719,7 @@
         '<p>👥 <b>Cottages</b> give room for new settlers. They arrive much faster when you have bread, fish or meat.</p>' +
         '<p>⚖️ <b>Marketplace</b>: choose which goods to sell for gold. Gold buys upgrades and watchtowers.</p>' +
         '<p>📜 Complete the <b>Village Charter</b> to rise in rank and unlock new buildings.</p>' +
-        '<p>🖱️ <b>Left- or right-drag</b> to move the view · <b>middle-drag</b>, Q/E or two fingers to rotate · scroll or pinch to zoom · click to select or build · Space: game speed</p></div>' +
+        '<p>🖱️ <b>Left- or right-drag</b> to move the view · <b>middle-drag</b>, Q/E or two fingers (twist) to rotate · two fingers up/down to tilt · scroll or pinch to zoom · click to select or build · Space: game speed</p></div>' +
         '<div class="mbtns"><button class="btn good" data-act="closeModal">Got it</button></div>');
     }
     confirmNew() {
