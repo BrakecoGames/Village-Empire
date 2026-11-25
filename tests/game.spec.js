@@ -110,6 +110,7 @@ test.describe('Village Empire', () => {
     const errors = trackErrors(page);
     await openGame(page);
     await startNewVillage(page);
+    await require('./helpers').showCards(page);
     await expect(page.locator('#cards .card[data-b="woodcutter"]')).toBeVisible();
 
     // DOM-knoop moet behouden blijven bij een voorraadwijziging, en 'short' moet meebewegen

@@ -319,7 +319,39 @@ select { font-family: inherit; font-weight: 800; border-radius: 8px; border: 2px
 /* ---------- minimap (js/minimap.js) ---------- */
 #minimap { position: absolute; right: calc(8px + var(--sar)); bottom: calc(8px + var(--sab)); padding: 5px; border-radius: 12px; line-height: 0; z-index: 4; }
 #minimap canvas { border-radius: 7px; cursor: pointer; touch-action: none; image-rendering: pixelated; }
-#minimap.mob { right: auto; left: calc(8px + var(--sal)); bottom: auto; top: calc(112px + var(--sat)); padding: 3px; border-width: 2px; }
-#mmToggle { position: absolute; left: calc(8px + var(--sal)); top: calc(112px + var(--sat)); width: 40px; height: 40px; font-size: 19px; z-index: 5; }
-#mmToggle.on { left: calc(122px + var(--sal)); }
+#minimap.mob { right: auto; left: calc(6px + var(--sal)); bottom: auto; top: calc(92px + var(--sat)); padding: 3px; border-width: 2px; }
+#mmToggle.on { background: radial-gradient(circle at 35% 30%, #fffbe8, #f3dc8c); border-color: var(--gold); }
 @media (max-width: 1250px) and (min-width: 700px) { #minimap { bottom: calc(150px + var(--sab)); } }
+
+/* ---------- telefoon (staand en liggend): meer speelveld (js/mobile-ui.js) ---------- */
+.touch #buildBar { padding: 4px 5px 5px; }
+.touch #buildBar.collapsed #cards { display: none; }
+.touch #buildBar.collapsed #toolRow { margin-bottom: 0; }
+.touch #buildBar.collapsed .tab.on { background: rgba(90, 56, 32, .12); color: inherit; }
+.touch .tool small { display: none; }
+.touch .tool { padding: 3px 7px; }
+.touch #toolHint { bottom: calc(var(--bbh, 60px) + 6px); }
+.touch #infoPanel { bottom: calc(var(--bbh, 60px) + 6px); max-height: calc(100% - var(--bbh, 60px) - 100px); }
+@media (max-width: 760px) { .touch #infoPanel { right: calc(54px + var(--sar)); } }   /* knoppenrij rechts blijft bereikbaar */
+.touch #questPanel.closed { display: none; }
+/* liggend op een telefoon: lage, smalle balken */
+.short #topbar { right: calc(50px + var(--sar)); gap: 5px; flex-wrap: nowrap; }
+.short #rankBox { padding: 1px 8px 1px 4px; }
+.short #rankBox .crest { font-size: 18px; }
+.short #rankName { font-size: 11px; }
+.short .popline { font-size: 11px; }
+.short #goldBox { font-size: 14px; padding: 1px 9px; }
+.short #resBar { order: 0; flex-basis: auto; padding: 1px 5px; }
+.short .res { font-size: 12px; padding: 1px 4px; }
+.short .res .ico { width: 17px; height: 17px; }
+.short .round { width: 36px; height: 36px; font-size: 16px; border-width: 2px; }
+.short #sideBtns { gap: 4px; top: calc(6px + var(--sat)); }
+.short #questPanel { top: calc(52px + var(--sat)); right: calc(50px + var(--sar)); max-height: calc(100% - var(--bbh, 50px) - 62px); width: 250px; }
+.short #infoPanel { left: calc(6px + var(--sal)); right: auto; width: 300px; max-height: calc(100% - var(--bbh, 50px) - 60px); }
+.short #buildBar { width: min(760px, calc(100% - 16px)); bottom: calc(4px + var(--sab)); }
+.short .card { width: 80px; padding: 4px 3px; }
+.short .c-icon { font-size: 20px; }
+.short .c-name { font-size: 11px; }
+.short .tab { padding: 4px 8px; font-size: 12px; }
+.short #minimap.mob { top: calc(50px + var(--sat)); }
+.short #toasts { top: calc(50px + var(--sat)); }

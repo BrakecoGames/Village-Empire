@@ -161,4 +161,10 @@ async function layoutAudit(page) {
   });
 }
 
-module.exports = { SAVE_KEY, SHOT_DIR, trackErrors, checkErrors, clickUntil, isolate, openGame, startNewVillage, shot, findPlaceSpots, layoutAudit };
+/** Telefoon: de bouwbalk is ingeklapt; open de gebouwkaartjes (categorie aantikken). Op desktop: niets. */
+async function showCards(page) {
+  const collapsed = await page.evaluate(() => document.getElementById('buildBar').classList.contains('collapsed'));
+  if (collapsed) { await page.locator('.tab.on').click(); await page.locator('#cards').waitFor({ state: 'visible' }); }
+}
+
+module.exports = { showCards, SAVE_KEY, SHOT_DIR, trackErrors, checkErrors, clickUntil, isolate, openGame, startNewVillage, shot, findPlaceSpots, layoutAudit };

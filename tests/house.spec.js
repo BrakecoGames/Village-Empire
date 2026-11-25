@@ -34,6 +34,7 @@ test.describe('Woonhuis', () => {
     await startNewVillage(page);
 
     // Plaatsen via echte UI (kaart + klik/tik), zoals de speler het doet
+    await require('./helpers').showCards(page);
     await page.locator('#cards .card[data-b="house"]').click();
     const spots = await findPlaceSpots(page, 'house', 6);
     expect(spots.length).toBeGreaterThan(0);

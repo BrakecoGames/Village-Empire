@@ -80,7 +80,7 @@
       for (let q = 0; q <= 12; q++) { const f = q / 12, w = Math.sin(f * Math.PI) * Math.sin(f * 9 + seed) * 1.6; fiss.push([ax + (b[0] - ax) * f - Math.sin(canA) * w, az + (b[1] - az) * f + Math.cos(canA) * w]); }
     }
     // meren: één per startplek (zelfde relatieve plek) en drie tussen de dorpen, verder naar buiten
-    const lakes = S.map(s => { const p = L(s, -1, -10); return { x: p[0], z: p[1], r: 3.4 }; });
+    const lakes = S.map(s => { const p = L(s, -1, -11); return { x: p[0], z: p[1], r: 4.1 }; });
     for (let k = 0; k < 3; k++) { const a = S[k].a + Math.PI / 3 + 0.25, r = N * 0.44; lakes.push({ x: C + Math.cos(a) * r, z: C + Math.sin(a) * r, r: 4.2 }); }
     this.features = { starts: S.map(s => [s.x, s.z]), volcano: { x: C, z: C, r: 16 }, rivers: rivers, canyon: canyon, bridge: bridge, fissure: fiss, lakes: lakes, fords: fords };
     const P = {};
@@ -241,7 +241,12 @@
       }
       for (const g of quarries) for (let q = 0; q < 9; q++) {
         const p = W2(g[0] + (local() - 0.5) * 3, g[1] + (local() - 0.5) * 3), i = Math.round(p[0]), j = Math.round(p[1]);
-        if (ok(i, j)) this.addRock(i, j, 8, rand);
+        // plek bezet (water, berg, boom)? dan een tegel ernaast: elke start krijgt evenveel rotsblokken
+        let done = false;
+        for (const [di, dj] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2]]) {
+          if (ok(i + di, j + dj) && w.slope(i + di, j + dj) < 1.2) { this.addRock(i + di, j + dj, 8, rand); done = true; break; }
+        }
+        if (!done) continue;
       }
     }
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const k = j * N + i; if (w.rock[k]) w.clearDeco(k); }

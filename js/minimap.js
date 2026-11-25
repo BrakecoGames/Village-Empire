@@ -16,11 +16,11 @@
       this.ui = ui;
       const wrap = document.createElement('div'); wrap.id = 'minimap'; wrap.className = 'panel';
       const cv = document.createElement('canvas'); wrap.appendChild(cv);
-      const btn = document.createElement('button'); btn.id = 'mmToggle'; btn.className = 'round small'; btn.title = 'Map'; btn.textContent = '🗺️';
-      $('hud').appendChild(wrap); $('hud').appendChild(btn);
+      const btn = document.createElement('button'); btn.id = 'mmToggle'; btn.className = 'round'; btn.title = 'Map'; btn.textContent = '🗺️';
+      $('hud').appendChild(wrap); $('sideBtns').insertBefore(btn, $('btnSound'));
       this.wrap = wrap; this.cv = cv; this.ctx = cv.getContext('2d'); this.btn = btn;
       this.base = document.createElement('canvas'); this.bctx = this.base.getContext('2d');
-      this.open = true;                                    // op mobiel in te klappen met de kaartknop
+      this.open = !(VE.touchUI && VE.touchUI());           // telefoon: standaard dicht (kaartknop rechts), anders open
       this.baseT = 0; this.drawT = 0; this.n = 0;
       btn.addEventListener('click', () => { this.open = !this.open; VE.audio.play('click'); this.layout(); });
       const go = e => {
@@ -37,8 +37,8 @@
       this.layout();
     }
     layout() {
-      const mob = window.innerWidth < 700;
-      const size = mob ? 104 : 176;
+      const mob = VE.touchUI ? VE.touchUI() : window.innerWidth < 700;
+      const size = mob ? 96 : 176;
       this.cv.width = this.cv.height = size * (window.devicePixelRatio > 1 ? 2 : 1);
       this.cv.style.width = this.cv.style.height = size + 'px';
       this.wrap.classList.toggle('mob', mob);
