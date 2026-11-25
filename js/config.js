@@ -188,7 +188,6 @@
   const R = (gold, extra) => Object.assign({ gold: gold }, extra || {});
   VE.RANKS = [
     { name: 'Hamlet', unlock: ['house', 'woodcutter', 'forester', 'quarry', 'sawmill', 'warehouse'], quests: [
-      { id: 'h1', text: 'Let settlers wear in 8 path tiles', type: 'roads', n: 8, reward: R(15) },
       { id: 'h2', text: 'Build a Woodcutter', type: 'build', b: 'woodcutter', n: 1, reward: R(10, { plank: 4 }) },
       { id: 'h3', text: 'Build a Sawmill', type: 'build', b: 'sawmill', n: 1, reward: R(20) },
       { id: 'h4', text: 'Build a Quarry', type: 'build', b: 'quarry', n: 1, reward: R(10, { plank: 3 }) },
