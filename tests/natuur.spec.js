@@ -38,7 +38,7 @@ test.describe('Natuur', () => {
       const cleared = !v.items[b.j * N + b.i];
       // pad: na het uitlopen groeien er bloemen/plantjes langs
       let pathK = null;
-      for (let i = hq.i - 8; i < hq.i + 8 && pathK === null; i++) { const k = (hq.j + 6) * N + i; if (g.freeTile(k) && g.freeTile(k + 1) && g.freeTile(k + 2) && g.freeTile(k - N) && g.freeTile(k + N)) pathK = k; }
+      for (let jj = 6; jj < 12 && pathK === null; jj++) for (let i = hq.i - 8; i < hq.i + 8 && pathK === null; i++) { const k = (hq.j + jj) * N + i; if (g.freeTile(k) && g.freeTile(k + 1) && g.freeTile(k + 2) && g.freeTile(k - N) && g.freeTile(k + N) && [k - N, k + N, k + 1 - N, k + 1 + N].every(q => w.type[q] === 0)) pathK = k; }   // op gras (op rots groeien geen bloemen)
       for (const k of [pathK, pathK + 1, pathK + 2]) { w.road[k] = 2; w.wear[k] = 99; w.clearDeco(k); }
       w.rebuildRoads();
       const edge = [pathK - N, pathK + N, pathK + 1 - N, pathK + 1 + N].filter(k => v.edge[k] && v.edge[k].length).length;

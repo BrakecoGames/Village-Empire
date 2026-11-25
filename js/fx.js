@@ -192,7 +192,8 @@
     dagger: (() => { const o = []; for (let l = 0; l < 2; l++) for (let c = 0; c < 2; c++) for (let r = 0; r < 3; r++) o.push({ x: (c - 0.5) * 0.15, y: 0.008 + l * 0.014, z: (r - 1) * 0.048, ry: c ? Math.PI : 0 }); return o; })(),
     bow: rows(3, 0.03, 3, 0.014), crossbow: rows(1, 0, 8, 0.024),
     // trainingsuitrusting: bundels op hun schildje, 2 × 2 per laag
-    gear: grid(0.11, 0.028, 3)
+    gear: grid(0.11, 0.028, 3),
+    sulfur: heap(0.058, 0.042), gunpowder: grid(0.1, 0.07, 2)
   };
   function rows(n, sp, layers, h) {   // n wapens naast elkaar per laag, `layers` lagen
     const o = [];
@@ -203,7 +204,7 @@
   // hoogte van één volle stapel: past een goed niet in zijn vakken, dan komt er een tweede laag stapel bovenop
   const LAYER_H = {};
   for (const r in LAYOUT) { let lo = 1, hi = 0; for (const p of LAYOUT[r]) { lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); } LAYER_H[r] = hi + lo; }
-  const NEAT = new Set(['stone', 'plank', 'log', 'ironbar', 'copperbar', 'goldbar', 'flour', 'wine', 'grape', 'sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow', 'gear']);   // strak gestapeld: geen schuine stukken
+  const NEAT = new Set(['stone', 'plank', 'log', 'ironbar', 'copperbar', 'goldbar', 'flour', 'wine', 'grape', 'sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow', 'gear', 'gunpowder']);   // strak gestapeld: geen schuine stukken
 
   // één schaal voor alle goederen in de wereld (stapels én lading van dragers): elk stuk is overal even groot
   const PILE_B = VE.ITEM_SCALE;

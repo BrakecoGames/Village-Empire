@@ -40,9 +40,13 @@
         for (const e of saved) {
           const k = e[0], t = e[1];
           if (!VE.ORES[t] || k < 0 || k >= N * N || w.type[k] !== 2) continue;
-          this.add(w, k, t, e[2], e[3] || e[2]);
+          this.add(w, k, t, e[2], e[3] || e[2]);   // zwavel ook met 0 (de plek vult zich weer)
         }
       } else this.generate(w);
+      // zwavel: nieuwe werelden, en oude saves met een vulkaan die nog geen zwavel hadden
+      if (!w.deposits.some(d => d.type === 6)) this.generateSulfur(w);
+      else if (w.features && w.features.volcano) w.sulfurFields = w.sulfurFields || [];
+      this.sulfurDirty = true;
       // een ader ligt open en bloot: geen boom erop, geen decoratie erdoorheen
       this.game = game;
       this.paintSurvey(w);
@@ -63,6 +67,53 @@
       if (w.slope(i, j, 1) > 1.9) return false;
       if (w.type[dk] === 1 || w.rock[dk]) return false;
       return true;
+    },
+    /* Zwavel (soort 6) rond de vulkaan. Strategisch: zes velden op de helling, drie recht tegenover elke startplek
+       (klein, het dichtst bij die speler) en drie op de lijnen tussen twee spelers in (rijk, betwist). Elk veld
+       is een groepje tegels op de buitenhelling (niet in de krater). Eigen random-reeks: de rest van de wereld blijft gelijk. */
+    generateSulfur(w) {
+      const F = w.features && w.features.volcano; if (!F || !w.starts || w.starts.length < 3) return;
+      const rnd = VE.rng((w.seed ^ 0x5017f0) >>> 0), C = [F.x, F.z], R = F.r;
+      const angs = w.starts.map(s => Math.atan2(s.j + 1 - C[1], s.i + 1 - C[0]));
+      const mid = (a, b) => { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d / 2; };
+      const fields = angs.map(a => ({ a: a, rich: false })).concat([[0, 1], [1, 2], [2, 0]].map(p => ({ a: mid(angs[p[0]], angs[p[1]]), rich: true })));
+      w.sulfurFields = [];
+      for (const f of fields) {
+        // beste begintegel: op de helling, rond 55 % van de straal, zo dicht mogelijk bij de gewenste richting
+        let best = null, bs = 1e9;
+        for (let q = 0; q < 60; q++) {
+          const a = f.a + (rnd() - 0.5) * 0.35, r = R * (0.42 + rnd() * 0.28), i = Math.floor(C[0] + Math.cos(a) * r), j = Math.floor(C[1] + Math.sin(a) * r);
+          if (!w.inb(i, j)) continue;
+          const k = j * N + i;
+          if (w.type[k] !== 2 || w.volc[k] !== 1 || w.rock[k] || w.ore[k] || w.slope(i, j) > 1.9) continue;
+          const sc = Math.abs(a - f.a) * 4 + Math.abs(r / R - 0.55);
+          if (sc < bs) { bs = sc; best = k; }
+        }
+        if (best === null) continue;
+        const n = f.rich ? 7 : 5, amount = f.rich ? 40 : 28, tiles = [best], open = [best];
+        w.ore[best] = true;
+        while (tiles.length < n && open.length) {
+          const from = open[Math.floor(rnd() * open.length)], fi = from % N, fj = (from / N) | 0;
+          const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(d => [fi + d[0], fj + d[1]]).filter(p => {
+            if (!w.inb(p[0], p[1])) return false; const q = p[1] * N + p[0];
+            return w.type[q] === 2 && w.volc[q] === 1 && !w.rock[q] && !w.ore[q] && w.slope(p[0], p[1]) <= 1.9;
+          });
+          if (!nb.length) { open.splice(open.indexOf(from), 1); continue; }
+          const p = nb[Math.floor(rnd() * nb.length)], q = p[1] * N + p[0];
+          w.ore[q] = true; tiles.push(q); open.push(q);
+        }
+        for (const q of tiles) { w.ore[q] = null; const d = this.add(w, q, 6, amount); d.field = w.sulfurFields.length; }
+        w.sulfurFields.push({ a: f.a, rich: f.rich, k: best, tiles: tiles });
+      }
+      this.sulfurDirty = true;
+    },
+    /* zwavel komt langzaam terug (de vulkaan blijft dampen): elke 45 s één eenheid per afzetting, tot het maximum */
+    regen(game, dt) {
+      const w = game.world; if (!w.deposits) return;
+      this.regT = (this.regT || 0) + dt;
+      if (this.regT < 45) return;
+      this.regT -= 45;
+      for (const d of w.deposits) if (d.type === 6 && d.amount < d.max) { d.amount++; d.dead = false; w.ore[d.k] = d; this.sulfurDirty = true; this.surveyDirty = true; }
     },
     generate(w) {
       // grote wereld: rond elke startplek dezelfde aders (eerlijke start), elk binnen zijn eigen bergen
@@ -165,12 +216,13 @@
     },
     take(w, d) {
       if (d.endless) return;
+      if (d.type === 6) { d.amount = Math.max(0, d.amount - 1); this.sulfurDirty = true; this.surveyDirty = true; return; }   // zwavel: plek blijft (komt terug)
       d.amount = Math.max(0, d.amount - 1);
       if (d.amount <= 0) { d.dead = true; if (w.ore[d.k] === d) w.ore[d.k] = null; }
       this.surveyDirty = true;
     },
     remaining(w, type) { let n = 0; for (const d of w.deposits || []) if (d.type === type) n += d.amount; return n; },
-    serialize(w) { return (w.deposits || []).filter(d => d.amount > 0).map(d => [d.k, d.type, d.amount, d.max]); },
+    serialize(w) { return (w.deposits || []).filter(d => d.amount > 0 || d.type === 6).map(d => [d.k, d.type, d.amount, d.max]); },
     refreshArea() { /* ondergronds: niets te verplaatsen */ },
     /* hoeveel er binnen bereik van (x, z) zit, en hoe rijk (voor de uitleg bij het plaatsen en het infopaneel) */
     reach(w, x, z, type, r) {
@@ -234,6 +286,10 @@
       a.mesh.position.set(a.base.x, a.base.y, a.base.z + z * 0.16 * Math.min(1, a.v * 3));
     } else if (a.kind === 'wheel') {
       a.mesh.rotation.x -= dt * 3.2 * a.v;
+    } else if (a.kind === 'stamp') {
+      // stampmolen (buskruitwerkplaats): de stampers gaan beurtelings omhoog en vallen terug in de trog
+      a.ph += dt * 5.5 * a.v;
+      a.mesh.position.y = a.base.y + Math.pow(Math.max(0, Math.sin(a.ph)), 0.6) * 0.045 * a.v;
     } else if (a.kind === 'bellows') {
       a.ph += dt * 4.2 * a.v;
       a.mesh.scale.y = 1 - 0.28 * (0.5 + 0.5 * Math.sin(a.ph)) * a.v;

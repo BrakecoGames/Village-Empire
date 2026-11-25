@@ -41,6 +41,9 @@ setup(seed=7301, extra_palette={
     "Steel": (0xC4CBD2, 0.02), "SteelD": (0x7E868E, 0.03), "Grip": (0x5A3A24, 0.04), "Pommel": (0xD9A93A, 0.02),
     "Shaft": (0xA0703F, 0.04), "BowW": (0x8E5E30, 0.04), "String": (0xEDE3C8, 0.0),
     # trainingsuitrusting
+    # vulkaan: zwavel en buskruit
+    "Sulf": (0xE0BD2C, 0.06), "SulfL": (0xFFF08A, 0.04), "SulfD": (0xB8961E, 0.05), "Keg": (0x6A4A30, 0.05), "KegD": (0x4E3622, 0.04),
+    "Powder": (0x2A2A2E, 0.03), "Fuse": (0xC9A24A, 0.03), "Seal": (0xA8322A, 0.03),
     "Pad": (0x8A5A3A, 0.05), "PadL": (0xA8744A, 0.04), "Practice": (0xC89A5E, 0.05), "Tie2": (0xCDB384, 0.03), "Boss": (0xC9A24A, 0.02),
 })
 STONE = (0.09, 0.05, 0.06)
@@ -251,10 +254,37 @@ def gear():
     finish("gear")
 
 
+
+def sulfur():
+    # brok zwavel: geel, kristallijn, met lichte punten en een donkerder onderkant
+    blob(0.05, "Sulf", (0, 0, 0), scale=(1.05, 0.72, 0.95), sub=1, smooth=False)
+    blob(0.03, "SulfD", (0.01, -0.02, 0.0), scale=(1.3, 0.5, 1.1), sub=1, smooth=False)
+    for i in range(5):
+        a = i * 1.26
+        cyl(0.0, 0.012, 0.03, 4, "SulfL", pos=(math.cos(a) * 0.03, 0.018, math.sin(a) * 0.028), rot=(math.sin(a) * 0.5, 0, math.cos(a) * 0.5), smooth=False)
+    finish("sulfur")
+
+
+def gunpowder():
+    # vaatje buskruit: duigen, twee ijzeren banden, zwart deksel met rood zegel en een lont
+    cyl(0.031, 0.035, 0.03, 10, "Keg", pos=(0, -0.03, 0))
+    cyl(0.035, 0.031, 0.03, 10, "Keg", pos=(0, 0.0, 0))
+    for y in (-0.022, 0.018):
+        cyl(0.0365, 0.0365, 0.006, 10, "Hoop", pos=(0, y - 0.003, 0), smooth=False)
+    for k in range(5):
+        a = k * 1.2566
+        box(0.003, 0.058, 0.004, "KegD", pos=(math.cos(a) * 0.035, 0.0, math.sin(a) * 0.035), rot=(0, -a, 0))
+    cyl(0.03, 0.03, 0.003, 10, "Powder", pos=(0, 0.03, 0), smooth=False)
+    cyl(0.009, 0.009, 0.002, 8, "Seal", pos=(0.01, 0.0325, 0.0), smooth=False)
+    cyl(0.0025, 0.0025, 0.018, 4, "Fuse", pos=(-0.012, 0.031, 0.0), rot=(0, 0, 0.5), smooth=False)
+    finish("gunpowder")
+
+
 log(); plank(); stone(); flour(); bread(); fish(); grape(); wine(); meat(); coal()
 ore("ironore", "RockI", "VeinI"); ore("copperore", "RockC", "VeinC"); ore("goldore", "RockG", "VeinG")
 bar("ironbar", "BarI"); bar("copperbar", "BarC"); bar("goldbar", "BarG")
 sword(); spear(); battleaxe(); dagger(); bow(); crossbow(); gear()
+sulfur(); gunpowder()
 for obj, tris in NODES:
     print(f"VE-BLENDER-ITEM {obj.name} tris={tris}")
 ve.export_glb(args.out, budget=8000)

@@ -346,6 +346,7 @@
         if (w.type[k] === 5) return { ok: false, why: 'Cannot build on the bridge' };
         if (w.lmk && w.lmk[k]) return { ok: false, why: 'A landmark is in the way' };
         if (def.mountain) {
+          if (def.ore === 6 && (!w.volc || w.volc[k] !== 1)) return { ok: false, why: 'Sulfur Mines can only be built on the slope of the volcano' };
           if (w.type[k] !== 2) return { ok: false, why: 'Mines can only be built on the mountain' };
           if (w.road[k]) return { ok: false, why: 'A path is in the way' };
         } else if (w.type[k] === 2 && def.gather === 'field') return { ok: false, why: 'Too rocky for fields' };
@@ -372,7 +373,7 @@
       if (def.territory && !force) { const v = this.towerView(i + (size > 1 ? 1 : 0.5), j + (size > 1 ? 1 : 0.5)); if (v >= 1) return { ok: true, why: 'High ground: sees ' + Math.round(v) + ' tiles further' }; }
       if (def.mountain) {
         const n = VE.ORES[def.ore].name, amt = VE.Mining.reach(w, i + 0.5, j + 0.5, def.ore, def.radius);
-        return { ok: true, why: 'Good spot: ' + VE.Mining.richness(amt) + ' ' + n + ' deposit below (about ' + (Math.round(amt / 5) * 5 || amt) + ')' };
+        return { ok: true, why: 'Good spot: ' + VE.Mining.richness(amt) + ' ' + n + ' deposit ' + (def.surface ? 'nearby' : 'below') + ' (about ' + (Math.round(amt / 5) * 5 || amt) + ')' };
       }
       return { ok: true };
     }
@@ -1224,6 +1225,7 @@
       b.working = false;
       if (this.outFull(b)) { b.status = this.fullStatus(b, d.out); s.wt = 1; return; }
       const r = d.radius + (b.level - 1) * 0.5;
+      if (d.surface) return this.thinkSurfaceMine(s, b, d, r, gm);
       const dep = M && M.pick(w, b.cx, b.cz, d.ore, r);
       if (!dep) {
         const empty = !(M && M.near(w, b.cx, b.cz, d.ore, r));
@@ -1235,6 +1237,27 @@
       dep.reserved = true; b.dig = dep; b.working = true; b.emptyTold = false;
       b.status = 'Mining ' + VE.RES[d.out].name.toLowerCase() + ' underground';
       s.hidden = true; s.wstate = 'inside'; s.wt = d.time / gm;
+    }
+    /* zwavelmijn: de mijnwerker loopt naar een afzetting op de helling, hakt de kristallen los en draagt ze terug */
+    thinkSurfaceMine(s, b, d, r, gm) {
+      const w = this.world, M = VE.Mining;
+      const dep = M && M.pick(w, b.cx, b.cz, d.ore, r);
+      if (!dep) {
+        const any = (w.deposits || []).some(q => q.type === d.ore && (q.x - b.cx) ** 2 + (q.z - b.cz) ** 2 <= r * r);
+        b.status = any ? 'The vents are empty: waiting for new sulfur' : 'No sulfur in range';
+        s.wt = 4; return;
+      }
+      dep.reserved = true; s.resv = dep; b.working = true; b.status = 'Digging sulfur';
+      // naast de afzetting staan, aan de kant van de mijn
+      const ang = Math.atan2(b.dz - dep.z, b.dx - dep.x), fx = dep.x + Math.cos(ang) * 0.32, fz = dep.z + Math.sin(ang) * 0.32;
+      const ok = this.goAct(s, b, dep.k, fx, fz, [dep.x, dep.z], 'pick', d.time / gm, () => {
+        s.resv = null; dep.reserved = false;
+        if (dep.amount <= 0) { b.working = false; this.goHome(s, b, null); return; }
+        M.take(w, dep);
+        emit('dust', { x: dep.x, y: w.heightAt(dep.x, dep.z) + 0.12, z: dep.z, n: 4, color: 0xf2d73a });
+        this.goHome(s, b, d.out, () => { b.working = false; this.produce(b, d.out, 1); });
+      });
+      if (!ok) { dep.reserved = false; s.resv = null; b.working = false; b.status = 'Cannot reach the sulfur'; s.hidden = true; s.wstate = 'inside'; s.wt = 3; }
     }
     /* jager: sluipt naar een dier, gooit een net; lukt het, dan brengt hij het vlees thuis */
     thinkHunt(s, b, d) {
@@ -1410,6 +1433,7 @@
       for (const b of this.buildings) this.updateBuilding(b, dt);
       this.nature.update(dt, this.growMult());
       if (this.wild) this.wild.update(dt);
+      if (VE.Mining && VE.Mining.regen) VE.Mining.regen(this, dt);     // zwavel rond de vulkaan komt langzaam terug
       // exploration: wherever settlers walk, the clouds lift
       this.fogT = (this.fogT || 0) - dt;
       if (this.fogT <= 0) {

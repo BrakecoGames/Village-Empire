@@ -471,7 +471,25 @@
       ex.anims.push({ geo: wheel.build(), x: -0.3, y: 0.4, z: 0.1, kind: 'wheel' });
     };
   }
-  B.coalmine = mineB(1); B.ironmine = mineB(2); B.coppermine = mineB(3); B.goldmine = mineB(4); B.stonemine = mineB(5);
+  B.coalmine = mineB(1); B.ironmine = mineB(2); B.coppermine = mineB(3); B.goldmine = mineB(4); B.stonemine = mineB(5); B.sulfurmine = mineB(6);
+  /* Buskruitwerkplaats (reserve): stenen werkplaats, stampmolen met bewegende stampers (anker 'stamp'),
+     vaatjes buskruit, geen schoorsteen (vuur en kruit gaan niet samen). */
+  B.powdermill = function (m, lvl, ex) {
+    foundation(m, 0.84, 0.8);
+    m.box(0.46, 0.32, 0.38, C.stone, { x: -0.12, z: -0.14, j: 0.06 });
+    m.roof(0.56, 0.2, 0.48, C.slate, { x: -0.12, y: 0.32, z: -0.14, j: 0.07 });
+    door(m, -0.22, 0.06, 0.11, 0.18);
+    // afdak met de stampmolen
+    for (const sx of [0.12, 0.4]) for (const sz of [0.0, 0.26]) m.box(0.03, 0.32, 0.03, C.timber, { x: sx, z: sz });
+    m.box(0.34, 0.025, 0.32, C.woodD, { x: 0.26, y: 0.32, z: 0.13, j: 0.06 });
+    m.box(0.26, 0.07, 0.08, C.woodD, { x: 0.26, y: 0.0, z: 0.13 });                    // trog
+    const st = new VE.Model(95); for (let i = 0; i < 3; i++) st.box(0.035, 0.16, 0.035, C.wood, { x: (i - 1) * 0.07, y: 0.06 });
+    ex.anims.push({ geo: st.build(), x: 0.26, y: 0.1, z: 0.13, kind: 'stamp' });
+    for (let i = 0; i < 3; i++) m.cyl(0.04, 0.045, 0.08, 8, 0x6a4a30, { x: -0.32 + i * 0.09, z: 0.3, j: 0.05 });
+    m.box(0.1, 0.06, 0.012, 0xb03a2a, { x: 0.0, y: 0.22, z: 0.06 });                     // waarschuwingsbord
+    if (lvl >= 2) barrel(m, 0.38, -0.3);
+    if (lvl >= 3) crate(m, -0.36, -0.36, 0, 0.08);
+  };
   B.smelter = function (m, lvl, ex) {
     foundation(m, 0.84, 0.8);
     m.box(0.5, 0.34, 0.4, C.stone, { x: -0.08, z: -0.12, j: 0.06 });
@@ -582,7 +600,7 @@
     farm: [0.3, 0.06, 0.27], windmill: [0.3, 0.06, 0.27], bakery: [-0.03, 0.06, 0.34],
     fisher: [0.14, 0.095, 0.1], vineyard: [-0.04, 0.06, 0.33], winery: [0.07, 0.06, 0.34],
     hunter: [0.3, 0.06, 0.3], coalmine: [0.3, 0.06, 0.34], ironmine: [0.3, 0.06, 0.34], coppermine: [0.3, 0.06, 0.34],
-    goldmine: [0.3, 0.06, 0.34], stonemine: [0.3, 0.06, 0.34], smelter: [-0.1, 0.06, 0.34], weaponsmith: [0.22, 0.06, 0.4]
+    goldmine: [0.3, 0.06, 0.34], stonemine: [0.3, 0.06, 0.34], sulfurmine: [0.3, 0.06, 0.34], powdermill: [-0.05, 0.06, 0.36], smelter: [-0.1, 0.06, 0.34], weaponsmith: [0.22, 0.06, 0.4]
   };
   /* Stapels aangeleverde grondstoffen (b.input), op volgorde van VE.RES_ORDER. Blender-markers 'in0', 'in1' …
      gaan voor; dit is de reserve. */
@@ -591,7 +609,8 @@
     winery: [[-0.3, 0.06, 0.36]], tavern: [[-0.32, 0.06, 0.38], [0.06, 0.06, 0.4]],
     smelter: [[0.17, 0.06, 0.37], [0.37, 0.06, 0.37], [-0.36, 0.06, 0.38]],
     weaponsmith: [[-0.42, 0.06, 0.1], [-0.42, 0.06, 0.34]],
-    barracks: [[0.66, 0.072, -0.2]]
+    barracks: [[0.66, 0.072, -0.2]],
+    powdermill: [[0.42, 0.06, 0.4], [0.42, 0.06, 0.2], [-0.42, 0.06, 0.12]]
   };
   /* wapenrek: [x, y (voetplank), z, draaiing]; Blender-marker 'rack' gaat voor */
   VE.RACK_SPOT = { weaponsmith: [0.2, 0.07, 0.36, 0] };
@@ -942,6 +961,15 @@
         m.cyl(0.05, 0.05, 0.016, 10, 0x8a5a3a, { y: -0.02 }); m.cyl(0.016, 0.016, 0.02, 6, 0xc9a24a, { y: -0.012 });
         for (let k = 0; k < 3; k++) m.box(0.15, 0.01, 0.016, 0xc89a5e, { x: 0.005, y: 0.0 + k * 0.011, z: (k - 1) * 0.02, ry: (k - 1) * 0.12 });
         m.box(0.012, 0.03, 0.06, 0x6a4226, { x: -0.045, y: 0.005 }); break;
+      case 'sulfur': // gele kristalbrok
+        m.add(new THREE.DodecahedronGeometry(0.05, 0), 0xe0bd2c, { sy: 0.75, j: 0.07 });
+        for (let i = 0; i < 3; i++) { const a = i * 2.1; m.add(new THREE.OctahedronGeometry(0.02, 0), 0xfff08a, { x: Math.cos(a) * 0.03, y: 0.03, z: Math.sin(a) * 0.03, j: 0.03 }); }
+        break;
+      case 'gunpowder': // vaatje buskruit met ijzeren banden en een lont
+        m.cyl(0.032, 0.036, 0.06, 10, 0x6a4a30, { y: -0.03, j: 0.05 });
+        m.cyl(0.037, 0.037, 0.006, 10, 0x3a3a40, { y: -0.012 }); m.cyl(0.037, 0.037, 0.006, 10, 0x3a3a40, { y: -0.042 });
+        m.cyl(0.03, 0.03, 0.004, 10, 0x2a2a2e, { y: 0.0 });
+        break;
       case 'crossbow': m.box(0.19, 0.02, 0.03, 0x8e5e30, { x: -0.01, y: -0.01 }); m.box(0.014, 0.012, 0.17, 0x7e868e, { x: 0.07, y: -0.006 }); break;
       default: m.ball(0.04, 0xf2c443, {});
     }

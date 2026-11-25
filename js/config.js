@@ -28,11 +28,17 @@
     bow: { name: 'Bows', price: 14, rank: 2, weapon: true, tip: 'A longbow carved from wood. Needs no iron.' },
     crossbow: { name: 'Crossbows', price: 32, rank: 2, weapon: true, tip: 'A wooden crossbow with an iron bow. Stored for the defence of the village.' },
     // trainingsuitrusting: oefenzwaarden, gewatteerde schilden en stompe pijlen voor de kazerne
-    gear: { name: 'Training Gear', price: 8, rank: 2, tip: 'Wooden practice swords, padded shields and blunt arrows from the Weaponsmith. Recruits use it up while they train at the Barracks.' }
+    gear: { name: 'Training Gear', price: 8, rank: 2, tip: 'Wooden practice swords, padded shields and blunt arrows from the Weaponsmith. Recruits use it up while they train at the Barracks.' },
+    // vulkaan: zwavel (alleen rond de vulkaan) en buskruit (voorbereid voor kanonnen en artillerie; die bestaan nog niet)
+    sulfur: { name: 'Sulfur', price: 7, rank: 2, tip: 'Yellow crystals dug from the vents on the slopes of the volcano. Needed for gunpowder.' },
+    gunpowder: { name: 'Gunpowder', price: 12, rank: 3, future: true, tip: 'Black powder in small kegs from the Gunpowder Workshop. Kept for the cannons and artillery of the future, and a valuable trade good.' }
   };
   VE.RES_ORDER = ['log', 'stone', 'plank', 'grain', 'flour', 'bread', 'fish', 'grape', 'wine',
     'meat', 'coal', 'ironore', 'copperore', 'goldore', 'ironbar', 'copperbar', 'goldbar',
-    'sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow', 'gear'];
+    'sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow', 'gear', 'sulfur', 'gunpowder'];
+  /* Buskruit: voorbereid voor toekomstige militaire uitbreidingen. Nog niets verbruikt het; deze lijst zegt
+     waarvoor het later dient (zodat opslag, handel en saves er nu al rekening mee houden). */
+  VE.FUTURE_USES = { gunpowder: ['cannon', 'mortar', 'artillery', 'siege'] };
   VE.WEAPONS = ['sword', 'spear', 'battleaxe', 'dagger', 'bow', 'crossbow'];
   /* voedsel waarmee nieuwe bewoners sneller komen (in deze volgorde gebruikt) */
   VE.FOOD = ['bread', 'fish', 'meat'];
@@ -106,7 +112,8 @@
     { key: 'iron', res: 'ironore', name: 'iron', mine: 'ironmine', color: 0x8a4a2a },
     { key: 'copper', res: 'copperore', name: 'copper', mine: 'coppermine', color: 0x3fae94 },
     { key: 'gold', res: 'goldore', name: 'gold', mine: 'goldmine', color: 0xf2c443 },
-    { key: 'stone', res: 'stone', name: 'stone', mine: 'stonemine', color: 0xb8b0a2, endless: true }   // het gesteente zelf (js/mining.js)
+    { key: 'stone', res: 'stone', name: 'stone', mine: 'stonemine', color: 0xb8b0a2, endless: true },   // het gesteente zelf (js/mining.js)
+    { key: 'sulfur', res: 'sulfur', name: 'sulfur', mine: 'sulfurmine', color: 0xf2d73a, volcano: true }   // aan de oppervlakte, alleen rond de vulkaan
   ];
 
   /* role colours: tunic, hat */
@@ -166,6 +173,14 @@
     // zodat je hem altijd kunt bouwen, ook als de rotsblokken op zijn.
     stonemine: { name: 'Stone Mine', icon: '🧱', cat: 'basic', rank: 1, cost: { plank: 6, log: 2 }, worker: 'miner', gather: 'ore', ore: 5, mountain: true, radius: 2.6, out: 'stone', time: 5.6, tool: 'pick',
       desc: 'Cuts building stone from the solid rock of the mountain. Never runs out. Build it on the mountain.' },
+    // zwavelmijn: alleen op de vulkaanhelling bij een zwavelafzetting. De mijnwerker loopt naar de afzetting, hakt
+    // de gele kristallen los en draagt ze terug (zichtbaar, aan de oppervlakte).
+    sulfurmine: { name: 'Sulfur Mine', icon: '🌋', cat: 'metal', rank: 2, cost: { plank: 6, stone: 4 }, worker: 'miner', gather: 'ore', ore: 6, mountain: true, surface: true, radius: 3.4, out: 'sulfur', time: 5.0, tool: 'pick',
+      desc: 'Digs yellow sulfur from the vents on the volcano. Build it on the slope of the volcano, next to a sulfur deposit. The vents slowly fill up again.' },
+    // buskruitwerkplaats: zwavel + steenkool (houtskool) + hout → buskruit (abstract spelrecept)
+    powdermill: { name: 'Gunpowder Workshop', icon: '🧨', cat: 'military', rank: 3, cost: { plank: 6, stone: 8, ironbar: 2 }, worker: 'smelter',
+      inp: { sulfur: 1, coal: 1, log: 1 }, out: { gunpowder: 2 }, time: 9,
+      desc: 'Grinds sulfur, coal and wood in a stamping mill into gunpowder. Stored for the cannons and artillery of the future.' },
     coalmine: { name: 'Coal Mine', icon: '⚫', cat: 'metal', rank: 2, cost: { plank: 5, stone: 2 }, worker: 'miner', gather: 'ore', ore: 1, mountain: true, radius: 2.6, out: 'coal', time: 4.4, tool: 'pick',
       desc: 'Digs coal from a deposit deep below the mountain. Build it above a coal deposit (use Survey to find one).' },
     ironmine: { name: 'Iron Mine', icon: '🔩', cat: 'metal', rank: 2, cost: { plank: 5, stone: 3 }, worker: 'miner', gather: 'ore', ore: 2, mountain: true, radius: 2.6, out: 'ironore', time: 5.2, tool: 'pick',
@@ -218,7 +233,7 @@
       { id: 'v10', text: 'Bring home 20 meat', type: 'produce', res: 'meat', n: 20, reward: R(40) },
       { id: 'v11', text: 'Build a Stone Mine in the mountains', type: 'build', b: 'stonemine', n: 1, reward: R(30, { plank: 4 }) }
     ] },
-    { name: 'Market Town', unlock: ['vineyard', 'winery', 'tavern', 'coalmine', 'ironmine', 'coppermine', 'smelter', 'weaponsmith', 'barracks'], quests: [
+    { name: 'Market Town', unlock: ['vineyard', 'winery', 'tavern', 'coalmine', 'ironmine', 'coppermine', 'smelter', 'weaponsmith', 'barracks', 'sulfurmine'], quests: [
       { id: 'm1', text: 'Harvest 20 grapes', type: 'produce', res: 'grape', n: 20, reward: R(60) },
       { id: 'm2', text: 'Press 12 wine', type: 'produce', res: 'wine', n: 12, reward: R(80) },
       { id: 'm3', text: 'Open a Tavern', type: 'build', b: 'tavern', n: 1, reward: R(80) },
@@ -232,7 +247,7 @@
       { id: 'm11', text: 'Smelt 10 iron bars', type: 'produce', res: 'ironbar', n: 10, reward: R(120) },
       { id: 'm12', text: 'Build a Weaponsmith', type: 'build', b: 'weaponsmith', n: 1, reward: R(80) }
     ] },
-    { name: 'Town', unlock: ['goldmine'], quests: [
+    { name: 'Town', unlock: ['goldmine', 'powdermill'], quests: [
       { id: 't1', text: 'Reach 55 settlers', type: 'pop', n: 55, reward: R(300) },
       { id: 't2', text: 'Press 80 wine', type: 'produce', res: 'wine', n: 80, reward: R(300) },
       { id: 't3', text: 'Bake 220 bread', type: 'produce', res: 'bread', n: 220, reward: R(300) },
