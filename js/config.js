@@ -43,6 +43,9 @@
      dorpshuis en wordt nooit aangevuld. */
   VE.LOCAL_CAP = 6;
   VE.STORE_CAP = [60, 80, 100];
+  /* Een nieuw Storehouse neemt standaard alleen hout (stammen en planken) en steen aan; de speler vinkt de rest
+     aan bij het plaatsen, tijdens de bouw of daarna. */
+  VE.DEFAULT_ACCEPT = ['log', 'plank', 'stone'];
   VE.START_STOCK = { log: 6, stone: 14, plank: 28, bread: 8, fish: 4 };
 
   /* Smelterij: recepten (configureerbaar). De speler kiest het metaal per smelterij. */

@@ -4,7 +4,7 @@
   /* Wereldgrootte (tegels per zijde): 64 voor oude saves, VE.BIG_N voor nieuwe werelden. VE.setWorldSize zet
      hem vóór het maken van een wereld; alle modules houden hun N bij via VE.sizeHooks. */
   let N = 64, V1 = N + 1; VE.N = N;
-  VE.BIG_N = 144;
+  VE.BIG_N = 208;                                   // 208² ≈ 10,6× de oorspronkelijke kaart (oude saves: hun eigen n)
   VE.sizeHooks = VE.sizeHooks || [];
   VE.setWorldSize = function (n) { VE.N = n; for (const f of VE.sizeHooks) f(n); };
   VE.sizeHooks.push(n => { N = n; V1 = n + 1; });
@@ -83,6 +83,24 @@
       this.fog.frustumCulled = false;
       this.fog.name = 'fog';
       this.root.add(this.fog);
+      // grote wereld: in vakken van 24 × 24 (zelfde hoekpunten), alleen wat in beeld is en nog niet ontdekt is
+      this.fogChunks = null;
+      if (N > 64) {
+        const CH = 24; this.fogChunks = [];
+        for (let cj = 0; cj < N; cj += CH) for (let ci = 0; ci < N; ci += CH) {
+          const i1 = Math.min(N, ci + CH), j1 = Math.min(N, cj + CH), ix = [];
+          let lo = 1e9, hi = -1e9;
+          for (let j = cj; j < j1; j++) for (let i = ci; i < i1; i++) { const a = j * V1 + i, b = a + 1, c = a + V1, d = c + 1; ix.push(a, c, d, a, d, b); }
+          for (let z = cj; z <= j1; z++) for (let x = ci; x <= i1; x++) { const y = pos[(z * V1 + x) * 3 + 1]; lo = Math.min(lo, y); hi = Math.max(hi, y); }
+          const cg = new THREE.BufferGeometry();
+          cg.setAttribute('position', g.attributes.position); cg.setAttribute('fogA', g.attributes.fogA); cg.setIndex(ix);
+          cg.boundingSphere = new THREE.Sphere(new THREE.Vector3((ci + i1) / 2, (lo + hi) / 2, (cj + j1) / 2), Math.hypot(i1 - ci, j1 - cj, hi - lo + 2) / 2 + 0.5);
+          const cm = new THREE.Mesh(cg, m); cm.renderOrder = 10; cm.name = 'fogChunk'; cm.frustumCulled = true;
+          cm.userData.r = [ci, cj, i1, j1];
+          this.root.add(cm); this.fogChunks.push(cm);
+        }
+        this.fog.visible = false;                           // blijft de bron van de gegevens
+      }
       this.fogDirty = true;
     }
     updateFog() {
@@ -90,11 +108,18 @@
       this.fogDirty = false;
       const E = this.explored, fa = this.fog.geometry.attributes.fogA;
       for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
-        let s = 0;
-        for (let dz = -1; dz <= 0; dz++) for (let dx = -1; dx <= 0; dx++) { const i = x + dx, j = z + dz; if (this.inb(i, j)) s += E[j * N + i]; }
-        fa.array[z * V1 + x] = 1 - s / 4;
+        // gemiddelde van de tegels eromheen die op de kaart liggen (de rand telt niet als 'onontdekt': geen witte streep)
+        let s = 0, c = 0;
+        for (let dz = -1; dz <= 0; dz++) for (let dx = -1; dx <= 0; dx++) { const i = x + dx, j = z + dz; if (this.inb(i, j)) { s += E[j * N + i]; c++; } }
+        fa.array[z * V1 + x] = 1 - s / c;
       }
       fa.needsUpdate = true;
+      // vakken die helemaal ontdekt zijn: niet meer tekenen
+      if (this.fogChunks) for (const cm of this.fogChunks) {
+        const [ci, cj, i1, j1] = cm.userData.r; let any = false;
+        for (let z = cj; z <= j1 && !any; z++) for (let x = ci; x <= i1; x++) if (fa.array[z * V1 + x] > 0.01) { any = true; break; }
+        cm.visible = any;
+      }
     }
     serializeFog() { let s = ''; for (let k = 0; k < N * N; k++) s += Math.round(this.explored[k] * 9); return s; }
     loadFog(s) {
@@ -700,7 +725,7 @@
       const w = this.w, k = j * VE.N + i;
       if (w.rock[k]) return null;
       const idx = this.rockFree.length ? this.rockFree.pop() : this.rockUsed++;
-      if (idx >= 600) { this.rockUsed = 600; return null; }
+      const rc = this.rockMesh.instanceMatrix.count; if (idx >= rc) { this.rockUsed = rc; return null; }   // plafond schaalt met de wereld
       r = r || Math.random;
       const o = { i: i, j: j, k: k, x: i + 0.5 + (r() - 0.5) * 0.2, z: j + 0.5 + (r() - 0.5) * 0.2, amount: amount, max: 8, idx: idx, rot: r() * 6.28, sc: 0.9 + r() * 0.35, reserved: false, dead: false };
       w.rock[k] = o; this.rocks.push(o);

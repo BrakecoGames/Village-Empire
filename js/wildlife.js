@@ -42,9 +42,17 @@
   };
   for (const k in SPECIES) { SPECIES[k].key = k; SPECIES[k].base = SPECIES[k].target = Math.max(2, Math.round(SPECIES[k].target * MOB)); }
   // grote wereld: meer dieren (niet evenredig met de oppervlakte: buiten beeld kosten ze weinig, maar toch)
-  VE.sizeHooks.push(n => { const f = Math.max(1, (n / 64) ** 2 * 0.6); for (const k in SPECIES) SPECIES[k].target = Math.round(SPECIES[k].base * f); });
+  VE.sizeHooks.push(n => { const f = Math.min(4.5, Math.max(1, (n / 64) ** 2 * 0.6)); for (const k in SPECIES) SPECIES[k].target = Math.round(SPECIES[k].base * f); });
+  // lijf: [halve lengte, botsstraal] in tegels (vóór sp.size): voor de helling (kantelen) en om niet door elkaar of
+  // door boomstammen te lopen
+  const BODY = { rabbit: [0.045, 0.04], roe: [0.11, 0.07], deer: [0.14, 0.085], boar: [0.11, 0.075], fox: [0.085, 0.05],
+    squirrel: [0.03, 0.025], bird: [0.02, 0.02], tit: [0.02, 0.02], blackbird: [0.02, 0.02] };
+  for (const k in BODY) { SPECIES[k].len = BODY[k][0]; SPECIES[k].R = BODY[k][1]; }
+  // vachtvariatie per soort: [lichter/donkerder, warmer/kouder]
+  const LOOK = { rabbit: [0.12, 0.07], roe: [0.08, 0.06], deer: [0.1, 0.07], boar: [0.13, 0.04], fox: [0.08, 0.09] };
   VE.SPECIES = SPECIES;
   const ORDER = Object.keys(SPECIES);
+  const TRUNK = 0.07;                                                // straal van een boomstam (× boomschaal)
 
   /* ---------------- simulatie ---------------- */
   class Wildlife {
@@ -128,8 +136,9 @@
     }
     add(sp, x, z, herd, baby) {
       const a = { id: ++this.id, sp: sp, key: sp.key, x: x, z: z, hx: x, hz: z, rot: this.rnd() * TAU, state: 'idle', t: 0.5 + this.rnd() * 3,
-        tx: x, tz: z, sp0: 0, herd: herd || 0, y: 0, pitch: 0, age: baby ? 0 : 1, sc: 0.9 + this.rnd() * 0.2, dead: false, reserved: false,
-        acc: 0, chk: this.rnd() * 0.3, vis: false, clip: 'idle', ct: this.rnd() * 3, var: Math.floor(this.rnd() * 4), stag: sp.key === 'deer' && this.rnd() < 0.45 };
+        tx: x, tz: z, sp0: 0, herd: herd || 0, y: 0, pitch: 0, age: baby ? 0 : 1, sc: 0.85 + this.rnd() * 0.3, dead: false, reserved: false,
+        acc: 0, chk: this.rnd() * 0.3, vis: false, clip: 'idle', ct: this.rnd() * 3, var: Math.floor(this.rnd() * 4),
+        stag: (sp.key === 'deer' || sp.key === 'roe') && this.rnd() < 0.45 };        // bok / hert met gewei
       a.onRelease = () => { if (a.state === 'held') { a.state = 'alert'; a.t = 0.6; } };
       this.list.push(a);
       return a;
@@ -205,13 +214,54 @@
       VE.bus.emit('dust', { x: a.x, y: y, z: a.z, n: 12 });
       VE.bus.emit('poof', { x: a.x, y: y + 0.15, z: a.z });
     }
+    /* schrik: het dier vlucht; de groep volgt een tel later (als een golf), dieren vlakbij schrikken mee:
+       dezelfde soort, vogels en eekhoorns vluchten ook, andere soorten kijken eerst alert op */
     scare(a, fx, fz) {
       this.flee(a, fx, fz);
-      if (a.herd) for (const o of this.list) if (o !== a && !o.dead && o.herd === a.herd && (o.x - a.x) ** 2 + (o.z - a.z) ** 2 < 25) this.flee(o, fx, fz);
+      for (const o of this.list) {
+        if (o === a || o.dead || o.alarm || o.state === 'flee' || o.state === 'fly' || o.state === 'held') continue;
+        const d2 = (o.x - a.x) ** 2 + (o.z - a.z) ** 2;
+        if (a.herd && o.herd === a.herd && d2 < 25) o.alarm = { t: 0.1 + this.rnd() * 0.35, fx: fx, fz: fz, flee: true };
+        else if (d2 < 9) o.alarm = { t: 0.25 + this.rnd() * 0.5, fx: a.x, fz: a.z, flee: o.key === a.key || !!o.sp.fly || o.key === 'squirrel' };
+      }
+    }
+    /* niet door boomstammen of andere dieren: wegduwen (met een zijwaartse component, zodat ze om een stam heen
+       glijden in plaats van ertegen te blijven staan). Alleen dieren op de grond. */
+    resolve(a) {
+      if (a.sp.fly || a.key === 'squirrel' || a.y > 0.05 || a.state === 'held' || a.q) return;
+      const w = this.w, R = a.sp.R * a.sp.size * a.sc, i0 = Math.floor(a.x), j0 = Math.floor(a.z), side = a.id & 1 ? 1 : -1;
+      let px = 0, pz = 0;
+      for (let j = j0 - 1; j <= j0 + 1; j++) for (let i = i0 - 1; i <= i0 + 1; i++) {
+        if (!w.inb(i, j)) continue;
+        const t = w.tree[j * N + i]; if (!t || t.dead || t.growth < 0.25) continue;
+        const dx = a.x - t.x, dz = a.z - t.z, d = Math.hypot(dx, dz), m = R + TRUNK * (t.sc || 1);
+        if (d >= m) continue;
+        if (d < 1e-4) { px += m; continue; }
+        const f = (m - d) / d; px += dx * f - dz * f * 0.6 * side; pz += dz * f + dx * f * 0.6 * side;
+      }
+      const H = this.ahash;
+      if (H) {
+        const ci = Math.floor(a.x / 2), cj = Math.floor(a.z / 2), HW = this.hw;
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+          const c = H.get((cj + dj) * HW + ci + di); if (!c) continue;
+          for (const o of c) {
+            if (o === a || o.dead) continue;
+            const dx = a.x - o.x, dz = a.z - o.z, d2 = dx * dx + dz * dz, m = R + o.sp.R * o.sp.size * o.sc;
+            if (d2 >= m * m) continue;
+            const d = Math.sqrt(d2);
+            if (d < 1e-4) { px += (a.id < o.id ? 0.5 : -0.5) * m; continue; }
+            const f = (m - d) / d * 0.5; px += dx * f; pz += dz * f;
+          }
+        }
+      }
+      if (!px && !pz) return;
+      const L = Math.hypot(px, pz), mx = 0.08;                     // niet springen: hooguit een klein stukje per stap
+      if (L > mx) { px *= mx / L; pz *= mx / L; }
+      if (this.passXZ(a.x + px, a.z + pz)) { a.x += px; a.z += pz; }
     }
 
     /* ---------------- gedrag ---------------- */
-    setTarget(a, x, z, state, speed) { a.tx = x; a.tz = z; a.state = state; a.spd = speed; a.t = 25; }
+    setTarget(a, x, z, state, speed) { a.tx = x; a.tz = z; a.state = state; a.spd = speed; a.t = 25; a.after = null; }
     wander(a) {
       const sp = a.sp, rnd = this.rnd;
       // volger: dicht bij de leider van de groep blijven
@@ -242,16 +292,20 @@
       if (sp.fly) { this.takeOff(a, fx, fz); return; }
       if (sp.key === 'squirrel' && this.toTree(a, 'flee')) return;
       const away = Math.atan2(a.x - fx, a.z - fz);
+      const still = a.state !== 'flee' && a.state !== 'walk';        // uit stilstand: eerst een schriksprong
       for (let tries = 0; tries < 10; tries++) {
         const ang = away + (rnd() - 0.5) * (tries < 5 ? 1.1 : 2.6), d = 3 + rnd() * 3.5;
         const x = a.x + Math.sin(ang) * d, z = a.z + Math.cos(ang) * d;
         if (!this.passXZ(x, z) || !this.clear(a.x, a.z, x, z)) continue;
         this.setTarget(a, x, z, 'flee', sp.run * (0.9 + rnd() * 0.2));
+        if (still && sp.key !== 'squirrel') { a.leapT = 0.5; a.rot = Math.atan2(x - a.x, z - a.z); }
         a.reserved = false;
         // nieuwe thuisplek wat verder van de onrust
         a.hx = VE.lerp(a.hx, x, 0.5); a.hz = VE.lerp(a.hz, z, 0.5);
         return;
       }
+      // geen vrije vluchtweg (ingesloten): dan in elk geval alert, kijkend naar de onrust
+      if (a.state !== 'flee' && a.state !== 'held') { a.state = 'alert'; a.t = 1 + rnd(); a.rot = Math.atan2(fx - a.x, fz - a.z); }
     }
     /* eekhoorn: naar de dichtstbijzijnde boom en erin klimmen. mode: 'flee' (rennen), 'walk', of 'spawn' (meteen in de boom) */
     toTree(a, mode) {
@@ -384,6 +438,21 @@
     think(a, dt) {
       const sp = a.sp, rnd = this.rnd;
       if (a.state === 'held') return;
+      // schriksprong aan het begin van een vlucht (clip 'jump')
+      if (a.leapT > 0) {
+        a.leapT -= dt; a.clipWant = 'jump'; a.clipP = 1 - Math.max(0, a.leapT) / 0.5;
+        if (a.leapT <= 0 || a.state !== 'flee') { a.leapT = 0; a.clipWant = null; }
+      }
+      // een ander dier in de buurt schrok: even later meevluchten of opkijken
+      if (a.alarm) {
+        a.alarm.t -= dt;
+        if (a.alarm.t <= 0) {
+          const m = a.alarm; a.alarm = null;
+          if (m.flee) this.flee(a, m.fx, m.fz);
+          else if (a.state !== 'flee' && a.state !== 'fly' && a.state !== 'up') { a.state = 'alert'; a.t = 1 + rnd() * 1.5; a.rot = Math.atan2(m.fx - a.x, m.fz - a.z); }
+          return;
+        }
+      }
       // er is net iets gebouwd waar het dier stond: naar de dichtste vrije plek, en dan weg
       if (a.state !== 'fly' && a.y < 0.05 && !this.passXZ(a.x, a.z)) {
         for (let r = 0.5; r <= 3; r += 0.5) {
@@ -419,6 +488,11 @@
       }
       if (a.state === 'down') { a.y = Math.max(0, a.y - dt * 0.6); if (a.y <= 0) { a.state = 'idle'; a.t = 1 + rnd() * 2; a.tree = null; } return; }
       if (a.state === 'pounce') { if (a.t <= 0) { a.state = 'idle'; a.t = 1.5; } return; }
+      // grazen: af en toe een paar stapjes verder naar het volgende plukje
+      if (a.state === 'eat' && a.t > 1.2 && !a.reserved && !sp.fly && sp.key !== 'squirrel' && rnd() < dt * 0.22) {
+        const ang = a.rot + (rnd() - 0.5) * 1.4, d = 0.15 + rnd() * 0.25, x = a.x + Math.sin(ang) * d, z = a.z + Math.cos(ang) * d;
+        if (this.passXZ(x, z) && this.clear(a.x, a.z, x, z)) { const left = a.t; this.setTarget(a, x, z, 'walk', sp.walk * 0.45); a.after = 'eat'; a.afterT = left; return; }
+      }
       if (sp.fly && a.perch && (a.perch.dead || a.perch.falling)) { this.takeOff(a, a.x, a.z + 0.1); return; }
       if (a.t > 0) return;
       if (sp.fly) {
@@ -436,7 +510,7 @@
       }
       if (r < 0.38 && !reserved) { if (this.wander(a)) return; }
       if (r < 0.7) { a.state = 'eat'; a.t = 2.5 + rnd() * 5; return; }
-      if (r < 0.82 && (sp.key === 'deer' || sp.key === 'boar' || sp.key === 'roe' || sp.key === 'fox')) { a.state = 'rest'; a.t = 6 + rnd() * 9; return; }
+      if (r < 0.82 && (sp.key === 'deer' || sp.key === 'boar' || sp.key === 'roe' || sp.key === 'fox' || sp.key === 'rabbit')) { a.state = 'rest'; a.t = 6 + rnd() * 9; return; }
       a.state = (sp.key === 'rabbit' || sp.key === 'deer' || sp.key === 'roe') && r < 0.92 ? 'alert' : 'idle';
       a.t = 1.5 + rnd() * 2.5;
     }
@@ -452,11 +526,12 @@
         if (d <= step) { a.x = a.tx; a.z = a.tz; }
         if (fly) { a.y = 0; a.flyD = 0; }
         if (a.state === 'toTree') { a.state = 'up'; a.y = 0; a.climb = true; a.t = 4 + this.rnd() * 8; return; }
+        if (a.after) { a.state = a.after; a.t = a.afterT || 2; a.after = null; return; }
         a.state = a.state === 'flee' ? 'alert' : 'idle'; a.t = 0.8 + this.rnd() * 2;
         return;
       }
       const nx = a.x + dx / d * step, nz = a.z + dz / d * step;
-      if (!fly && !this.passXZ(nx, nz)) { a.state = 'idle'; a.t = 0.4; return; }
+      if (!fly && !this.passXZ(nx, nz)) { a.state = 'idle'; a.t = 0.4; a.after = null; return; }
       a.x = nx; a.z = nz;
       let tr = Math.atan2(dx, dz), dr = tr - a.rot;
       while (dr > Math.PI) dr -= TAU; while (dr < -Math.PI) dr += TAU;
@@ -498,17 +573,28 @@
         const c = Math.floor(s.z / 4) * GW + Math.floor(s.x / 4);
         (grid[c] || (grid[c] = [])).push(s);
       }
+      // dieren op de grond in een rooster van 2×2 tegels (niet door elkaar heen lopen)
+      const HW = this.hw = Math.ceil(N / 2) + 2, H = this.ahash = this.ahash || new Map();
+      H.forEach(c => { c.length = 0; });
+      for (const a of this.list) {
+        if (a.dead || a.sp.fly || a.key === 'squirrel' || a.y > 0.05) continue;
+        const c = Math.floor(a.z / 2) * HW + Math.floor(a.x / 2);
+        let L = H.get(c); if (!L) H.set(c, L = []); L.push(a);
+      }
+      const cx = this.camX, cz = this.camZ;
       let dead = false;
       for (const a of this.list) {
         if (a.dead) { dead = true; continue; }
         if (a.age < 1) a.age = Math.min(1, a.age + dt / 90);
-        // buiten beeld: twee keer per seconde, met de opgetelde tijd
+        // buiten beeld: twee keer per seconde; ver weg (> 40 tegels van de camera) eens per 1,5 s, met de opgetelde tijd
         a.acc += dt;
         // staat het dier ineens in een gebouw (net neergezet)? dan meteen verplaatsen, ook buiten beeld
         const blocked = a.state !== 'fly' && a.y < 0.05 && a.state !== 'held' && !this.passXZ(a.x, a.z);
-        if (!a.vis && a.acc < 0.5 && !blocked) continue;
-        const st = Math.min(a.acc, 0.6); a.acc = 0;
+        const far = !a.vis && cx !== undefined && (a.x - cx) ** 2 + (a.z - cz) ** 2 > 1600;
+        if (!a.vis && a.acc < (far ? 1.5 : 0.5) && !blocked) continue;
+        const st = Math.min(a.acc, far ? 1.6 : 0.6); a.acc = 0;
         this.think(a, st);
+        if (!a.dead && (a.vis || !far)) this.resolve(a);
       }
       if (dead && this.list.length > 40) this.list = this.list.filter(a => !a.dead);
     }
@@ -701,6 +787,7 @@
       for (const key in this.sp) for (const p of this.sp[key].parts) p.n = 0;
       if (camera) { _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _fr.setFromProjectionMatrix(_pv); }
       const cx = camera ? camera.position.x : 0, cz = camera ? camera.position.z : 0;
+      if (camera) { wild.camX = cx; wild.camZ = cz; }                // voor de simulatie: ver weg minder vaak bijwerken
       let count = 0;
       for (const a of wild.list) {
         if (a.dead) continue;
@@ -753,8 +840,19 @@
         } else if (a.sp.fly) y += a.y;                                       // vogels: in de lucht of in een boomkruin
         if (!(a.q && a.wy !== undefined)) {
           const sc = a.sc * a.sp.size * (0.55 + 0.45 * a.age);        // kleine dieren iets groter: leesbaar van boven
+          // op de helling: lijf volgt de grond (voor- en achterpoten, linker- en rechterkant op de grond)
+          if (!a.sp.fly && a.key !== 'squirrel' && !pitch) {
+            const L = a.sp.len * sc, Wd = L * 0.6, s = Math.sin(a.rot), c = Math.cos(a.rot);
+            const hf = w.heightAt(a.x + s * L, a.z + c * L), hk = w.heightAt(a.x - s * L, a.z - c * L);
+            const hr = w.heightAt(a.x + c * Wd, a.z - s * Wd), hl = w.heightAt(a.x - c * Wd, a.z + s * Wd);
+            const tp = VE.clamp(-Math.atan2(hf - hk, 2 * L), -0.5, 0.5), tr = VE.clamp(Math.atan2(hr - hl, 2 * Wd), -0.4, 0.4);
+            const f = a.tp === undefined ? 1 : Math.min(1, dt * 8);
+            a.tp = (a.tp || 0) + (tp - (a.tp || 0)) * f; a.tr = (a.tr || 0) + (tr - (a.tr || 0)) * f;
+            y = Math.max(gy, (hf + hk) * 0.5);
+          }
           _q.setFromAxisAngle(UP, a.rot);
           if (pitch) { _q2.setFromAxisAngle(_x, pitch); _q.multiply(_q2); }
+          else if (a.tp || a.tr) { _q2.setFromAxisAngle(_x, a.tp); _q.multiply(_q2); _q2.setFromAxisAngle(_zf, a.tr); _q.multiply(_q2); }
           if (a.state === 'fly' && a.bank) { _q2.setFromAxisAngle(_zf, a.bank); _q.multiply(_q2); }   // hellen in de bocht
           _m.compose(_p.set(a.x, y, a.z), _q, _s.set(sc, sc, sc));
         }
@@ -764,9 +862,13 @@
           _l.compose(_p.set(P[o], P[o + 1], P[o + 2]), _q.set(P[o + 3], P[o + 4], P[o + 5], P[o + 6]), _one);
           W[i].multiplyMatrices(nodes[i].parent < 0 ? _m : W[nodes[i].parent], _l);
         }
-        // vachtkleur: lichte variatie per dier
-        const tint = 0.93 + a.var * 0.035;
-        _c.setRGB(tint, tint * (a.key === 'fox' ? 1 : 0.99), tint * 0.98);
+        // vachtkleur: variatie per dier (lichter/donkerder, warmer/kouder), vast per dier
+        if (!a.look) {
+          const h = n => { const v = Math.sin(a.id * 12.9898 + n * 78.233) * 43758.5453; return v - Math.floor(v); };
+          const P = LOOK[a.key], l = P ? 0.97 + (h(1) - 0.5) * 2 * P[0] : 0.93 + a.var * 0.035, wm = P ? (h(2) - 0.5) * 2 * P[1] : 0;
+          a.look = [Math.min(1.12, l * (1 + wm)), l * (1 + wm * 0.15), l * (1 - wm)];
+        }
+        _c.setRGB(a.look[0], a.look[1], a.look[2]);
         for (const p of S.parts) {
           if (p.stag && !a.stag) continue;
           for (const ni of p.nodes) { if (p.n < p.mesh.instanceMatrix.count) { p.mesh.setMatrixAt(p.n, W[ni]); p.mesh.setColorAt(p.n, _c); p.n++; } }

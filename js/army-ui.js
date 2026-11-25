@@ -108,7 +108,7 @@
     this.armyInit();
     const hit = this.soldierAtScreen(cx, cy, ptype === 'mouse' ? 22 : 34);
     if (hit) {
-      const now = performance.now(), dbl = this.lastSolTap && this.lastSolTap.s === hit && now - this.lastSolTap.t < 400;
+      const now = ev && ev.timeStamp ? ev.timeStamp : performance.now(), dbl = this.lastSolTap && this.lastSolTap.s === hit && now - this.lastSolTap.t < 400;
       this.lastSolTap = { s: hit, t: now };
       if (dbl) {                                               // dubbeltik: alle soldaten van dit type in beeld
         const W = window.innerWidth, H = window.innerHeight;

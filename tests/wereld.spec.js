@@ -62,7 +62,7 @@ test.describe('Grote wereld', () => {
         rivers: F.rivers.length, lakes: F.lakes.length };
     });
     console.log('wereld', JSON.stringify(r));
-    expect(r.N).toBe(144);                                            // 144² = ruim 5× de oude 64² wereld
+    expect(r.N).toBe(208);                                            // 208² = ruim 10× de oude 64² wereld
     expect(r.startsReach).toEqual([true, true, true]);
     expect(r.reachFrac).toBeGreaterThan(0.97);                        // vrijwel al het land is bereikbaar
     for (const x of r.lmReach) expect(x).toBe(true);
@@ -135,7 +135,7 @@ test.describe('Grote wereld', () => {
       return { before, after, legacy };
     });
     console.log('opslaan', JSON.stringify(s));
-    expect(s.before.n).toBe(144);
+    expect(s.before.n).toBe(208);
     expect(s.after).toEqual(s.before);
     expect(s.legacy).toEqual({ n: 64, hq: true, starts: 0, update: true });
     expect(errs(errors)).toEqual([]);
@@ -155,7 +155,7 @@ test.describe('Grote wereld', () => {
       let placed = 0;
       w.starts.forEach((s, n) => {
         const cx = s.i + 1, cz = s.j + 1;
-        if (n > 0) { const h = g.placeBuilding('warehouse', s.i, s.j, true); placed++; }
+        if (n > 0) { const h = g.placeBuilding('warehouse', s.i, s.j, true); g.setAccept(h, '*', true); placed++; }
         for (const t of types) {
           const sz = VE.DEFS[t].size || 1; let done = false;
           for (let r = 3; r < 16 && !done; r++) for (let a = 0; a < 24 && !done; a++) {
@@ -185,7 +185,7 @@ test.describe('Grote wereld', () => {
     expect(r.soldiers).toBe(90);
     expect(r.simMs).toBeLessThan(10);                                 // ruim binnen een frame (60 fps = 16,7 ms)
     expect(r.drawMs).toBeLessThan(14);
-    expect(r.chunks).toBe(36);
+    expect(r.chunks).toBe(81);                                        // 208 / 24 → 9 × 9 vakken
     // speelbaar beeld met de drie dorpen: één frame meten in de browser zelf
     const fps = await page.evaluate(() => new Promise(res => { let n = 0; const t0 = performance.now(); const f = () => { if (++n < 40) requestAnimationFrame(f); else res(1000 * n / (performance.now() - t0)); }; requestAnimationFrame(f); }));
     console.log('fps (software-rendering in de test)', fps.toFixed(1));

@@ -97,9 +97,14 @@
     add('egg_sword', spot(...at(ang(1) + 0.9, N * 0.36), 'egg_sword'));
     add('egg_gnomes', spot(...at(ang(2) - 0.9, N * 0.36), 'egg_gnomes'));
     const lake = F.lakes[3]; if (lake) add('egg_duck', { x: lake.x, z: lake.z });
+    if (N >= 180) for (let k = 0; k < 3; k++) {
+      const a = (ang(k) + ang((k + 1) % 3)) / 2 + (Math.abs(ang(k) - ang((k + 1) % 3)) > Math.PI ? Math.PI : 0);
+      add(['ruin', 'stones', 'monument'][k], spot(...at(a + 0.35, N * 0.46), ['ruin', 'stones', 'monument'][k]));
+      add(k === 1 ? 'falls_hidden' : 'cave', spot(...at(ang(k) + Math.PI * 0.62, N * 0.47), k === 1 ? 'falls_hidden' : 'cave'));
+    }
     // stoomgaten rond de krater
     for (let k = 0; k < 5; k++) {
-      const a = k / 5 * TAU + 0.4 + rnd() * 0.5, r = 6 + rnd() * 5, x = C + Math.cos(a) * r, z = C + Math.sin(a) * r;
+      const vs = F.volcano.r / 16, a = k / 5 * TAU + 0.4 + rnd() * 0.5, r = (6 + rnd() * 5) * vs, x = C + Math.cos(a) * r, z = C + Math.sin(a) * r;
       if (!(w.lavaPath || []).includes(Math.floor(z) * N + Math.floor(x))) add('vent', { x: x, z: z }, { rot: rnd() * TAU });
     }
     // draaiing: grotten en watervallen met de opening van de berg af (bergop = achter)

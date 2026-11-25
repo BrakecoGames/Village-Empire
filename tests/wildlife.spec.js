@@ -40,7 +40,7 @@ async function demo(page) {
     // opslag voor de productieketens (sinds 1.4.0 houden producenten er zelf maar 6)
     for (const at of [[g.hq.cx - 3, g.hq.cz + 3], [g.hq.cx + 3, g.hq.cz - 2]]) {
       const s = find('warehouse', at, 8);
-      if (s) { const b = g.placeBuilding('warehouse', s[0], s[1], true); b.level = 3; g.makeMesh(b); }
+      if (s) { const b = g.placeBuilding('warehouse', s[0], s[1], true); b.level = 3; g.makeMesh(b); g.setAccept(b, '*', true); }
     }
     for (let n = 0; n < 20; n++) g.spawnSettler();
     document.querySelectorAll('.toast').forEach(t => t.remove());

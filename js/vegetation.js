@@ -66,17 +66,34 @@
      de zichtbare in de InstancedMesh. Three.js cullt een InstancedMesh als geheel (niet per exemplaar);
      zo tekent de GPU alleen wat in beeld is, zonder extra draw calls. */
   const _sph = new THREE.Sphere(), _fr = new THREE.Frustum(), _pv = new THREE.Matrix4();
+  /* Chunks: de exemplaren staan per vak van CS × CS tegels in een lijst. Bij een camerabeweging wordt per vak
+     getest of het in beeld is (een paar honderd tests), niet per exemplaar (honderdduizenden in een grote
+     wereld). Alles uit een zichtbaar vak gaat naar de GPU. */
+  const CS = 12;
   class Instancer {
     constructor(mesh, cap, radius) {
       this.mesh = mesh; this.cap = cap; this.r = radius;
       this.mat = new Float32Array(cap * 16); this.col = new Float32Array(cap * 3).fill(1);
       this.pos = new Float32Array(cap * 3); this.alive = new Uint8Array(cap); this.hi = 0; this.dirty = true;
+      // ruimer dan de wereld: ook de bomen in de verte buiten de kaart (js/horizon.js)
+      this.off = 96; this.cw = Math.ceil((VE.N + 2 * this.off) / CS);
+      this.cells = new Array(this.cw * this.cw); this.cellOf = new Int32Array(cap).fill(-1); this.slot = new Int32Array(cap);
       mesh.count = 0;
+    }
+    cellIndex(x, z) {
+      const ci = Math.max(0, Math.min(this.cw - 1, Math.floor((x + this.off) / CS))), cj = Math.max(0, Math.min(this.cw - 1, Math.floor((z + this.off) / CS)));
+      return cj * this.cw + ci;
     }
     set(i, m) {
       const e = m.elements;
       m.toArray(this.mat, i * 16);
       this.pos[i * 3] = e[12]; this.pos[i * 3 + 1] = e[13]; this.pos[i * 3 + 2] = e[14];
+      const c = this.cellIndex(e[12], e[14]), old = this.cellOf[i];
+      if (old !== c) {
+        if (old >= 0) { const L = this.cells[old], at = this.slot[i], last = L.pop(); if (last !== i) { L[at] = last; this.slot[last] = at; } }
+        const L = this.cells[c] || (this.cells[c] = []);
+        this.slot[i] = L.length; L.push(i); this.cellOf[i] = c;
+      }
       this.alive[i] = (e[0] || e[1] || e[2]) ? 1 : 0;
       if (i >= this.hi) this.hi = i + 1;
       this.dirty = true;
@@ -85,14 +102,31 @@
     kill(i) { this.alive[i] = 0; this.dirty = true; }
     sync(fr, margin) {
       const im = this.mesh.instanceMatrix.array, ic = this.mesh.instanceColor ? this.mesh.instanceColor.array : null;
-      _sph.radius = this.r + margin;
       let n = 0;
-      for (let i = 0; i < this.hi; i++) {
-        if (!this.alive[i]) continue;
-        if (fr) { _sph.center.set(this.pos[i * 3], this.pos[i * 3 + 1], this.pos[i * 3 + 2]); if (!fr.intersectsSphere(_sph)) continue; }
-        im.set(this.mat.subarray(i * 16, i * 16 + 16), n * 16);
-        if (ic) ic.set(this.col.subarray(i * 3, i * 3 + 3), n * 3);
-        n++;
+      const R = Math.hypot(CS * 0.71, 6) + this.r + margin;           // vak: halve diagonaal en hoogteverschil
+      for (let c = 0; c < this.cells.length; c++) {
+        const L = this.cells[c]; if (!L || !L.length) continue;
+        // vak helemaal in beeld: alles; helemaal erbuiten: niets; op de rand: per exemplaar testen
+        let part = false;
+        if (fr) {
+          const cx = (c % this.cw) * CS - this.off + CS / 2, cz = Math.floor(c / this.cw) * CS - this.off + CS / 2;
+          let out = false;
+          for (let p = 0; p < 6; p++) {
+            const P = fr.planes[p], d = P.normal.x * cx + P.normal.y * 3 + P.normal.z * cz + P.constant;
+            if (d < -R) { out = true; break; }
+            if (d < R) part = true;
+          }
+          if (out) continue;
+          _sph.radius = this.r + margin;
+        }
+        for (let q = 0; q < L.length; q++) {
+          const i = L[q];
+          if (!this.alive[i]) continue;
+          if (part) { _sph.center.set(this.pos[i * 3], this.pos[i * 3 + 1], this.pos[i * 3 + 2]); if (!fr.intersectsSphere(_sph)) continue; }
+          im.set(this.mat.subarray(i * 16, i * 16 + 16), n * 16);
+          if (ic) ic.set(this.col.subarray(i * 3, i * 3 + 3), n * 3);
+          n++;
+        }
       }
       this.mesh.count = n;
       this.mesh.instanceMatrix.needsUpdate = true;
@@ -126,7 +160,7 @@
       this.tr = new Float32Array(N * N);                // platgetrapt per tegel (0 = ongerept, 1 = weg), zie js/paths.js
       const mob = VE.isMobile ? 1 : 0;
       this.kinds = NAMES.map((name, id) => {
-        const def = KINDS[name], cap = Math.round(def.cap[mob] * Math.max(1, (N / 64) ** 2 * 0.85));   // grote wereld: meer plek
+        const def = KINDS[name], cap = Math.round(def.cap[mob] * Math.min(5, Math.max(1, (N / 64) ** 2 * 0.85)));   // grote wereld: meer plek
         const mat = def.wind ? VE.windMat({}, def.wind, 'veg_' + name) : new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5, specular: 0x111111 });
         const mesh = new THREE.InstancedMesh(geos[name], mat, cap);
         mesh.setColorAt(0, _c.setHex(0xffffff));        // instanceColor bestaat altijd (VE-001); r128: vóór count = 0, anders is de buffer leeg

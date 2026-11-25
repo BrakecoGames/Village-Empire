@@ -293,6 +293,7 @@
         if (!chk.ok) { this.toast(chk.why); VE.audio.play('error'); return; }
         if (VE.DEFS[this.tool].gold) g.gold -= VE.DEFS[this.tool].gold;
         const b = g.placeBuilding(this.tool, ga.i, ga.j);
+        if (b.accept) Object.assign(b.accept, this.placeAcceptMap());          // Storehouse: de gekozen goederen
         VE.audio.play('place', b.cx, b.cz);
         VE.bus.emit('dust', { x: b.cx, y: b.y, z: b.cz, n: 6 });
         if (this.tool !== 'house') this.setTool(null);
@@ -422,6 +423,8 @@
         case 'sell': if (this.sel) { this.sel.sell[arg] = !this.sel.sell[arg]; this.renderInfo(true); } break;
         case 'accept': if (this.sel) { g.setAccept(this.sel, arg); this.renderInfo(true); } break;
         case 'acceptAll': if (this.sel) { g.setAccept(this.sel, '*', arg === '1'); this.renderInfo(true); } break;
+        case 'paccept': { const m = this.placeAcceptMap(); m[arg] = !m[arg]; if (this.tool) this.showInfoDef(this.tool); break; }
+        case 'pacceptAll': { const m = this.placeAcceptMap(); for (const r of VE.RES_ORDER) m[r] = arg === '1'; if (this.tool) this.showInfoDef(this.tool); break; }
         case 'recipe': if (this.sel && g.setRecipe(this.sel, arg)) { const d = this.sel.def; this.toast(d.icon + ' The ' + d.name.toLowerCase() + ' now makes ' + d.recipes[arg].name.toLowerCase()); VE.save(); } this.renderInfo(true); break;
         case 'keep': if (this.sel && e.type === 'change') { this.sel.keep = +el.value; } break;
         case 'goto': if (this.sel) this.view.cam.focus(this.sel.cx, this.sel.cz); break;
@@ -438,6 +441,19 @@
         case 'doNew': this.closeModal(); VE.newGame(); break;
         default: if (this.onArmyAct) this.onArmyAct(a, arg, el, e);              // kazerne en soldaten (js/army-ui.js)
       }
+    }
+
+    /* vinkjes 'welke goederen bewaren' van een Storehouse; act = data-act voor één goed, allAct voor alles/niets */
+    acceptHtml(acc, store, act, allAct) {
+      const g = this.game;
+      let h = '<div class="ip-sub">Store these goods:</div><div class="sellgrid accept">';
+      for (const r of VE.RES_ORDER) if (VE.resVisible(g, r)) h += '<button class="sell ' + (acc[r] ? 'on' : '') + '" data-act="' + act + '" data-arg="' + r + '" title="' + esc(VE.RES[r].name) + '">' + VE.icon(r, 16) + '<small>' + ((store && store[r]) || 0) + '</small></button>';
+      return h + '</div><div class="ip-row"><button class="btn small" data-act="' + allAct + '" data-arg="1">All</button><button class="btn small" data-act="' + allAct + '" data-arg="0">None</button></div>';
+    }
+    /* keuze bij het plaatsen (onthouden voor het volgende Storehouse in dit spel) */
+    placeAcceptMap() {
+      if (!this.placeAccept) { this.placeAccept = {}; for (const r of VE.RES_ORDER) this.placeAccept[r] = VE.DEFAULT_ACCEPT.indexOf(r) >= 0; }
+      return this.placeAccept;
     }
 
     /* ---------- selection & info panel ---------- */
@@ -464,6 +480,7 @@
       h += this.chainHtml(d);
       const cost = Object.assign({}, d.cost || {}); if (d.gold) cost.gold = d.gold;
       h += '<div class="ip-row"><b>Cost</b> ' + costHtml(cost, g) + '</div>';
+      if (d.depot) h += this.acceptHtml(this.placeAcceptMap(), null, 'paccept', 'pacceptAll');
       $('infoPanel').innerHTML = h; $('infoPanel').classList.remove('hidden');
       this.infoDef = k;
     }
@@ -494,6 +511,7 @@
         let need = false; for (const r in d.cost) if ((b.delivered[r] || 0) + (b.incoming[r] || 0) < d.cost[r] && g.avail(r) <= 0) need = true;
         if (need) h += '<div class="warn">Not enough materials in storage — keep producing!</div>';
         h += '<div class="ip-desc small">' + (b.builder ? '🔨 A builder is at work.' : 'Carriers bring materials, then a builder arrives.') + '</div>';
+        if (d.depot) h += this.acceptHtml(b.accept, null, 'accept', 'acceptAll') + '<div class="ip-desc small">Carriers start bringing these goods as soon as the Storehouse is ready.</div>';
       } else {
         if (b.up) {
           // upgrade als bouwplaats: voortgang en materialen, net als bij nieuwbouw
@@ -552,11 +570,7 @@
           }
           if (d.pile) h += '<div class="ip-desc small">Nothing is ever added to this pile. Build a <b>Storehouse</b> to keep new goods.</div>';
           if (d.vault && keys.length) h += '<div class="ip-desc small">Rewards and goods from merchants wait here until they are used.</div>';
-          if (d.depot) {
-            h += '<div class="ip-sub">Store these goods:</div><div class="sellgrid accept">';
-            for (const r of VE.RES_ORDER) if (VE.resVisible(g, r)) h += '<button class="sell ' + (b.accept[r] ? 'on' : '') + '" data-act="accept" data-arg="' + r + '" title="' + esc(VE.RES[r].name) + '">' + VE.icon(r, 16) + '<small>' + (b.store[r] || 0) + '</small></button>';
-            h += '</div><div class="ip-row"><button class="btn small" data-act="acceptAll" data-arg="1">All</button><button class="btn small" data-act="acceptAll" data-arg="0">None</button></div>';
-          }
+          if (d.depot) h += this.acceptHtml(b.accept, b.store, 'accept', 'acceptAll');
         }
         if (d.market) {
           h += '<div class="ip-sub">Sell automatically:</div><div class="sellgrid">';

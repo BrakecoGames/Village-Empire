@@ -43,7 +43,7 @@
     const N = VE.N, V1 = N + 1, seed = this.seed;
     const n = VE.noise(seed), n2 = VE.noise(seed + 77), n3 = VE.noise(seed + 191), n4 = VE.noise(seed + 333), n5 = VE.noise(seed + 555);
     const rnd = VE.rng((seed ^ 0x3a7c11d) >>> 0);
-    const C = N / 2, R = N * 0.33;
+    const C = N / 2, R = N * 0.33, VS = Math.min(1.35, Math.sqrt(N / 144));   // VS: grootte van de vulkaan
     const rot = rnd() * TAU;                                  // per wereld een andere draaiing van het geheel
     // ---- startplekken (speler 1 = index 0)
     const S = [0, 1, 2].map(k => {
@@ -69,7 +69,7 @@
     const canA = bis(1, 2);
     const canyon = line(canA, 19, 3.2, 1.7);
     // voorden: twee per rivier, op vaste fracties (gelijk voor beide rivieren)
-    const fords = rivers.map(p => [0.38, 0.72].map(f => p[Math.min(p.length - 1, Math.round(f * (p.length - 1)))]));
+    const fords = rivers.map(p => [0.3, 0.55, 0.8].map(f => p[Math.min(p.length - 1, Math.round(f * (p.length - 1)))]));
     // brug: halverwege de canyon (tussen de startplekken van speler 2 en 3)
     const bi = Math.round(canyon.length * 0.42), bp = canyon[bi], bq = canyon[Math.min(canyon.length - 1, bi + 1)];
     const cdx = bq[0] - bp[0], cdz = bq[1] - bp[1], cl = Math.hypot(cdx, cdz) || 1;
@@ -82,7 +82,8 @@
     // meren: één per startplek (zelfde relatieve plek) en drie tussen de dorpen, verder naar buiten
     const lakes = S.map(s => { const p = L(s, -1, -11); return { x: p[0], z: p[1], r: 4.1 }; });
     for (let k = 0; k < 3; k++) { const a = S[k].a + Math.PI / 3 + 0.25, r = N * 0.44; lakes.push({ x: C + Math.cos(a) * r, z: C + Math.sin(a) * r, r: 4.2 }); }
-    this.features = { starts: S.map(s => [s.x, s.z]), volcano: { x: C, z: C, r: 16 }, rivers: rivers, canyon: canyon, bridge: bridge, fissure: fiss, lakes: lakes, fords: fords };
+    if (N >= 180) for (let k = 0; k < 6; k++) { const a = rot + k * TAU / 6 + 0.5, r = N * (k % 2 ? 0.24 : 0.37); lakes.push({ x: C + Math.cos(a) * r, z: C + Math.sin(a) * r, r: 3.2 + (k % 3) * 0.8 }); }
+    this.features = { starts: S.map(s => [s.x, s.z]), volcano: { x: C, z: C, r: 16 * VS }, rivers: rivers, canyon: canyon, bridge: bridge, fissure: fiss, lakes: lakes, fords: fords };
     const P = {};
     for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
       const e = n.fbm(x * 0.028, z * 0.028, 5);
@@ -98,11 +99,11 @@
       h += m * m * 5.4 + m * n3.fbm(x * 0.2, z * 0.2, 2) * 1.6;
       // vulkaan: brede kegel met een krater bovenop
       const dv = Math.hypot(x - C, z - C) + (n4.fbm(x * 0.12, z * 0.12, 2) - 0.5) * 2.2;
-      const cone = VE.smooth(18, 2.5, dv);
+      const cone = VE.smooth(18 * VS, 2.5, dv);
       // ruwe hellingen: radiale geulen en ribbels (lavastromen uit het verleden)
       const va = Math.atan2(z - C, x - C), gully = (Math.sin(va * 11 + n4.fbm(x * 0.15, z * 0.15, 2) * 6) * 0.5 + 0.5) * 0.45;
       h = Math.max(h, 0.9 + Math.pow(cone, 1.3) * 8.6 - gully * cone * (1 - cone) * 2.2);
-      h -= VE.smooth(4.8, 1.6, dv) * 2.8;
+      h -= VE.smooth(4.8 * VS, 1.6, dv) * 2.8;
       // rivieren met voorden en een breed dal
       rivers.forEach((pts, ri) => {
         const d = polyDist(pts, x, z) + (n4(x * 0.3, z * 0.3) - 0.5) * 0.8;
@@ -136,7 +137,7 @@
     this.deck = new Float32Array(N * N).fill(-99);
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const k = j * N + i, p = P[k];
-      this.mount[k] = Math.max(p.m, VE.smooth(16, 9, p.dv) * 0.9);
+      this.mount[k] = Math.max(p.m, VE.smooth(16 * VS, 9 * VS, p.dv) * 0.9);
       this.forest[k] = n3.fbm(i * 0.07 + 20, j * 0.07 - 13, 3);
       const hc = this.tileH(i, j);
       let t = 0;
@@ -145,7 +146,7 @@
       else if (this.mount[k] > 0.5) t = 2;
       else if (hc < 0.32) t = 3;
       this.type[k] = t;
-      if (p.dv < 4.2) this.volc[k] = 2; else if (p.dv < 17) this.volc[k] = 1;
+      if (p.dv < 4.2 * VS) this.volc[k] = 2; else if (p.dv < 17 * VS) this.volc[k] = 1;
       if (p.df < 1.3) { this.volc[k] = 3; if (t === 0 || t === 3) this.type[k] = 2; }
       if (t === 4) this.volc[k] = 4;
     }

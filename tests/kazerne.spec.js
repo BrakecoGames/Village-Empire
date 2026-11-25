@@ -130,7 +130,8 @@ test.describe('Kazerne en soldaten', () => {
     const tap = async (x, y) => { if (touch) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); };
     const pos = await page.evaluate(() => {
       const g = window.VE.game, s = g.soldiers()[0];
-      window.T.look({ cx: s.x, cz: s.z + (window.innerWidth < 600 ? 1.6 : 0) }, 7, 0.9, 0.3);
+      const all = g.soldiers(), mx = all.reduce((q, o) => q + o.x, 0) / all.length, mz = all.reduce((q, o) => q + o.z, 0) / all.length;   // beide soldaten in beeld (ook op een smal scherm)
+      window.T.look({ cx: mx, cz: mz + (window.innerWidth < 600 ? 1.6 : 0) }, window.innerWidth < 600 ? 9 : 7, 0.9, 0.3);
       window.VE.view.cam.update(0);
       return window.T.screen(s);
     });
@@ -139,7 +140,8 @@ test.describe('Kazerne en soldaten', () => {
     await expect(page.locator('#infoPanel')).toContainText('Swordsman');
     await expect(page.locator('#infoPanel')).toContainText('Orders');
     // dubbeltik: alle zwaardvechters in beeld
-    await tap(pos.x, pos.y); await page.waitForTimeout(60); await tap(pos.x, pos.y);
+    // (softwareweergave in een lange testronde kan zo traag zijn dat twee tikken > 400 ms uit elkaar vallen: tot 3× proberen)
+    for (let k = 0; k < 3; k++) { await tap(pos.x, pos.y); await page.waitForTimeout(60); await tap(pos.x, pos.y); if (await page.evaluate(() => window.VE.ui.army.size) === 2) break; await page.waitForTimeout(500); }
     expect(await page.evaluate(() => window.VE.ui.army.size)).toBe(2);
     // doel op de grond (een beloopbare tegel een stukje verderop)
     const tgt = await page.evaluate(() => {

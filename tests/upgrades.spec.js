@@ -22,7 +22,7 @@ async function setup(page) {
         }
         return best;
       },
-      place(t, near, minD) { const s = this.spot(t, near, minD); return g.placeBuilding(t, s[0], s[1], true); },
+      place(t, near, minD) { const s = this.spot(t, near, minD); const b = g.placeBuilding(t, s[0], s[1], true); if (b && b.accept) VE.game.setAccept(b, '*', true); return b; },   // Storehouse: alles
       run(sec, each) { for (let t = 0; t < sec; t += 0.1) { g.arriveT = 1e9; g.update(0.1); if (each) each(t); } },
       // zichtbare stuks van een goed binnen een gebouw (plus rand), uit de InstancedMesh van de stapels
       visible(b, r, pad) {

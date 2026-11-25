@@ -53,7 +53,7 @@
   };
   // telefoon: geen uitlegkaartje over de kaart bij het kiezen van een gebouw (de bouwhint en de kaart tonen de kosten al)
   const showDef0 = U.showInfoDef;
-  U.showInfoDef = function (k) { if (touch()) { this.hideInfo(); return; } return showDef0.call(this, k); };
+  U.showInfoDef = function (k) { if (touch() && !(VE.DEFS[k] && VE.DEFS[k].depot)) { this.hideInfo(); return; } return showDef0.call(this, k); };
   const update0 = U.update;
   U.update = function (dt) { this.mobileInit(); update0.call(this, dt); };
 })(window.VE);

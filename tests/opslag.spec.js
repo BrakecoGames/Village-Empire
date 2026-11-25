@@ -21,7 +21,7 @@ async function setup(page) {
         }
         return best;
       },
-      place(t, near, minD) { const s = this.spot(t, near, minD); return s ? VE.game.placeBuilding(t, s[0], s[1], true) : null; },
+      place(t, near, minD) { const s = this.spot(t, near, minD); const b = s ? VE.game.placeBuilding(t, s[0], s[1], true) : null; if (b && b.accept) VE.game.setAccept(b, '*', true); return b; },   // Storehouse: alles (test van vóór de standaard hout/steen)
       // bouwplek binnen 14 tegels van het dorpshuis met de meeste bomen of rotsen binnen bereik (willekeurige wereld)
       placeRich(t, not) {
         const g = VE.game, N = VE.N, hq = g.hq, rad = VE.DEFS[t].radius - 1;

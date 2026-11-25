@@ -393,7 +393,7 @@
       if (def.market) for (const r of ['bread', 'fish', 'wine', 'flour']) b.sell[r] = true;
       if (def.recipes) b.recipe = def.recipe;
       if (def.storage) b.store = {};
-      if (def.depot) { b.accept = {}; for (const r of VE.RES_ORDER) b.accept[r] = true; }
+      if (def.depot) { b.accept = {}; for (const r of VE.RES_ORDER) b.accept[r] = (VE.DEFAULT_ACCEPT || VE.RES_ORDER).indexOf(r) >= 0; }
       this.sd = true;
       for (let dj = 0; dj < size; dj++) for (let di = 0; di < size; di++) {
         const k = (j + dj) * N + i + di;
@@ -1540,6 +1540,7 @@
         b.input = bs.inp || {}; b.output = bs.out || {}; if (bs.sell) b.sell = bs.sell; if (bs.keep !== undefined) b.keep = bs.keep;
         if (bs.rc && b.def.recipes && b.def.recipes[bs.rc]) b.recipe = bs.rc;
         if (b.store && bs.st && (sv.v || 1) >= 2) for (const r in bs.st) if (VE.RES[r] && bs.st[r] > 0) b.store[r] = bs.st[r];
+        if (b.accept && !bs.ac) for (const r of VE.RES_ORDER) b.accept[r] = true;      // oude save: alles
         if (b.accept && bs.ac) for (const r of VE.RES_ORDER) b.accept[r] = bs.ac.indexOf(r) >= 0 || ((sv.v || 1) < 3 && VE.RES[r].weapon === true) || ((sv.v || 1) < 4 && r === 'gear');
         if (bs.up && b.built && bs.up.l > b.level) {                   // lopende upgrade (bouwplaats) gaat gewoon verder
           const c = {}; let total = 0; for (const r in bs.up.c) if (VE.RES[r] && bs.up.c[r] > 0) { c[r] = bs.up.c[r]; total += c[r]; }
