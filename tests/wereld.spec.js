@@ -109,6 +109,7 @@ test.describe('Grote wereld', () => {
     expect(d.gold).toBe(30);
     expect(d.toast).toContain('Discovered: Ancient Ruins');
     // minimap: zichtbaar; tikken verplaatst de camera
+    if (await page.locator('#mmToggle').isVisible()) await page.locator('#mmToggle').click();   // telefoon: kaartknop
     await expect(page.locator('#minimap canvas')).toBeVisible();
     const box = await page.locator('#minimap canvas').boundingBox();
     await page.locator('#minimap canvas').click({ position: { x: box.width * 0.8, y: box.height * 0.2 } });
