@@ -462,7 +462,8 @@
       const cart = new VE.Model(91);
       cart.box(0.12, 0.06, 0.15, 0x6e4a2a, { y: 0.03, j: 0.08 });
       for (const sx of [-0.065, 0.065]) for (const sz of [-0.05, 0.05]) cart.add(new THREE.CylinderGeometry(0.022, 0.022, 0.012, 8), C.iron, { x: sx, y: 0.022, z: sz, rz: PI / 2 });
-      for (let i = 0; i < 4; i++) cart.ball(0.028, oreCol, { x: -0.03 + (i % 2) * 0.06, y: 0.09, z: -0.03 + Math.floor(i / 2) * 0.06 });
+      if (ore === 5) for (let i = 0; i < 4; i++) cart.box(0.05, 0.04, 0.06, 0xc2baac, { x: -0.028 + (i % 2) * 0.056, y: 0.06, z: -0.034 + Math.floor(i / 2) * 0.068, j: 0.05 });   // steenmijn: rechthoekige blokken
+      else for (let i = 0; i < 4; i++) cart.ball(0.028, oreCol, { x: -0.03 + (i % 2) * 0.06, y: 0.09, z: -0.03 + Math.floor(i / 2) * 0.06 });
       ex.anims.push({ geo: cart.build(), x: 0, y: 0.02, z: 0.18, kind: 'cart' });
       const wheel = new VE.Model(92);
       wheel.add(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 10), C.wood, { rz: PI / 2 });
@@ -470,7 +471,7 @@
       ex.anims.push({ geo: wheel.build(), x: -0.3, y: 0.4, z: 0.1, kind: 'wheel' });
     };
   }
-  B.coalmine = mineB(1); B.ironmine = mineB(2); B.coppermine = mineB(3); B.goldmine = mineB(4);
+  B.coalmine = mineB(1); B.ironmine = mineB(2); B.coppermine = mineB(3); B.goldmine = mineB(4); B.stonemine = mineB(5);
   B.smelter = function (m, lvl, ex) {
     foundation(m, 0.84, 0.8);
     m.box(0.5, 0.34, 0.4, C.stone, { x: -0.08, z: -0.12, j: 0.06 });
@@ -581,7 +582,7 @@
     farm: [0.3, 0.06, 0.27], windmill: [0.3, 0.06, 0.27], bakery: [-0.03, 0.06, 0.34],
     fisher: [0.14, 0.095, 0.1], vineyard: [-0.04, 0.06, 0.33], winery: [0.07, 0.06, 0.34],
     hunter: [0.3, 0.06, 0.3], coalmine: [0.3, 0.06, 0.34], ironmine: [0.3, 0.06, 0.34], coppermine: [0.3, 0.06, 0.34],
-    goldmine: [0.3, 0.06, 0.34], smelter: [-0.1, 0.06, 0.34], weaponsmith: [0.22, 0.06, 0.4]
+    goldmine: [0.3, 0.06, 0.34], stonemine: [0.3, 0.06, 0.34], smelter: [-0.1, 0.06, 0.34], weaponsmith: [0.22, 0.06, 0.4]
   };
   /* Stapels aangeleverde grondstoffen (b.input), op volgorde van VE.RES_ORDER. Blender-markers 'in0', 'in1' …
      gaan voor; dit is de reserve. */

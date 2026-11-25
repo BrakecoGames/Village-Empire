@@ -132,7 +132,14 @@
     },
 
     /* ---------------- zoeken en uithakken ---------------- */
+    /* steen (soort 5): het gesteente zelf. Elke bergtegel binnen bereik telt, en het raakt nooit op */
+    rockNear(w, x, z, r) {
+      for (let j = Math.floor(z - r); j <= Math.floor(z + r); j++) for (let i = Math.floor(x - r); i <= Math.floor(x + r); i++)
+        if (w.inb(i, j) && w.type[j * N + i] === 2 && (i + 0.5 - x) ** 2 + (j + 0.5 - z) ** 2 <= r * r) return true;
+      return false;
+    },
     near(w, x, z, type, r) {
+      if (type === 5) return this.rockNear(w, x, z, r);
       if (!w.deposits) return false;
       for (const d of w.deposits) if (d.type === type && d.amount > 0 && (d.x - x) ** 2 + (d.z - z) ** 2 <= r * r) return true;
       return false;
@@ -147,6 +154,7 @@
       return best;
     },
     pick(w, x, z, type, r) {
+      if (type === 5) return this.rockNear(w, x, z, r) ? { type: 5, amount: 1e9, k: -1, x: x, z: z, endless: true } : null;
       let best = null, bd = 1e9;
       for (const d of w.deposits || []) {
         if (d.type !== type || d.amount <= 0 || d.reserved) continue;
@@ -156,6 +164,7 @@
       return best;
     },
     take(w, d) {
+      if (d.endless) return;
       d.amount = Math.max(0, d.amount - 1);
       if (d.amount <= 0) { d.dead = true; if (w.ore[d.k] === d) w.ore[d.k] = null; }
       this.surveyDirty = true;
@@ -165,6 +174,7 @@
     refreshArea() { /* ondergronds: niets te verplaatsen */ },
     /* hoeveel er binnen bereik van (x, z) zit, en hoe rijk (voor de uitleg bij het plaatsen en het infopaneel) */
     reach(w, x, z, type, r) {
+      if (type === 5) return this.rockNear(w, x, z, r) ? 1e9 : 0;
       let n = 0;
       for (const d of w.deposits || []) if (d.type === type && d.amount > 0 && (d.x - x) ** 2 + (d.z - z) ** 2 <= r * r) n += d.amount;
       return n;
@@ -196,6 +206,7 @@
     },
     /* informatielaag aan (met nadruk op één ertssoort) of uit; vloeiend in en uit (VE.Mining.tick) */
     highlight(game, type) {
+      if (type === 5) type = 0;                                       // steenmijn: geen ertslaag nodig (elke berg is goed)
       this.want = type ? 1 : 0;
       if (game && game.world) this.paintSurvey(game.world, type || 0);
     },

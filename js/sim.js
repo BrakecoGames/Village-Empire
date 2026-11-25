@@ -24,7 +24,11 @@
       this.maxIter = Math.max(5000, Math.round(n * 0.6));          // grote wereld: verder zoeken (lange routes)
     }
     // worn paths are cheaper, so settlers keep using (and deepening) the routes that already exist
-    cost(k) { const w = this.w, r = w.road[k]; if (r === 2) return 0.6; if (r === 1) return 0.8; return w.type[k] === 2 ? 1.5 : 1.0; }
+    cost(k) {
+      const w = this.w, r = w.road[k]; if (r === 2) return 0.6; if (r === 1) return 0.8;
+      const sl = w.slopeOf(k);                            // steilte van de tegel: bergop is zwaarder
+      return (w.type[k] === 2 ? 1.25 : 1.0) + Math.min(1.2, sl * 0.35);
+    }
     push(k, f) {
       const hk = this.hk, hf = this.hf; let i = hk.length; hk.push(k); hf.push(f);
       while (i > 0) { const p = (i - 1) >> 1; if (hf[p] <= f) break; hk[i] = hk[p]; hf[i] = hf[p]; i = p; }
@@ -100,6 +104,7 @@
       this.seed = save ? save.seed : ((Math.random() * 1e9) >>> 0);
       const rand = VE.rng(this.seed ^ 0x5bd1e995);
       const w = this.world = new VE.World(this.seed, this.root);
+      w.gen = save ? (save.g || 1) : VE.GEN;                              // oude saves: hun eigen (oude) terrein
       w.generate();
       w.buildMeshes();
       w.buildDecor(rand);
@@ -343,26 +348,28 @@
         if (def.mountain) {
           if (w.type[k] !== 2) return { ok: false, why: 'Mines can only be built on the mountain' };
           if (w.road[k]) return { ok: false, why: 'A path is in the way' };
-        } else if (w.type[k] === 2) return { ok: false, why: 'Too rocky here' };
+        } else if (w.type[k] === 2 && def.gather === 'field') return { ok: false, why: 'Too rocky for fields' };
         if (w.bld[k]) return { ok: false, why: 'Space is taken' };
         if (w.door[k]) return { ok: false, why: 'An entrance is in the way' };
         if (w.rock[k]) return { ok: false, why: 'A boulder is in the way' };
         if (w.field[k]) return { ok: false, why: 'A field is in the way' };
       }
-      if (w.slope(i, j, size) > (def.mountain ? 1.9 : size > 1 ? 1.1 : 0.75)) return { ok: false, why: def.mountain ? 'This cliff is too steep' : 'Ground too steep' };
+      if (w.slope(i, j, size) > (def.mountain ? 1.9 : size > 1 ? 1.25 : 0.95)) return { ok: false, why: def.mountain ? 'This cliff is too steep' : 'Ground too steep' };
       const di = i + (size > 1 ? 1 : 0), dj = j + size;
       if (!w.inb(di, dj)) return { ok: false, why: 'No room for an entrance' };
       const dk = dj * N + di;
       if (w.type[dk] === 1 || w.type[dk] === 4 || w.bld[dk] || w.rock[dk] || (w.lmk && w.lmk[dk])) return { ok: false, why: 'Entrance is blocked' };
       if (def.mountain) {
         const M = VE.Mining, ore = VE.ORES[def.ore];
-        if (M && !M.near(w, i + 0.5, j + 0.5, def.ore, def.radius)) {
+        if (M && def.ore !== 5 && !M.near(w, i + 0.5, j + 0.5, def.ore, def.radius)) {
           const other = M.anyNear(w, i + 0.5, j + 0.5, def.radius);
           return { ok: false, why: other ? 'No ' + ore.name + ' below this spot, but ' + VE.ORES[other].name + ': try a ' + VE.DEFS[VE.ORES[other].mine].name : 'No ' + ore.name + ' found below this spot' };
         }
         if (!this.routeToStore(dk)) return { ok: false, why: 'No route to your storage from here' };
       }
       if (def.gold && this.gold < def.gold) return { ok: false, why: 'Needs ' + def.gold + ' gold' };
+      if (def.mountain && def.ore === 5) return { ok: true, why: 'Good spot: solid rock for building stone (never runs out)' };
+      if (def.territory && !force) { const v = this.towerView(i + (size > 1 ? 1 : 0.5), j + (size > 1 ? 1 : 0.5)); if (v >= 1) return { ok: true, why: 'High ground: sees ' + Math.round(v) + ' tiles further' }; }
       if (def.mountain) {
         const n = VE.ORES[def.ore].name, amt = VE.Mining.reach(w, i + 0.5, j + 0.5, def.ore, def.radius);
         return { ok: true, why: 'Good spot: ' + VE.Mining.richness(amt) + ' ' + n + ' deposit below (about ' + (Math.round(amt / 5) * 5 || amt) + ')' };
@@ -484,11 +491,13 @@
     }
     updateTerritory(initial) {
       const c = [];
-      for (const b of this.buildings) if (b.alive && b.built && b.def.territory) c.push({ x: b.cx, z: b.cz, r: b.def.territory + (b.level - 1) * 1.5 });
+      for (const b of this.buildings) if (b.alive && b.built && b.def.territory) c.push({ x: b.cx, z: b.cz, r: b.def.territory + (b.level - 1) * 1.5, view: b.type === 'tower' ? this.towerView(b.cx, b.cz) : 0 });
       this.world.setTerritory(c);
-      for (const t of c) this.world.reveal(t.x, t.z, t.r + 2.5);   // your own land (and a little beyond) is known
+      for (const t of c) this.world.reveal(t.x, t.z, t.r + 2.5 + t.view);   // your own land (and a little beyond) is known
       if (!initial) emit('territory', {});
     }
+    /* wachttoren op hoogte kijkt verder: extra ontdekkingsbereik (tegels) t.o.v. vlak land (hoogte ~0,9) */
+    towerView(x, z) { return VE.clamp((this.world.heightAt(x, z) - 1.1) * 2.2, 0, 9); }
     /* bouwplaats van een gebouw: het gebouw zelf (nog in aanbouw) of zijn lopende upgrade (b.up) */
     site(b) { return !b.alive ? null : !b.built ? (b.def.cost ? b : null) : (b.up || null); }
     siteCost(S, b) { return S.cost || b.def.cost; }
@@ -1218,8 +1227,8 @@
       const dep = M && M.pick(w, b.cx, b.cz, d.ore, r);
       if (!dep) {
         const empty = !(M && M.near(w, b.cx, b.cz, d.ore, r));
-        b.status = empty ? 'The ' + VE.ORES[d.ore].name + ' below this mine is used up' : 'Waiting for a free tunnel';
-        if (empty && !b.emptyTold) { b.emptyTold = true; emit('toast', { text: '⛏️ ' + b.def.name + ': the ' + VE.ORES[d.ore].name + ' is used up. Build a new mine above another deposit.' }); }
+        b.status = d.ore === 5 ? 'No solid rock in reach' : empty ? 'The ' + VE.ORES[d.ore].name + ' below this mine is used up' : 'Waiting for a free tunnel';
+        if (empty && d.ore !== 5 && !b.emptyTold) { b.emptyTold = true; emit('toast', { text: '⛏️ ' + b.def.name + ': the ' + VE.ORES[d.ore].name + ' is used up. Build a new mine above another deposit.' }); }
         s.wt = 4; return;
       }
       // ondergronds hakken: de mijnwerker blijft binnen, het karretje rijdt
@@ -1514,7 +1523,7 @@
       if (carried) for (const s of this.settlers) if (s.task && s.task.picked && s.carry) stock[s.carry] = (stock[s.carry] || 0) + 1;
       for (const r in inHand) stock[r] = (stock[r] || 0) + inHand[r];
       return {
-        v: 4, n: VE.N, seed: this.seed, players: this.players ? this.players.map(p => ({ id: p.id, kind: p.kind, name: p.name })) : undefined, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
+        v: 4, n: VE.N, g: w.gen || 1, seed: this.seed, players: this.players ? this.players.map(p => ({ id: p.id, kind: p.kind, name: p.name })) : undefined, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
         stats: this.stats, upg: this.upg, pop: this.settlers.length, speed: this.speed,
         buildings: bl,
         ore: VE.Mining ? VE.Mining.serialize(w) : undefined, wild: this.wild ? this.wild.serialize() : undefined,

@@ -44,6 +44,7 @@
     const n = VE.noise(seed), n2 = VE.noise(seed + 77), n3 = VE.noise(seed + 191), n4 = VE.noise(seed + 333), n5 = VE.noise(seed + 555);
     const rnd = VE.rng((seed ^ 0x3a7c11d) >>> 0);
     const C = N / 2, R = N * 0.33, VS = Math.min(1.35, Math.sqrt(N / 144));   // VS: grootte van de vulkaan
+    const G2 = (this.gen || 1) >= 2;                                   // generator 2: lagere bergen, terrassen (config.js VE.GEN)
     const rot = rnd() * TAU;                                  // per wereld een andere draaiing van het geheel
     // ---- startplekken (speler 1 = index 0)
     const S = [0, 1, 2].map(k => {
@@ -93,27 +94,34 @@
       let m = 0;
       for (const s of S) {
         const a = L(s, 16, -16), b = L(s, 18, 16);
-        m = Math.max(m, VE.smooth(8.5, 3, segDist(a[0], a[1], b[0], b[1], x, z) + (n2.fbm(x * 0.07, z * 0.07, 3) - 0.5) * 4));
+        m = Math.max(m, G2 ? VE.smooth(11, 3.5, segDist(a[0], a[1], b[0], b[1], x, z) + (n2.fbm(x * 0.07, z * 0.07, 3) - 0.5) * 4)
+          : VE.smooth(8.5, 3, segDist(a[0], a[1], b[0], b[1], x, z) + (n2.fbm(x * 0.07, z * 0.07, 3) - 0.5) * 4));
       }
+      // generator 2: bij elke start (zelfde plek, gedraaid) een kleine rotsheuvel binnen de eerste grenzen, voor de
+      // steenmijn: zo is er altijd steen te winnen, ook als de rotsblokken op zijn en er nog geen wachttoren staat
+      if (G2) for (const s of S) { const p = L(s, -5, 7); m = Math.max(m, 0.8 * VE.smooth(5.6, 1.6, Math.hypot(x - p[0], z - p[1]) + (n2.fbm(x * 0.1 + 4, z * 0.1, 2) - 0.5) * 1.2)); }
       for (const c of [[0, 0], [N, 0], [0, N], [N, N]]) m = Math.max(m, VE.smooth(N * 0.2, N * 0.06, Math.hypot(x - c[0], z - c[1]) + (n2.fbm(x * 0.05 + 9, z * 0.05, 3) - 0.5) * 12));
-      h += m * m * 5.4 + m * n3.fbm(x * 0.2, z * 0.2, 2) * 1.6;
+      if (G2) h = this.mountainH(h, m, n3.fbm(x * 0.2, z * 0.2, 2));
+      else h += m * m * 5.4 + m * n3.fbm(x * 0.2, z * 0.2, 2) * 1.6;
       // vulkaan: brede kegel met een krater bovenop
       const dv = Math.hypot(x - C, z - C) + (n4.fbm(x * 0.12, z * 0.12, 2) - 0.5) * 2.2;
       const cone = VE.smooth(18 * VS, 2.5, dv);
       // ruwe hellingen: radiale geulen en ribbels (lavastromen uit het verleden)
       const va = Math.atan2(z - C, x - C), gully = (Math.sin(va * 11 + n4.fbm(x * 0.15, z * 0.15, 2) * 6) * 0.5 + 0.5) * 0.45;
-      h = Math.max(h, 0.9 + Math.pow(cone, 1.3) * 8.6 - gully * cone * (1 - cone) * 2.2);
+      h = Math.max(h, 0.9 + Math.pow(cone, 1.3) * (G2 ? 6.2 : 8.6) - gully * cone * (1 - cone) * 2.2);
       h -= VE.smooth(4.8 * VS, 1.6, dv) * 2.8;
       // rivieren met voorden en een breed dal
       rivers.forEach((pts, ri) => {
         const d = polyDist(pts, x, z) + (n4(x * 0.3, z * 0.3) - 0.5) * 0.8;
-        if (d > 7) return;
+        if (d > (G2 ? 9.5 : 7)) return;
         let ford = 0; for (const fp of fords[ri]) ford = Math.max(ford, VE.smooth(2.8, 0.9, Math.hypot(x - fp[0], z - fp[1])));
-        h = VE.lerp(h, Math.min(h, 0.55), VE.smooth(6.5, 2.2, d) * 0.6);
+        h = G2 ? VE.lerp(h, Math.min(h, 0.55 + Math.max(0, d - 2.2) * 0.45), VE.smooth(9, 2.2, d) * 0.95)   // breed dal, ook door een berg
+          : VE.lerp(h, Math.min(h, 0.55), VE.smooth(6.5, 2.2, d) * 0.6);
         h = VE.lerp(h, -0.75, VE.smooth(2.4, 0.7, d) * (1 - ford * 0.92));
         if (ford > 0 && d < 3) h = Math.max(h, VE.lerp(h, 0.22, ford));
       });
       // meren
+      if (G2) for (const l of lakes) { const dl = Math.hypot(x - l.x, z - l.z); if (dl < l.r + 7) h = Math.min(h, 0.6 + Math.max(0, dl - l.r) * 0.45); }   // geleidelijke oever
       for (const l of lakes) h = VE.lerp(h, -0.65, VE.smooth(l.r, l.r * 0.45, Math.hypot(x - l.x, z - l.z) + (n4(x * 0.3 + 9, z * 0.3) - 0.5) * 1.8));
       // spleet: smalle, ondiepe geul van donker gesteente
       const df = polyDist(fiss, x, z);
@@ -196,7 +204,7 @@
   NP.populate = function (rand) {
     const w = this.w, N = VE.N;
     if (!w.starts || w.starts.length < 2) return populate0.call(this, rand);
-    const S = w.starts.map(s => [s.i + 1, s.j + 1, s.a]);
+    const S = w.starts.map(s => [s.i + 1, s.j + 1, s.a]), G2 = (w.gen || 1) >= 2;
     const nearStart = (i, j) => { let d = 1e9; for (const s of S) d = Math.min(d, Math.hypot(i + 0.5 - s[0], j + 0.5 - s[1])); return d; };
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const k = j * N + i, ty = w.type[k];
@@ -208,7 +216,7 @@
       if (v === 2 || v === 3) continue;
       if (v === 1) { if (rand() < 0.035 && w.slope(i, j) < 1.6) this.addRock(i, j, 8, rand); continue; }   // kale vulkaanhelling
       if (ty === 2 || (w.mount[k] > 0.35 && ty !== 3)) {
-        if (rand() < 0.14 && w.slope(i, j) < 1.6) { this.addRock(i, j, 8, rand); continue; }
+        if (rand() < (G2 ? 0.2 : 0.14) && w.slope(i, j) < 1.6) { this.addRock(i, j, 8, rand); continue; }
         if (rand() < 0.2 * (1 - w.mount[k]) && w.tileH(i, j) < 4.2) this.addTree(i, j, 1, 1, rand);
         continue;
       }
@@ -216,7 +224,7 @@
       let p = VE.smooth(0.45, 0.6, f) * 0.85 + 0.03;            // grote bossen en losse bomen
       if (ty === 3) p *= 0.3;
       if (rand() < p) this.addTree(i, j, (w.mount[k] > 0.15 || f > 0.63) ? (rand() < 0.7 ? 1 : 0) : (rand() < 0.22 ? 2 : 0), 1, rand);
-      else if (rand() < 0.004 && w.slope(i, j) < 0.8) this.addRock(i, j, 8, rand);        // verspreide keien
+      else if (rand() < (G2 ? 0.011 : 0.004) && w.slope(i, j) < 0.8) this.addRock(i, j, 8, rand);        // verspreide keien
     }
     // rond elke startplek precies dezelfde verdeling (gedraaid): eerlijke start
     const local = VE.rng((w.seed ^ 0x1ab5) >>> 0), pattern = [];
@@ -224,7 +232,7 @@
       const u = (local() - 0.5) * 32, v = (local() - 0.5) * 32, r = local(), r2 = local(), r3 = local();
       pattern.push([u, v, r, r2, r3]);
     }
-    const groves = [[-6, -3], [4, -6], [-3, -7], [8, 5], [-9, 6]], quarries = [[6, 2], [1, 7], [-6, -6]];
+    const groves = [[-6, -3], [4, -6], [-3, -7], [8, 5], [-9, 6]], quarries = [[6, 2], [1, 7], [-6, -6]].concat(G2 ? [[10, -4], [-2, 11], [12, 8]] : []);
     for (const s of S) {
       const ca = Math.cos(s[2]), sa = Math.sin(s[2]), W2 = (u, v) => [s[0] + ca * u - sa * v, s[1] + sa * u + ca * v];
       const ok = (i, j) => { if (!w.inb(i, j)) return false; const k = j * N + i, t = w.type[k]; return t !== 1 && t < 4 && !w.tree[k] && !w.rock[k] && Math.hypot(i + 0.5 - s[0], j + 0.5 - s[1]) > 4.2; };

@@ -80,7 +80,7 @@ test.describe('Grote wereld', () => {
     for (const o of r.ore) { expect(o[1] || 0).toBeGreaterThan(50); expect(o[2] || 0).toBeGreaterThan(50); }   // kolen en ijzer bij elke start
     for (const o of r.st) { expect(o.trees).toBeGreaterThan(40); expect(o.rocks).toBeGreaterThan(8); expect(o.water).toBeGreaterThan(10); }
     // landschap
-    expect(r.volcano.rim).toBeGreaterThan(6);
+    expect(r.volcano.rim).toBeGreaterThan(4.5);                     // lager sinds generator 2, nog steeds een flinke kegel
     expect(r.volcano.crater).toBeLessThan(r.volcano.rim - 1);       // krater
     expect(r.lava).toBeGreaterThan(20);                              // geul voorbereid op lava
     expect(r.canyonCliffs).toBeGreaterThan(80);

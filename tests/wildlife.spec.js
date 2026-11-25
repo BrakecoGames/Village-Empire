@@ -144,7 +144,7 @@ test.describe('wildlife & mijnbouw: logica', () => {
       }
       out.bare = bare ? why('coalmine', bare[0], bare[1]).why : 'geen';
       // gewone gebouwen niet op de berg
-      out.houseOnMountain = why('house', out.coalSpot[0], out.coalSpot[1]).why;
+      out.houseOnMountain = why('farm', out.coalSpot[0], out.coalSpot[1]).why;   // akkers niet op rots (huizen mogen sinds 1.11 op vlakke bergplekken)
       // determinisme: dezelfde seed geeft dezelfde aders en dezelfde dieren
       const sv = JSON.parse(JSON.stringify(g.serialize()));
       delete sv.ore; delete sv.wild;
@@ -173,7 +173,7 @@ test.describe('wildlife & mijnbouw: logica', () => {
     expect(r.wrongOre.ok).toBe(false);
     expect(r.wrongOre.why).toMatch(/No iron below this spot, but (coal|copper|gold): try a /);
     expect(r.bare).toMatch(/No coal found below this spot|geen/);
-    expect(r.houseOnMountain).toBe('Too rocky here');
+    expect(r.houseOnMountain).toBe('Too rocky for fields');
     expect(r.sameOre && r.sameWild, 'deterministisch').toBe(true);
     expect(r.oreLen).toBeGreaterThan(10);
     expect(checkErrors(errors, info)).toEqual([]);

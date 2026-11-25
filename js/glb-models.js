@@ -30,7 +30,8 @@
     coalmine: { file: 'mine', node: 'mine', tint: { Vein: 0x26262b, Vein2: 0x6f7688 } },
     ironmine: { file: 'mine', node: 'mine', tint: { Vein: 0xb0582c, Vein2: 0x6e4a38 } },
     coppermine: { file: 'mine', node: 'mine', tint: { Vein: 0x3fae94, Vein2: 0x6fd6c4 } },
-    goldmine: { file: 'mine', node: 'mine', tint: { Vein: 0xf2c443, Vein2: 0xffe58a } }
+    goldmine: { file: 'mine', node: 'mine', tint: { Vein: 0xf2c443, Vein2: 0xffe58a } },
+    stonemine: {}                                                   // eigen model: groeve met schacht, karretjes en bouwstenen
   };
   const SOURCES = {};
   for (const t in TYPES) {

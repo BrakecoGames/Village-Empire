@@ -137,6 +137,11 @@
       if (fz > fx) return ha + (hd - hc) * fx + (hc - ha) * fz;
       return ha + (hb - ha) * fx + (hd - hb) * fz;
     }
+    /* steilte per tegel, gecachet (padzoeker); vervalt bij elke hoogtewijziging */
+    slopeOf(k) {
+      if (!this.tslope) { const T = this.tslope = new Float32Array(N * N); for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) T[j * N + i] = this.slope(i, j); }
+      return this.tslope[k];
+    }
     tileH(i, j) { return this.heightAt(i + 0.5, j + 0.5); }
     slope(i, j, s) {
       s = s || 1; let mn = 1e9, mx = -1e9;
@@ -147,6 +152,14 @@
     walkable(k) { const t = this.type[k]; return t !== 1 && t !== 4 && this.bld[k] === 0 && !this.rock[k] && !(this.lmk && this.lmk[k]); }
     isWater(k) { return this.type[k] === 1; }
 
+    /* bergen (generator 2): lager en met terrassen. h = basis, m = bergfactor 0..1, r = ruis 0..1. De hoogte van
+       de berg zelf wordt in plateaus gelegd (stappen van 0,8) met zachte overgangen ertussen: vlak genoeg om
+       op te bouwen, en nergens een wand waar bewoners niet tegenop kunnen. */
+    mountainH(h, m, r) {
+      const top = h + m * m * 3.3 + m * r * 0.9, q = Math.max(0, top) / 0.8, fl = Math.floor(q), fr = q - fl;
+      const terr = (fl + VE.smooth(0.45, 1.0, fr)) * 0.8;
+      return VE.lerp(top, terr, VE.smooth(0.25, 0.7, m) * 0.78);
+    }
     generate() {
       if (N > 64 && this.generateBig) return this.generateBig();          // grote wereld (js/worldgen.js)
       const n = VE.noise(this.seed), n2 = VE.noise(this.seed + 77), n3 = VE.noise(this.seed + 191), n4 = VE.noise(this.seed + 333);
@@ -160,7 +173,8 @@
         // rolling mountain range in the north-west
         const md = Math.hypot(x - N * 0.12, z - N * 0.14) / (N * 0.42);
         const m = VE.smooth(1.0, 0.3, md + (n2.fbm(x * 0.07, z * 0.07, 3) - 0.5) * 0.7);
-        h += m * m * 5.2 + m * n3.fbm(x * 0.22, z * 0.22, 2) * 1.6;
+        if ((this.gen || 1) >= 2) h = this.mountainH(h, m, n3.fbm(x * 0.22, z * 0.22, 2));
+        else h += m * m * 5.2 + m * n3.fbm(x * 0.22, z * 0.22, 2) * 1.6;
         // river with fords
         const d = Math.abs(x - rv(z));
         let rc = VE.smooth(2.4, 0.7, d);
@@ -382,6 +396,7 @@
       ca.needsUpdate = true;
     }
     updateHeights() {
+      this.tslope = null;                                   // steilte per tegel (padzoeker): opnieuw berekenen
       const pa = this.terrain.geometry.attributes.position;
       for (let v = 0; v < V1 * V1; v++) pa.setY(v, this.H[v]);
       pa.needsUpdate = true;

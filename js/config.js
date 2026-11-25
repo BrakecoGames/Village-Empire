@@ -42,6 +42,10 @@
      gedeeld over alle goederen die de speler aanvinkt). De startvoorraad ligt op een stapel naast het
      dorpshuis en wordt nooit aangevuld. */
   VE.LOCAL_CAP = 6;
+  /* Versie van de wereldgenerator. Het terrein wordt bij het laden opnieuw uit de seed gemaakt, dus een save
+     onthoudt met welke versie zijn wereld gemaakt is (save.g; zonder: 1). 1: hoge, steile bergen (tot 1.10.0).
+     2: lagere bergen met natuurlijke hellingen en vlakke terrassen (bouwbaar), meer natuursteen. */
+  VE.GEN = 2;
   VE.STORE_CAP = [60, 80, 100];
   /* Een nieuw Storehouse neemt standaard alleen hout (stammen en planken) en steen aan; de speler vinkt de rest
      aan bij het plaatsen, tijdens de bouw of daarna. */
@@ -101,7 +105,8 @@
     { key: 'coal', res: 'coal', name: 'coal', mine: 'coalmine', color: 0x2a2a2e },
     { key: 'iron', res: 'ironore', name: 'iron', mine: 'ironmine', color: 0x8a4a2a },
     { key: 'copper', res: 'copperore', name: 'copper', mine: 'coppermine', color: 0x3fae94 },
-    { key: 'gold', res: 'goldore', name: 'gold', mine: 'goldmine', color: 0xf2c443 }
+    { key: 'gold', res: 'goldore', name: 'gold', mine: 'goldmine', color: 0xf2c443 },
+    { key: 'stone', res: 'stone', name: 'stone', mine: 'stonemine', color: 0xb8b0a2, endless: true }   // het gesteente zelf (js/mining.js)
   ];
 
   /* role colours: tunic, hat */
@@ -157,6 +162,10 @@
     hunter: { name: "Hunter's Lodge", icon: '🦌', cat: 'food', rank: 1, cost: { plank: 4, stone: 1 }, worker: 'hunter', gather: 'hunt', radius: 8, out: 'meat', time: 3.6, tool: 'net',
       desc: 'A hunter sneaks up on rabbits, roe, deer and wild boar and brings home meat. Build it near woods and meadows full of game.' },
     // mijnen: alleen op een vrije bergtegel met de juiste ertsader binnen bereik (mountain: echte bouwregel in canPlace)
+    // steenmijn: hakt bouwsteen uit het gesteente van de berg zelf (geen ader nodig, raakt nooit op). Kost geen steen,
+    // zodat je hem altijd kunt bouwen, ook als de rotsblokken op zijn.
+    stonemine: { name: 'Stone Mine', icon: '🧱', cat: 'basic', rank: 1, cost: { plank: 6, log: 2 }, worker: 'miner', gather: 'ore', ore: 5, mountain: true, radius: 2.6, out: 'stone', time: 5.6, tool: 'pick',
+      desc: 'Cuts building stone from the solid rock of the mountain. Never runs out. Build it on the mountain.' },
     coalmine: { name: 'Coal Mine', icon: '⚫', cat: 'metal', rank: 2, cost: { plank: 5, stone: 2 }, worker: 'miner', gather: 'ore', ore: 1, mountain: true, radius: 2.6, out: 'coal', time: 4.4, tool: 'pick',
       desc: 'Digs coal from a deposit deep below the mountain. Build it above a coal deposit (use Survey to find one).' },
     ironmine: { name: 'Iron Mine', icon: '🔩', cat: 'metal', rank: 2, cost: { plank: 5, stone: 3 }, worker: 'miner', gather: 'ore', ore: 2, mountain: true, radius: 2.6, out: 'ironore', time: 5.2, tool: 'pick',
@@ -196,7 +205,7 @@
       { id: 'h7', text: 'Build 2 Cottages', type: 'build', b: 'house', n: 2, reward: R(10, { bread: 6 }) },
       { id: 'h8', text: 'Build a Storehouse', type: 'build', b: 'warehouse', n: 1, reward: R(15) }
     ] },
-    { name: 'Village', unlock: ['farm', 'windmill', 'bakery', 'fisher', 'hunter', 'market', 'tower'], quests: [
+    { name: 'Village', unlock: ['farm', 'windmill', 'bakery', 'fisher', 'hunter', 'market', 'tower', 'stonemine'], quests: [
       { id: 'v1', text: 'Build a Grain Farm', type: 'build', b: 'farm', n: 1, reward: R(20) },
       { id: 'v2', text: 'Mill 10 flour', type: 'produce', res: 'flour', n: 10, reward: R(30) },
       { id: 'v3', text: 'Bake 16 bread', type: 'produce', res: 'bread', n: 16, reward: R(40) },
@@ -206,7 +215,8 @@
       { id: 'v7', text: 'Build a Watchtower', type: 'build', b: 'tower', n: 1, reward: R(40, { stone: 6 }) },
       { id: 'v8', text: 'Reach 22 settlers', type: 'pop', n: 22, reward: R(60) },
       { id: 'v9', text: "Build a Hunter's Lodge", type: 'build', b: 'hunter', n: 1, reward: R(20) },
-      { id: 'v10', text: 'Bring home 20 meat', type: 'produce', res: 'meat', n: 20, reward: R(40) }
+      { id: 'v10', text: 'Bring home 20 meat', type: 'produce', res: 'meat', n: 20, reward: R(40) },
+      { id: 'v11', text: 'Build a Stone Mine in the mountains', type: 'build', b: 'stonemine', n: 1, reward: R(30, { plank: 4 }) }
     ] },
     { name: 'Market Town', unlock: ['vineyard', 'winery', 'tavern', 'coalmine', 'ironmine', 'coppermine', 'smelter', 'weaponsmith', 'barracks'], quests: [
       { id: 'm1', text: 'Harvest 20 grapes', type: 'produce', res: 'grape', n: 20, reward: R(60) },

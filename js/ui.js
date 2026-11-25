@@ -536,7 +536,8 @@
           h += '</div>';
           if (b.working && b.wt0) { const pct = Math.round(100 * (1 - b.wt / b.wt0)); h += '<div class="bar"><i style="width:' + pct + '%"></i><span>' + pct + '%</span></div>'; }
         }
-        if (d.gather === 'ore' && VE.Mining) {
+        if (d.gather === 'ore' && d.ore === 5) h += '<div class="ip-row"><b>Rock</b> solid mountain rock: never runs out</div>';
+        else if (d.gather === 'ore' && VE.Mining) {
           const left = VE.Mining.reach(g.world, b.cx, b.cz, d.ore, d.radius + (b.level - 1) * 0.5);
           h += '<div class="ip-row"><b>Deposit</b> ' + (left ? VE.Mining.richness(left) + ', about ' + (Math.round(left / 5) * 5 || left) + ' ' + VE.RES[d.out].name.toLowerCase() + ' left' : '<span class="short">used up: build a new mine above another deposit</span>') + '</div>';
         }
