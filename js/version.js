@@ -3,7 +3,7 @@
    zet de datum en werkt de ?v=-cachebusters in index.html bij. */
 'use strict';
 window.VE = window.VE || {};
-window.VE.VERSION = '1.9.0';
+window.VE.VERSION = '1.9.1';
 window.VE.BUILD_DATE = '2026-11-25';
 /* Korte tekst voor in het menu, bijv. "v1.0.0 · 21-11-2026" */
 window.VE.versionLabel = function () {
