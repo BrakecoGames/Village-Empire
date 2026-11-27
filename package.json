@@ -15,7 +15,8 @@
     "stage": "set VISUAL=1&& playwright test tests/stage.spec.js",
     "showcase": "set VISUAL=1&& playwright test tests/showcase.spec.js",
     "release": "node tools/release.mjs",
-    "characters": "set VISUAL=1&& playwright test tests/characters.spec.js"
+    "characters": "set VISUAL=1&& playwright test tests/characters.spec.js",
+    "archive": "node tools/archive.mjs"
   },
   "keywords": [],
   "author": "",

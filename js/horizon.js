@@ -22,6 +22,7 @@
     const S = 2, lo = -M, hi = N + M, cnt = (hi - lo) / S + 1;
     const edgeH = (x, z) => w.heightAt(VE.clamp(x, 0, N), VE.clamp(z, 0, N));
     const out = (x, z) => Math.max(0, -x, -z, x - N, z - N);           // afstand buiten de kaart (0 = op of in de kaart)
+    const isl = !!w.island;                                              // eiland: rondom zee, geen buitenland
     const pos = [], col = [], idx = [], parts = {}, vid = new Int32Array(cnt * cnt).fill(-1);
     const g1 = new THREE.Color(0x6aa53c), g2 = new THREE.Color(0x4a8732), rock = new THREE.Color(0x9e988c), c = new THREE.Color();
     const hAt = (x, z) => {
@@ -30,7 +31,7 @@
       return VE.lerp(edgeH(x, z), far, VE.smooth(0, 14, d));
     };
     // hoekpunten (alleen waar een cel buiten de kaart ligt)
-    for (let j = 0; j < cnt; j++) for (let i = 0; i < cnt; i++) {
+    for (let j = 0; j < cnt && !isl; j++) for (let i = 0; i < cnt; i++) {
       const x = lo + i * S, z = lo + j * S;
       if (out(x, z) <= 0 && x > 0 && z > 0 && x < N && z < N) continue;
       const d = out(x, z), h = hAt(x, z);
@@ -42,7 +43,7 @@
       c.lerp(HAZE, VE.smooth(4, 44, d));                                     // vervagen in de nevel
       col.push(c.r, c.g, c.b);
     }
-    for (let j = 0; j < cnt - 1; j++) for (let i = 0; i < cnt - 1; i++) {
+    for (let j = 0; j < cnt - 1 && !isl; j++) for (let i = 0; i < cnt - 1; i++) {
       const x = lo + i * S, z = lo + j * S;
       if (x >= 0 && z >= 0 && x + S <= N && z + S <= N) continue;           // cel helemaal binnen de kaart
       const a = vid[j * cnt + i], b = vid[j * cnt + i + 1], cc = vid[(j + 1) * cnt + i], d = vid[(j + 1) * cnt + i + 1];
@@ -69,12 +70,12 @@
     }
     // water dat doorloopt (net onder het kaartwater, zodat ze niet door elkaar flikkeren)
     const wg = new THREE.PlaneGeometry(N + 2 * M, N + 2 * M, 1, 1); wg.rotateX(-Math.PI / 2);
-    const water = new THREE.Mesh(wg, new THREE.MeshPhongMaterial({ color: 0x2f7aa8, specular: 0x3a5468, shininess: 24, transparent: true, opacity: 0.9 }));
+    const water = new THREE.Mesh(wg, new THREE.MeshPhongMaterial({ color: isl ? 0x1d5a8e : 0x2f7aa8, specular: 0x3a5468, shininess: 24, transparent: true, opacity: 0.9 }));
     water.position.set(N / 2, -0.03, N / 2); water.name = 'horizonWater';
     root.add(water);
     // bomen in de verte (zelfde soorten, alleen in het buitenland, dichter bij de rand)
     const trees = [];
-    if (VE.natureGeo && VE.Instancer) {
+    if (VE.natureGeo && VE.Instancer && !isl) {
       const rnd = VE.rng((w.seed ^ 0x51a7) >>> 0), m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
       for (const [name, share] of [['tree_pine', 0.35], ['tree_oak', 0.3], ['tree_spruce', 0.2], ['tree_birch', 0.15]]) {
         const geo2 = VE.natureGeo[name]; if (!geo2) continue;

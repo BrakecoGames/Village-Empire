@@ -54,7 +54,8 @@ test.describe('Grote wereld', () => {
       const st = VE.worldStats(g, 16);
       const spread = key => { const v = st.map(o => o[key]); return (Math.max(...v) - Math.min(...v)) / Math.max(1, Math.max(...v)); };
       const ore = st.map(o => o.ore);
-      const volcH = w.heightAt(F.volcano.x + 4.5, F.volcano.z), craterH = w.heightAt(F.volcano.x, F.volcano.z);
+      let volcH = 0; for (let q = 0; q < 24; q++) for (const rr of [3.5, 4.5, 5.5, 6.5, 7.5]) volcH = Math.max(volcH, w.heightAt(F.volcano.x + Math.cos(q * 0.2618) * rr, F.volcano.z + Math.sin(q * 0.2618) * rr));   // hoogste punt van de kraterrand
+      const craterH = w.heightAt(F.volcano.x, F.volcano.z);
       return { N, types, reachFrac: reach / land, startsReach, lmReach, bridge: { with: p1 ? p1.length : null, without: p2 ? p2.length : null, deck: B.deck, deckY },
         st, spread: { trees: spread('trees'), rocks: spread('rocks'), water: spread('water'), build: spread('build'), mountain: spread('mountain') }, ore,
         startDist: w.starts.map((s, n) => { const t = w.starts[(n + 1) % 3]; return Math.hypot(s.i - t.i, s.j - t.j); }),

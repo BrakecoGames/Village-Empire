@@ -66,7 +66,7 @@ test.describe('Bergen, steen en wachttorens', () => {
       const rnd = VE.rng(42); let pfOk = 0, pfN = 0;
       for (let t = 0; t < 4000 && pfN < 25; t++) {
         const i = Math.floor(rnd() * N), j = Math.floor(rnd() * N), k = j * N + i;
-        if (w.type[k] !== 2 || w.volc[k] || !ok(k) || w.slope(i, j) > 0.95 || Math.hypot(i - hq.cx, j - hq.cz) > 45) continue;
+        if (w.type[k] !== 2 || w.volc[k] || !ok(k) || !seen[k] || w.slope(i, j) > 0.95 || Math.hypot(i - hq.cx, j - hq.cz) > 45) continue;   // bereikbaar volgens de flood-fill: de padzoeker moet het ook vinden
         pfN++; if (g.pf.find(hq.doorK, k)) pfOk++;
       }
       out.pf = [pfOk, pfN];
@@ -88,7 +88,7 @@ test.describe('Bergen, steen en wachttorens', () => {
       return out;
     });
     console.log('bergen', JSON.stringify(r));
-    expect(r.gen).toBe(2);
+    expect(r.gen).toBeGreaterThanOrEqual(2);                         // 3 sinds het eiland (zelfde bergen)
     expect(r.maxH, 'bergen lager').toBeLessThan(7);
     expect(r.steep, 'vrijwel nergens te steil').toBeLessThan(0.01);
     expect(r.flat, 'veel bebouwbare bergtegels (plateaus)').toBeGreaterThan(0.6);
@@ -103,7 +103,7 @@ test.describe('Bergen, steen en wachttorens', () => {
     expect(Math.min(...ps), 'plateaus bij elke start').toBeGreaterThan(80);
     expect(Math.min(...ms), 'steenmijnplekken bij elke start').toBeGreaterThan(80);
     expect(Math.min(...r.starts.map(s => s.rocks)) / Math.max(...r.starts.map(s => s.rocks)), 'eerlijk verdeeld').toBeGreaterThan(0.75);
-    expect(r.savedG).toBe(2);
+    expect(r.savedG).toBe(r.gen);
     expect(r.sameTerrain && r.sameBuildings).toBe(true);
     expect(r.oldGen, 'oude save: oude generator').toBe(1);
     expect(r.oldMax, 'oude save: oude (hoge) bergen').toBeGreaterThan(r.maxH);

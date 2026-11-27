@@ -68,7 +68,9 @@
         if (w.bld[k]) c = COL.bld;
         if (!w.owned[k] && !w.bld[k]) c = mix(c, [60, 70, 64], 0.18);
         const e = w.explored[k];
-        if (e < 0.5) c = mix(c, COL.fog, 0.85 - e * 0.6);
+        // onontdekt: helemaal mist (geen kustlijn, rivieren of canyon); alleen de vulkaantop is altijd te zien
+        const peak = w.peak && w.volc && v === 2;
+        if (e < 0.5 && !peak) c = mix(c, COL.fog, e < 0.2 ? 1 : 1 - (e - 0.2) * 1.5);
         const o = k * 4; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255;
       }
       this.bctx.putImageData(this.img, 0, 0);

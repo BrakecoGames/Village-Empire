@@ -81,12 +81,13 @@
       for (const f of fields) {
         // beste begintegel: op de helling, rond 55 % van de straal, zo dicht mogelijk bij de gewenste richting
         let best = null, bs = 1e9;
-        for (let q = 0; q < 60; q++) {
-          const a = f.a + (rnd() - 0.5) * 0.35, r = R * (0.42 + rnd() * 0.28), i = Math.floor(C[0] + Math.cos(a) * r), j = Math.floor(C[1] + Math.sin(a) * r);
+        for (let q = 0; q < 160; q++) {
+          // eerst dicht bij de gewenste richting; lukt dat niet (rivier, spleet), dan wat ruimer zoeken
+          const wide = q >= 60, a = f.a + (rnd() - 0.5) * (wide ? 0.9 : 0.35), r = R * (w.island ? (wide ? 0.55 : 0.56) + rnd() * (wide ? 0.25 : 0.14) : 0.42 + rnd() * 0.28), i = Math.floor(C[0] + Math.cos(a) * r), j = Math.floor(C[1] + Math.sin(a) * r);
           if (!w.inb(i, j)) continue;
           const k = j * N + i;
           if (w.type[k] !== 2 || w.volc[k] !== 1 || w.rock[k] || w.ore[k] || w.slope(i, j) > 1.9) continue;
-          const sc = Math.abs(a - f.a) * 4 + Math.abs(r / R - 0.55);
+          const sc = Math.abs(a - f.a) * 4 + Math.abs(r / R - (w.island ? 0.63 : 0.55));
           if (sc < bs) { bs = sc; best = k; }
         }
         if (best === null) continue;

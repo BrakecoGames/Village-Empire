@@ -14,7 +14,7 @@ test('wereldrand: buitenland, mist en geen lege vlakken, ook uitgezoomd', async 
   await page.evaluate(() => window.VE.glbAllReady);
   const r = await page.evaluate(() => {
     const VE = window.VE, g = VE.game, w = g.world, N = VE.N, H = w.horizon;
-    const out = { N, has: !!H };
+    const out = { N, has: !!H, island: !!w.island };
     if (!H) return out;
     // naad: hoekpunten van het buitenland op de kaartrand liggen precies op de kaarthoogte
     const p = H.land.geometry.attributes.position; let seam = 0, seamN = 0;
@@ -47,11 +47,11 @@ test('wereldrand: buitenland, mist en geen lege vlakken, ook uitgezoomd', async 
   });
   console.log('rand', JSON.stringify({ ...r, views: undefined }), JSON.stringify(r.views.filter(v => v.empty > 0)));
   expect(r.has).toBe(true);
-  expect(r.seamN).toBeGreaterThan(50);
-  expect(r.seam, 'naadloze aansluiting op de kaart').toBeLessThan(0.02);
+  if (r.island) expect(r.seamN, 'eiland: rondom zee, geen buitenland').toBe(0);
+  else { expect(r.seamN).toBeGreaterThan(50); expect(r.seam, 'naadloze aansluiting op de kaart').toBeLessThan(0.02); }
   expect(r.skirtHidden, 'geen bruine rand meer').toBe(true);
   expect(r.mist).toBe(true);
-  expect(r.trees, 'bomen in de verte').toBeGreaterThan(500);
+  if (!r.island) expect(r.trees, 'bomen in de verte').toBeGreaterThan(500);
   expect(r.worst, 'nergens een leeg vlak in beeld').toBeLessThan(0.005);
   // foto: helemaal uitgezoomd boven een hoek
   await page.evaluate(() => {

@@ -34,7 +34,7 @@ test('eekhoorns: model, klimmen zonder door de stam te gaan, takken, sprongen en
         modes[S.mode] = (modes[S.mode] || 0) + 1; clips[a.clipWant] = (clips[a.clipWant] || 0) + 1;
         if (S.mode === 'jump' && S.J && S.J.p < 0.06) jumps++;
         if (a.wy < w.heightAt(a.wx, a.wz) - 0.01) under++;
-        if (S.mode === 'ground' && !W.passXZ(a.x, a.z)) inBuilding++;
+        if (S.mode === 'ground' && w.bld[Math.floor(a.z) * N + Math.floor(a.x)]) inBuilding++;   // echt in een gebouw (een rotsheuvel mag)
         // kop omhoog bij klimmen, kop omlaag bij afdalen: lokale z-as (kop) van de eekhoorn
         if (S.mode === 'trunk' && a.tq) {
           const fz = new THREE.Vector3(0, 0, 1).applyQuaternion(a.tq);

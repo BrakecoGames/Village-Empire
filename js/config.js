@@ -51,7 +51,9 @@
   /* Versie van de wereldgenerator. Het terrein wordt bij het laden opnieuw uit de seed gemaakt, dus een save
      onthoudt met welke versie zijn wereld gemaakt is (save.g; zonder: 1). 1: hoge, steile bergen (tot 1.10.0).
      2: lagere bergen met natuurlijke hellingen en vlakke terrassen (bouwbaar), meer natuursteen. */
-  VE.GEN = 2;
+  VE.GEN = 3;
+  /* 3: een groot, natuurlijk gevormd eiland met de vulkaan in het midden, omringd door zee; afwisselende kust
+     (stranden, kliffen, baaien, rotspilaren), een baai bij elke start (voor latere havens). */
   VE.STORE_CAP = [60, 80, 100];
   /* Een nieuw Storehouse neemt standaard alleen hout (stammen en planken) en steen aan; de speler vinkt de rest
      aan bij het plaatsen, tijdens de bouw of daarna. */

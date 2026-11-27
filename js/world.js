@@ -41,11 +41,24 @@
         }
     }
     isExplored(k) { return this.explored[k] > 0.5; }
+    /* Fog of War: een grotendeels horizontale wolkenlaag op hoogte fogTop, net boven het hoogste land (bomen
+       erbij). Alleen de top van de vulkaan steekt erboven uit. Hij volgt dus niet de vorm van het landschap:
+       canyon, rivieren, brug, grondstoffen en gebouwen blijven eronder verborgen. Naar het ontdekte land toe
+       loopt de laag geleidelijk af (een zachte wolkenbank over ~7 tegels), zodat er geen muur ontstaat en de
+       mist bij het ontdekken natuurlijk wegtrekt. */
     buildFog() {
       const pos = new Float32Array(V1 * V1 * 3), idx = new Uint32Array(N * N * 6);
+      const F = this.features && this.features.volcano;
+      let top = 0;
+      for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
+        if (F && Math.hypot(x - F.x, z - F.z) < F.r * 0.6) continue;           // alleen de vulkaantop mag erboven uitsteken
+        top = Math.max(top, this.H[z * V1 + x]);
+      }
+      this.fogTop = Math.max(3.2, top + 1.65);                // + ruimte voor de hoogste boomtoppen
+      this.fogD = new Float32Array(V1 * V1);
       for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
         const v = z * V1 + x;
-        pos[v * 3] = x; pos[v * 3 + 1] = Math.max(this.H[v], 0) + 1.7; pos[v * 3 + 2] = z;
+        pos[v * 3] = x; pos[v * 3 + 1] = this.fogTop; pos[v * 3 + 2] = z;
       }
       let o = 0;
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
@@ -94,6 +107,7 @@
           for (let z = cj; z <= j1; z++) for (let x = ci; x <= i1; x++) { const y = pos[(z * V1 + x) * 3 + 1]; lo = Math.min(lo, y); hi = Math.max(hi, y); }
           const cg = new THREE.BufferGeometry();
           cg.setAttribute('position', g.attributes.position); cg.setAttribute('fogA', g.attributes.fogA); cg.setIndex(ix);
+          lo = 0; hi = this.fogTop;
           cg.boundingSphere = new THREE.Sphere(new THREE.Vector3((ci + i1) / 2, (lo + hi) / 2, (cj + j1) / 2), Math.hypot(i1 - ci, j1 - cj, hi - lo + 2) / 2 + 0.5);
           const cm = new THREE.Mesh(cg, m); cm.renderOrder = 10; cm.name = 'fogChunk'; cm.frustumCulled = true;
           cm.userData.r = [ci, cj, i1, j1];
@@ -114,6 +128,28 @@
         fa.array[z * V1 + x] = 1 - s / c;
       }
       fa.needsUpdate = true;
+      // hoogte: afstand (in tegels) tot het ontdekte land, met twee doorgangen (chamfer); daarmee loopt de
+      // wolkenbank van vlak boven de grond geleidelijk op naar de horizontale laag
+      const D = this.fogD, INF = 1e6, R2 = Math.SQRT2, top = this.fogTop, RAMP = 7;
+      for (let v = 0; v < V1 * V1; v++) D[v] = fa.array[v] < 0.5 ? 0 : INF;
+      for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
+        const v = z * V1 + x; let d = D[v]; if (!d) continue;
+        if (x > 0) d = Math.min(d, D[v - 1] + 1);
+        if (z > 0) { d = Math.min(d, D[v - V1] + 1); if (x > 0) d = Math.min(d, D[v - V1 - 1] + R2); if (x < N) d = Math.min(d, D[v - V1 + 1] + R2); }
+        D[v] = d;
+      }
+      for (let z = N; z >= 0; z--) for (let x = N; x >= 0; x--) {
+        const v = z * V1 + x; let d = D[v]; if (!d) continue;
+        if (x < N) d = Math.min(d, D[v + 1] + 1);
+        if (z < N) { d = Math.min(d, D[v + V1] + 1); if (x < N) d = Math.min(d, D[v + V1 + 1] + R2); if (x > 0) d = Math.min(d, D[v + V1 - 1] + R2); }
+        D[v] = d;
+      }
+      const pa = this.fog.geometry.attributes.position;
+      for (let v = 0; v < V1 * V1; v++) {
+        const env = Math.max(this.H[v], 0) + 1.2, t = VE.smooth(0, RAMP, D[v]);
+        pa.array[v * 3 + 1] = env + (top - env) * t;                   // boven de mistlaag (vulkaantop): de laag blijft vlak, de top steekt erdoor
+      }
+      pa.needsUpdate = true;
       // vakken die helemaal ontdekt zijn: niet meer tekenen
       if (this.fogChunks) for (const cm of this.fogChunks) {
         const [ci, cj, i1, j1] = cm.userData.r; let any = false;
@@ -237,6 +273,7 @@
       this.buildWater();
       this.buildFog();
       this.recolor();
+      if (this.buildPeak) this.buildPeak(g);                // vulkaantop boven de mist (js/worldgen.js)
       // border posts
       this.borderCap = Math.round(900 * Math.max(1, N / 64));
       this.border = new THREE.InstancedMesh(VE.borderGeo(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 5 }), this.borderCap);
@@ -328,29 +365,54 @@
       pa.needsUpdate = true; ca.needsUpdate = true;
       this.skirt.geometry.computeVertexNormals();
     }
+    /* Water: zee, meren en rivieren. Diepte kleurt van turquoise (ondiep) naar diepblauw (zee, zelfde kleur als de
+       zee rondom het eiland in js/horizon.js). Kleine golfjes bewegen het oppervlak; langs de kust rollen
+       schuimkoppen naar het land en ligt een smalle rand van schuim op de waterlijn (attribuut aShore = afstand
+       tot het land in tegels, één keer berekend). In diep water is de golfslag rustiger. */
     buildWater() {
       const g = new THREE.PlaneGeometry(N, N, N, N);
-      // Depth-tinted water: turquoise in the shallows, deep blue further out
-      const wp = g.attributes.position, wc = new Float32Array(wp.count * 3);
-      const shallow = new THREE.Color(0x3a98b0), deep = new THREE.Color(0x1a4f8a), wcol = new THREE.Color();
+      const wp = g.attributes.position, wc = new Float32Array(wp.count * 3), ws = new Float32Array(wp.count);
+      const shallow = new THREE.Color(0x3a98b0), deep = new THREE.Color(0x1d5a8e), wcol = new THREE.Color();
+      // afstand tot het land per hoekpunt (breedte-eerst, max. 6 tegels)
+      const dist = new Float32Array(V1 * V1).fill(6), q = [];
+      for (let v = 0; v < V1 * V1; v++) if (this.H[v] > 0.02) { dist[v] = 0; q.push(v); }
+      for (let h = 0; h < q.length; h++) {
+        const v = q[h], x = v % V1, z = (v / V1) | 0, d = dist[v] + 1;
+        if (d >= 6) continue;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const xx = x + dx, zz = z + dz; if (xx < 0 || zz < 0 || xx > N || zz > N) continue;
+          const u = zz * V1 + xx; if (dist[u] > d) { dist[u] = d; q.push(u); }
+        }
+      }
       for (let v = 0; v < wp.count; v++) {
-        const x = Math.round(wp.getX(v) + N / 2), z = Math.round(N / 2 - wp.getY(v));
-        const d = -this.vh(VE.clamp(x, 0, N), VE.clamp(z, 0, N));
+        const x = Math.round(wp.getX(v) + N / 2), z = Math.round(N / 2 - wp.getY(v)), xc = VE.clamp(x, 0, N), zc = VE.clamp(z, 0, N);
+        const d = -this.vh(xc, zc);
         wcol.copy(shallow).lerp(deep, VE.smooth(0.0, 0.9, d));
         wc[v * 3] = wcol.r; wc[v * 3 + 1] = wcol.g; wc[v * 3 + 2] = wcol.b;
+        ws[v] = dist[zc * V1 + xc];
       }
       g.setAttribute('color', new THREE.BufferAttribute(wc, 3));
+      g.setAttribute('aShore', new THREE.BufferAttribute(ws, 1));
       const m = new THREE.MeshPhongMaterial({ color: 0xffffff, vertexColors: true, specular: 0x3a5468, shininess: 24, flatShading: true, transparent: true, opacity: 0.9 });
       m.onBeforeCompile = function (sh) {
         sh.uniforms.uTime = VE.uTime;
-        sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
-          '#include <begin_vertex>\n transformed.z += sin(position.x*1.7 + uTime*1.4) * 0.028 + cos(position.y*1.9 + uTime*1.1) * 0.028 + sin((position.x+position.y)*0.9 + uTime*0.7)*0.02;');
+        sh.vertexShader = 'uniform float uTime;\nattribute float aShore;\nvarying float vShore;\nvarying vec2 vW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+          '#include <begin_vertex>\n vShore = aShore; vW = position.xy;\n float calm = 0.55 + 0.45 * (1.0 - smoothstep(2.0, 6.0, aShore));\n' +
+          ' transformed.z += (sin(position.x*1.7 + uTime*1.4) * 0.028 + cos(position.y*1.9 + uTime*1.1) * 0.028 + sin((position.x+position.y)*0.9 + uTime*0.7)*0.02) * calm;');
+        sh.fragmentShader = 'uniform float uTime;\nvarying float vShore;\nvarying vec2 vW;\n' + sh.fragmentShader.replace('#include <color_fragment>',
+          '#include <color_fragment>\n' +
+          ' float wob = sin(vW.x * 0.9 + uTime * 0.6) * 0.35 + sin(vW.y * 1.3 - uTime * 0.45) * 0.35;\n' +
+          ' float roll = smoothstep(0.62, 0.96, sin(vShore * 4.2 - uTime * 1.7 + wob));\n' +           // schuimkoppen die naar het land rollen
+          ' float foam = roll * (1.0 - smoothstep(0.3, 2.2, vShore)) * 0.75 + (1.0 - smoothstep(0.08, 0.5, vShore)) * 0.85;\n' +   // en een rand op de waterlijn
+          ' diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 0.97), clamp(foam, 0.0, 0.9));\n' +
+          ' diffuseColor.a = max(diffuseColor.a, foam * 0.95);');
       };
-      m.customProgramCacheKey = () => 'water';
+      m.customProgramCacheKey = () => 'water2';
       this.water = new THREE.Mesh(g, m);
       this.water.rotation.x = -Math.PI / 2;
       this.water.position.set(N / 2, 0.0, N / 2);
       this.water.receiveShadow = true;
+      this.water.name = 'water';
       this.root.add(this.water);
     }
     vertexOwned(x, z) {
