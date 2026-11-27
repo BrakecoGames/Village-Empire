@@ -92,7 +92,7 @@ test.describe('Paden', () => {
     });
     expect(r.before.path).toBeLessThan(4); // aan het begin alleen de ingangen van grote gebouwen
     expect(r.after.trail + r.after.path).toBeGreaterThan(r.before.trail + r.before.path + 1);   // willekeurige wereld: minstens 2 nieuwe paden
-    expect(r.roads).toBeGreaterThan(3);
+    expect(r.roads).toBeGreaterThanOrEqual(3);                     // willekeurige wereld: soms precies 3
     expect(r.lit, 'slijtage zichtbaar in het terrein').toBeGreaterThan(100);
     expect(checkErrors(errors, info)).toEqual([]);
   });

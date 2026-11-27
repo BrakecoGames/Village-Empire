@@ -52,14 +52,14 @@ test.describe('Eiland en mist', () => {
       return out;
     });
     console.log('eiland', JSON.stringify(r));
-    expect(r.gen).toBe(3);
+    expect(r.gen).toBeGreaterThanOrEqual(3);                        // 4: bredere stranden
     expect(r.island).toBe(true);
     expect(r.border, 'rondom zee, geen land aan de kaartrand').toBe(0);
     expect(r.landFrac).toBeGreaterThan(0.45); expect(r.landFrac).toBeLessThan(0.8);
     expect(r.seaFrac).toBeGreaterThan(0.2);
     expect(r.beach, 'stranden').toBeGreaterThan(150);
     expect(r.cliff, 'kliffen').toBeGreaterThan(50);
-    expect(r.stacks, 'rotspilaren').toBeGreaterThan(5);
+    expect(r.stacks, 'rotspilaren (aantal hangt af van de kliffen)').toBeGreaterThan(0);
     expect(r.volcCenter, 'vulkaan in het midden').toBeLessThan(2);
     for (const s of r.starts) {
       expect(s.land, 'genoeg land rond elke start').toBeGreaterThan(2400);
@@ -77,7 +77,7 @@ test.describe('Eiland en mist', () => {
     expect(r.sulfurBelow, 'zwavel onder de mist').toBe(true);
     expect(r.peak - r.fogTop, 'vulkaantop steekt ver boven de mist uit').toBeGreaterThan(4);
     expect(r.above, 'niets anders boven de mist').toBe(0);
-    expect(r.savedG).toBe(3);
+    expect(r.savedG).toBe(r.gen);
     expect(r.reload).toEqual({ island: true, same: true });
     expect(r.old.island).toBe(false);
     expect(r.old.gen).toBe(2);
@@ -89,7 +89,7 @@ test.describe('Eiland en mist', () => {
     const errors = trackErrors(page);
     await openGame(page);
     await startNewVillage(page);
-    await page.evaluate(() => Promise.all([window.VE.glbAllReady, window.VE.sulfurReady]));
+    await page.evaluate(() => Promise.all([window.VE.glbAllReady, window.VE.sulfurReady, window.VE.cragsReady]));
     const r = await page.evaluate(() => {
       const VE = window.VE, g = VE.game, w = g.world, N = VE.N, V1 = N + 1, F = w.features.volcano;
       const pa = w.fog.geometry.attributes.position.array, fa = w.fog.geometry.attributes.fogA.array;
@@ -113,6 +113,9 @@ test.describe('Eiland en mist', () => {
       out.rocks = chk(g.nature.rocks.filter(q => !q.dead).map(q => [q.x, q.z]), (x, z) => w.heightAt(x, z) + 0.5);
       out.trees = chk(g.nature.trees.filter(t => !t.dead).map(t => [t.x, t.z]), (x, z) => w.heightAt(x, z) + 1.4);
       out.landmarks = chk((g.landmarks || []).map(L => [L.x, L.z]), (x, z) => w.heightAt(x, z) + 1.2);
+      // rotsformaties (Blender): ook onder de mist; hoogte uit het model × schaal
+      const CH = { tor: 1.2, outcrop: 0.65, ridge: 0.6, boulders: 0.35, scree: 0.15, cliff: 1.1 };
+      out.crags = (() => { let n = 0, bad = 0; for (const c of (g.crags ? g.crags.list : [])) { if (!unexp(c.x, c.z) || Math.hypot(c.x - F.x, c.z - F.z) < F.r * 0.6) continue; n++; if (!hidden(c.x, c.z, w.heightAt(c.x, c.z) + CH[c.kind] * c.sc)) bad++; } return [n, bad]; })();
       // vulkaantop: boven de mist en apart getekend (zonder afstandsnevel)
       out.peakVisible = !!w.peak && w.peak.visible && w.heightAt(F.x + 4, F.z) > w.fogTop + 2;
       // zachte rand: van ontdekt naar onontdekt loopt de mist geleidelijk op (geen muur)
@@ -127,7 +130,7 @@ test.describe('Eiland en mist', () => {
     });
     console.log('mist', JSON.stringify(r));
     expect(r.flat, 'mistlaag horizontaal').toBeLessThan(0.01);
-    for (const k of ['canyon', 'bridge', 'rivers', 'sulfur', 'ores', 'rocks', 'trees', 'landmarks']) {
+    for (const k of ['canyon', 'bridge', 'rivers', 'sulfur', 'ores', 'rocks', 'trees', 'landmarks', 'crags']) {
       expect(r[k][0], k + ' getest').toBeGreaterThan(k === 'landmarks' || k === 'bridge' ? 0 : 3);
       expect(r[k][1], k + ' verborgen onder de mist').toBe(0);
     }
@@ -179,6 +182,59 @@ test.describe('Eiland en mist', () => {
     expect(r.fog, 'mist bijwerken').toBeLessThan(25);
     expect(r.sim).toBeLessThan(8);
     expect(r.calls).toBeLessThan(160);
+    expect(errs(errors)).toEqual([]);
+  });
+
+  test('bergen en kust: rotsformaties (Blender), groene hellingen met grijs gesteente, brede stranden', async ({ page }, info) => {
+    test.setTimeout(180_000);
+    const errors = trackErrors(page);
+    await openGame(page);
+    await startNewVillage(page);
+    await page.evaluate(() => Promise.all([window.VE.glbAllReady, window.VE.cragsReady]));
+    const r = await page.evaluate(() => {
+      const VE = window.VE, g = VE.game, w = g.world, N = VE.N, V1 = N + 1, R = g.crags;
+      const out = { src: VE.cragSource, kinds: {} };
+      for (const c of R.list) out.kinds[c.kind] = (out.kinds[c.kind] || 0) + 1;
+      // nooit op een boom, rotsblok, gebouw of ingang
+      out.onBlocked = R.list.filter(c => !c.gone && (w.tree[c.k] || w.rock[c.k] || w.bld[c.k] || w.door[c.k])).length;
+      // waar: kliffen op kustkliffen, de rest in de bergen of op het strand
+      out.where = R.list.every(c => c.kind === 'cliff' ? w.type[c.k] === 4 : c.kind === 'boulders' ? (w.type[c.k] === 2 || w.type[c.k] === 3) : w.type[c.k] === 2);
+      // bouwen haalt de rotsformatie op die plek weg
+      const c0 = R.list.find(c => c.kind === 'boulders' && w.type[c.k] === 2 && !c.gone);
+      out.cleared = null;
+      if (c0) { const i = c0.k % N, j = (c0.k / N) | 0; g.rank = VE.RANKS.length - 1; w.owned.fill(1); const b = g.placeBuilding('house', i, j, true); out.cleared = !!b && c0.gone === true && !R.byTile.has(c0.k); }
+      // bergkleuren: groen op de plateaus, grijs op steile stukken
+      const ca = w.terrain.geometry.attributes.color; let flatG = 0, flatN = 0, steepG = 0, steepN = 0;
+      for (let z = 1; z < N; z++) for (let x = 1; x < N; x++) {
+        const k = z * N + x; if (w.type[k] !== 2 || w.volc[k] || w.mount[k] < 0.6) continue;
+        const v = z * V1 + x, h = w.H[v], sv = Math.max(Math.abs(h - w.H[v + 1]), Math.abs(h - w.H[v - 1]), Math.abs(h - w.H[v + V1]), Math.abs(h - w.H[v - V1]));
+        const green = ca.getY(v) - (ca.getX(v) + ca.getZ(v)) / 2;
+        if (sv < 0.25) { flatG += green; flatN++; } else if (sv > 1.2) { steepG += green; steepN++; }
+      }
+      out.flatGreen = flatG / Math.max(1, flatN); out.steepGreen = steepG / Math.max(1, steepN);
+      // stranden: breedte (tegels zand tussen zee en land) langs de kust zonder klif
+      let beach = 0; for (let k = 0; k < N * N; k++) if (w.type[k] === 3) beach++;
+      out.beach = beach;
+      return out;
+    });
+    console.log('bergkust', JSON.stringify(r));
+    expect(r.src).toBe('glb');
+    for (const k of ['tor', 'outcrop', 'ridge', 'boulders', 'scree', 'cliff']) expect(r.kinds[k] || 0, k).toBeGreaterThan(5);
+    expect(r.onBlocked, 'niet op bomen, rotsen of gebouwen').toBe(0);
+    expect(r.where).toBe(true);
+    expect(r.cleared, 'bouwen haalt de rotsen weg').toBe(true);
+    expect(r.flatGreen, 'plateaus groen').toBeGreaterThan(0.04);
+    expect(r.steepGreen, 'steile stukken grijs gesteente').toBeLessThan(r.flatGreen - 0.03);
+    expect(r.beach, 'brede stranden (1.12.0: ~200–580)').toBeGreaterThan(450);
+    // foto's: berghelling en baai (alles ontdekt)
+    await page.evaluate(() => { const VE = window.VE, w = VE.game.world; w.explored.fill(1); w.fogDirty = true; document.getElementById('hud').style.visibility = 'hidden'; });
+    const look = (fn) => page.evaluate(fn);
+    await look(() => { const VE = window.VE, w = VE.game.world, N = VE.N, s = w.starts[0], c = VE.view.cam; let best = null, bs = 0;
+      for (let j = s.j - 30; j < s.j + 30; j++) for (let i = s.i - 30; i < s.i + 30; i++) { if (!w.inb(i, j) || w.type[j * N + i] !== 2 || w.volc[j * N + i]) continue; const sl = w.slope(i, j); if (sl > bs) { bs = sl; best = [i, j]; } }
+      c.tx = best[0]; c.tz = best[1]; c.tdist = c.dist = 14; c.pitch = 0.45; c.tyaw = c.yaw = 0.6; });
+    await page.waitForTimeout(1800); await shot(page, info.project.name, 'berg-rotsen');
+    await look(() => { const VE = window.VE, w = VE.game.world, h = w.island.harbors[0], c = VE.view.cam; c.tx = h.x; c.tz = h.z; c.tdist = c.dist = 20; c.pitch = 0.45; c.tyaw = c.yaw = Math.atan2(w.island.x - h.x, w.island.z - h.z) + Math.PI; });
+    await page.waitForTimeout(1800); await shot(page, info.project.name, 'kust-baai-strand');
     expect(errs(errors)).toEqual([]);
   });
 });

@@ -372,7 +372,7 @@
     buildWater() {
       const g = new THREE.PlaneGeometry(N, N, N, N);
       const wp = g.attributes.position, wc = new Float32Array(wp.count * 3), ws = new Float32Array(wp.count);
-      const shallow = new THREE.Color(0x3a98b0), deep = new THREE.Color(0x1d5a8e), wcol = new THREE.Color();
+      const shallow = new THREE.Color(0x3a98b0), deep = new THREE.Color(0x1d5a8e), wcol = new THREE.Color(), turq = new THREE.Color(0x54bdb9), mid = new THREE.Color(0x2b8aa6);
       // afstand tot het land per hoekpunt (breedte-eerst, max. 6 tegels)
       const dist = new Float32Array(V1 * V1).fill(6), q = [];
       for (let v = 0; v < V1 * V1; v++) if (this.H[v] > 0.02) { dist[v] = 0; q.push(v); }
@@ -387,7 +387,8 @@
       for (let v = 0; v < wp.count; v++) {
         const x = Math.round(wp.getX(v) + N / 2), z = Math.round(N / 2 - wp.getY(v)), xc = VE.clamp(x, 0, N), zc = VE.clamp(z, 0, N);
         const d = -this.vh(xc, zc);
-        wcol.copy(shallow).lerp(deep, VE.smooth(0.0, 0.9, d));
+        if (this.island) wcol.copy(turq).lerp(mid, VE.smooth(0.05, 0.75, d)).lerp(deep, VE.smooth(0.75, 2.4, d));
+        else wcol.copy(shallow).lerp(deep, VE.smooth(0.0, 0.9, d));
         wc[v * 3] = wcol.r; wc[v * 3 + 1] = wcol.g; wc[v * 3 + 2] = wcol.b;
         ws[v] = dist[zc * V1 + xc];
       }
@@ -438,7 +439,8 @@
       const ca = this.terrain.geometry.attributes.color;
       // Softer, more natural meadow greens (was a neon lime that clipped in sunlight)
       const g1 = new THREE.Color(0x6aa53c), g2 = new THREE.Color(0x96c050), g3 = new THREE.Color(0x4a8732), sand = new THREE.Color(0xe2cf98),
-        bed = new THREE.Color(0x7c6c4c), rock = new THREE.Color(0x9e988c), rock2 = new THREE.Color(0x857f74), snow = new THREE.Color(0xf6f6f2), dirt = new THREE.Color(0xb39368), dim = new THREE.Color(0x6f7d74);
+        bed = new THREE.Color(0x7c6c4c), rock = new THREE.Color(0x9e988c), rock2 = new THREE.Color(0x857f74), snow = new THREE.Color(0xf6f6f2), dirt = new THREE.Color(0xb39368), dim = new THREE.Color(0x6f7d74),
+        heath = new THREE.Color(0x5e9238), heath2 = new THREE.Color(0x789a42), rockI = new THREE.Color(0x8d8e8a), rockI2 = new THREE.Color(0x74756f), sandL = new THREE.Color(0xeadfc2), sandW = new THREE.Color(0xc9b98f), _r = new THREE.Color();
       const c = new THREE.Color(), t = new THREE.Color();
       for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
         const v = z * V1 + x, h = this.H[v], gn = this.gnoise[v];
@@ -446,10 +448,17 @@
         c.copy(g1).lerp(g2, VE.smooth(0.42, 0.68, gn));
         c.lerp(g3, VE.smooth(0.5, 0.68, this.forest[k]) * 0.75);
         const m = this.mount[k];
-        if (m > 0.2) { t.copy(rock).lerp(rock2, gn); c.lerp(t, VE.smooth(0.25, 0.6, m)); }
+        if (m > 0.2) {
+          const sv = Math.max(Math.abs(h - this.H[z * V1 + Math.min(N, x + 1)]), Math.abs(h - this.H[z * V1 + Math.max(0, x - 1)]),
+            Math.abs(h - this.H[Math.min(N, z + 1) * V1 + x]), Math.abs(h - this.H[Math.max(0, z - 1) * V1 + x]));
+          const expo = VE.smooth(0.62, 1.15, sv + (gn - 0.5) * 0.55 + VE.smooth(4.2, 6.4, h) * 0.3);
+          t.copy(heath).lerp(heath2, gn).lerp(this.island ? _r.copy(rockI).lerp(rockI2, gn) : _r.copy(rock).lerp(rock2, gn), expo);   // eiland: koel grijs gesteente
+          c.lerp(t, VE.smooth(0.25, 0.6, m));
+        }
         if (this.volc && this.volc[k] > 0) this.volcColor(c, k, h, gn);     // vulkaan, canyonwanden, spleet (js/worldgen.js)
-        else if (h > 4.6) c.lerp(snow, VE.smooth(4.6, 5.6, h));
-        if (h < 0.34) c.lerp(sand, VE.smooth(0.34, 0.14, h));
+        else if (h > 4.6 && (this.gen || 1) < 3) c.lerp(snow, VE.smooth(4.6, 5.6, h));     // eiland: zomer, geen sneeuw
+        if (this.island) { if (h < 0.46) c.lerp(sandL, VE.smooth(0.46, 0.18, h)); if (h < 0.1) c.lerp(sandW, VE.smooth(0.1, 0.0, h)); }   // licht strand, natte rand
+        else if (h < 0.34) c.lerp(sand, VE.smooth(0.34, 0.14, h));
         if (h < 0.0) c.lerp(bed, VE.smooth(0.0, -0.35, h));
         if (this.vertexNearHard(x, z)) c.lerp(dirt, 0.55);
         if (!this.vertexOwned(x, z)) { c.lerp(dim, 0.28); c.multiplyScalar(0.78); }

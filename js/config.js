@@ -51,7 +51,8 @@
   /* Versie van de wereldgenerator. Het terrein wordt bij het laden opnieuw uit de seed gemaakt, dus een save
      onthoudt met welke versie zijn wereld gemaakt is (save.g; zonder: 1). 1: hoge, steile bergen (tot 1.10.0).
      2: lagere bergen met natuurlijke hellingen en vlakke terrassen (bouwbaar), meer natuursteen. */
-  VE.GEN = 3;
+  VE.GEN = 4;
+  /* 4: als 3, met bredere, zacht oplopende zandstranden (referentiefoto: baai met licht zand en turquoise water). */
   /* 3: een groot, natuurlijk gevormd eiland met de vulkaan in het midden, omringd door zee; afwisselende kust
      (stranden, kliffen, baaien, rotspilaren), een baai bij elke start (voor latere havens). */
   VE.STORE_CAP = [60, 80, 100];

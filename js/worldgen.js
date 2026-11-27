@@ -46,6 +46,7 @@
     const C = N / 2, R = N * 0.33, VS = Math.min(1.35, Math.sqrt(N / 144));   // VS: grootte van de vulkaan
     const G2 = (this.gen || 1) >= 2;                                   // generator 2: lagere bergen, terrassen (config.js VE.GEN)
     const G3 = (this.gen || 1) >= 3;                                   // generator 3: eiland in zee
+    const G4 = (this.gen || 1) >= 4;                                   // generator 4: bredere stranden
     const n6 = VE.noise(seed + 2027), n7 = VE.noise(seed + 3301);
     // ruis met drievoudige symmetrie rond het midden: de kust is natuurlijk grillig, maar voor elke speler gelijk
     const rot3 = [0, 1, 2].map(k => [Math.cos(k * TAU / 3), Math.sin(k * TAU / 3)]);
@@ -92,6 +93,8 @@
     if (N >= 180) for (let k = 0; k < 6; k++) { const a = rot + k * TAU / 6 + 0.5, r = N * (k % 2 ? 0.24 : 0.37); lakes.push({ x: C + Math.cos(a) * r, z: C + Math.sin(a) * r, r: 3.2 + (k % 3) * 0.8 }); }
     this.features = { starts: S.map(s => [s.x, s.z]), volcano: { x: C, z: C, r: 16 * VS }, rivers: rivers, canyon: canyon, bridge: bridge, fissure: fiss, lakes: lakes, fords: fords };
     const P = {};
+    // generator 4: per hoekpunt bijhouden wat zee is, hoe klifachtig de kust is en hoe ver de canyon is (voor de stranden)
+    const SEAV = G4 ? new Uint8Array(V1 * V1) : null, CLV = G4 ? new Float32Array(V1 * V1) : null, DCV = G4 ? new Float32Array(V1 * V1) : null;
     for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
       const e = n.fbm(x * 0.028, z * 0.028, 5);
       let h = 0.85 + (e - 0.45) * 2.4;
@@ -160,8 +163,9 @@
         cst = c;
         if (c < 1) {
           // strand: zacht aflopend naar de waterlijn; klif: land blijft hoog tot vlak bij de rand
-          const beach = VE.smooth(0.9, 1.0, c);
-          const hb = VE.lerp(h, 0.16 + (e - 0.5) * 0.08, beach);
+          const beach = G4 ? VE.smooth(0.84, 0.975, c) : VE.smooth(0.9, 1.0, c);
+          const sandH = G4 ? 0.1 + Math.max(0, 0.975 - c) * 2.2 : 0.16;     // breed strand dat zacht oploopt naar het land
+          const hb = VE.lerp(h, sandH + (e - 0.5) * 0.08, beach);
           const hc = Math.max(h, VE.lerp(h, 1.9 + n7(x * 0.3, z * 0.3) * 0.7, VE.smooth(0.88, 0.97, c)));
           // de canyon loopt met zijn steile wanden door tot in zee: niemand loopt er via het strand omheen (alleen de brug)
           h = VE.lerp(VE.lerp(hb, hc, cliff), h, VE.smooth(6.5, 4.8, dc));
@@ -173,8 +177,29 @@
         }
       }
       this.H[z * V1 + x] = h;
+      if (G4) { SEAV[z * V1 + x] = cst >= 1 ? 1 : 0; CLV[z * V1 + x] = cliff; DCV[z * V1 + x] = dc; }
       this.gnoise[z * V1 + x] = n4.fbm(x * 0.09 + 5, z * 0.09 - 3, 3);
       if (z < N && x < N) P[z * N + x] = { m: m, dv: dv, dc: dc, df: df, c: cst, cl: cliff };
+    }
+    let DSEA = null;                                                   // generator 4: afstand tot de zee per hoekpunt
+    if (G4) {
+      // brede stranden: elke kust zonder klif krijgt een zandstrand van ~5 tegels dat zacht oploopt vanaf de
+      // waterlijn, ook in baaien (de afstand tot de zee telt, niet hoe snel de kustlijn verloopt). Daarachter
+      // mag het land steil omhoog gaan, zoals een baai tussen de bergen.
+      const D = new Float32Array(V1 * V1).fill(99), q = [];
+      for (let v = 0; v < V1 * V1; v++) if (SEAV[v]) { D[v] = 0; q.push(v); }
+      for (let qi = 0; qi < q.length; qi++) {
+        const v = q[qi], x = v % V1, z = (v / V1) | 0, d = D[v] + 1; if (d > 7) continue;
+        for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + ax, zz = z + az; if (xx < 0 || zz < 0 || xx > N || zz > N) continue; const u = zz * V1 + xx; if (D[u] > d) { D[u] = d; q.push(u); } }
+      }
+      DSEA = D;
+      for (let v = 0; v < V1 * V1; v++) {
+        if (SEAV[v] || D[v] > 7) continue;
+        // alleen laag land wordt strand: waar een berg de kust raakt, blijft het een natuurlijke klif (geen uitgegraven wand)
+        const wgt = VE.smooth(6.5, 2.0, D[v]) * (1 - VE.smooth(0.15, 0.45, CLV[v])) * VE.smooth(4.8, 6.5, DCV[v]) * VE.smooth(2.4, 1.3, this.H[v]);
+        const target = 0.05 + D[v] * 0.085;
+        if (wgt > 0 && this.H[v] > target) this.H[v] = VE.lerp(this.H[v], target, wgt);
+      }
     }
     this.volc = new Uint8Array(N * N);
     this.deck = new Float32Array(N * N).fill(-99);
@@ -188,6 +213,7 @@
       else if (p.dc < 5.2 && this.slope(i, j) > 0.9) t = 4;    // canyonwand: steile klif
       else if (G3 && p.c > 0.9 && p.cl > 0.3 && this.slope(i, j) > 1.05) t = 4;   // kustklif
       else if (G3 && p.c > 0.82 && this.slope(i, j) > 1.6) t = 4;              // bergrug die steil in zee eindigt: ook een klif
+      else if (DSEA && DSEA[j * V1 + i] < 3.5 && this.slope(i, j) > 1.6) t = 4;  // steile wand vlak aan het water: klif
       else if (G3 && p.c >= 1) t = 2;                           // rotspilaar in zee
       else if (this.mount[k] > 0.5) t = 2;
       else if (hc < 0.32) t = 3;
@@ -203,10 +229,26 @@
       const sea = this.sea = new Uint8Array(N * N), q = [];
       for (let k = 0; k < N; k++) for (const kk of [k, (N - 1) * N + k, k * N, k * N + N - 1]) if (this.type[kk] === 1 && !sea[kk]) { sea[kk] = 1; q.push(kk); }
       while (q.length) { const c = q.pop(), ci = c % N, cj = (c / N) | 0; for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const i = ci + di, j = cj + dj; if (!this.inb(i, j)) continue; const kk = j * N + i; if (!sea[kk] && this.type[kk] === 1) { sea[kk] = 1; q.push(kk); } } }
+      if (G4) {
+        // kleine stukjes land die door kliffen en zee zijn ingesloten (nergens te bereiken): onderdeel van de klif
+        const comp = new Int32Array(N * N).fill(-1), sizes = [];
+        const walk = k => { const t = this.type[k]; return t !== 1 && t !== 4; };
+        for (let k0 = 0; k0 < N * N; k0++) {
+          if (comp[k0] >= 0 || !walk(k0) || (this.volc[k0] === 5)) continue;
+          const id = sizes.length, st = [k0]; comp[k0] = id; let n = 0;
+          while (st.length) { const c = st.pop(), ci = c % N, cj = (c / N) | 0; n++;
+            for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const i = ci + di, j = cj + dj; if (!this.inb(i, j)) continue; const kk = j * N + i; if (comp[kk] < 0 && walk(kk) && this.volc[kk] !== 5) { comp[kk] = id; st.push(kk); } } }
+          sizes.push(n);
+        }
+        for (let k = 0; k < N * N; k++) if (comp[k] >= 0 && sizes[comp[k]] < 80 && this.type[k] === 2) { this.type[k] = 4; this.volc[k] = 5; }
+      }
       // baaien (later: havens, vissersboten, handelsschepen): per start het strand in de eigen baai
+      // bereikbaar land vanaf de eerste start (het eiland is één geheel): alleen daar mag een haven komen
+      const reach = new Uint8Array(N * N); { const s0 = S[0], k0 = Math.floor(s0.z) * N + Math.floor(s0.x), st = [k0]; reach[k0] = 1;
+        while (st.length) { const c = st.pop(), ci = c % N, cj = (c / N) | 0; for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const i = ci + di, j = cj + dj; if (!this.inb(i, j)) continue; const kk = j * N + i, tt = this.type[kk]; if (!reach[kk] && tt !== 1 && tt !== 4) { reach[kk] = 1; st.push(kk); } } } }
       const harbors = S.map(s => { const b = L(s, 20, 19); let best = null, bd = 1e9;
         for (let j = Math.floor(b[1]) - 16; j <= b[1] + 16; j++) for (let i = Math.floor(b[0]) - 16; i <= b[0] + 16; i++) {
-          if (!this.inb(i, j) || this.type[j * N + i] === 1 || this.type[j * N + i] >= 4) continue;
+          if (!this.inb(i, j) || this.type[j * N + i] === 1 || this.type[j * N + i] >= 4 || !reach[j * N + i]) continue;
           let wet = false; for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (this.inb(i + di, j + dj) && sea[(j + dj) * N + i + di]) wet = true;
           if (!wet) continue; const d = Math.hypot(i + 0.5 - b[0], j + 0.5 - b[1]); const pen = this.slope(i, j) < 0.9 ? 0 : 10;                 // liefst een vlakke oever
           if (d + pen < bd) { bd = d + pen; best = { i: i, j: j, x: i + 0.5, z: j + 0.5 }; }
