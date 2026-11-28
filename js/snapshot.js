@@ -119,7 +119,7 @@
     const root = {
       core: { time: this.time, tickN: this.tickN || 0, rng: this.rng.s, speed: this.speed, bid: this.bid, sid: this.sid, me: this.me,
         dispT: this.dispT, roadsDirty: this.roadsDirty, roadT: this.roadT, wearT: this.wearT, leaveT: this.leaveT || {}, cmdSeq: this.cmdSeq || 0,
-        cmdQueue: this.cmdQueue || [], fogT: this.fogT || 0 },
+        cmdQueue: this.cmdQueue || [], fogT: this.fogT || 0, winner: this.winner === undefined ? null : this.winner, skirmish: !!this.skirmish },
       players: this.players.map(p => p.toJSON()),
       buildings: this.buildings,
       settlers: this.settlers,
@@ -158,7 +158,7 @@
     this.settlers = S.settlers;
     this.time = G.time; this.tickN = G.tickN; this.rng.s = G.rng >>> 0; this.speed = G.speed; this.bid = G.bid; this.sid = G.sid;
     this.dispT = G.dispT; this.roadsDirty = G.roadsDirty; this.roadT = G.roadT; this.wearT = G.wearT; this.leaveT = G.leaveT;
-    this.cmdSeq = G.cmdSeq; this.cmdQueue = G.cmdQueue || []; this.fogT = G.fogT;
+    this.cmdSeq = G.cmdSeq; this.cmdQueue = G.cmdQueue || []; this.fogT = G.fogT; this.winner = G.winner; this.skirmish = !!G.skirmish;
     // paden
     const fp = w.paths; fp.v.set(S.paths.v); fp.fixed.set(S.paths.fixed); fp.tileVal.set(S.paths.tileVal); fp.texT = S.paths.texT; fp.tileT = S.paths.tileT;
     for (let k = 0; k < N2(); k++) fp.dirtyTiles.add(k); fp.texDirty = true;

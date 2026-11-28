@@ -85,10 +85,13 @@
       this.makeHelpers();
       this.bindInput();
       this.bindHud();
-      VE.bus.on('toast', e => this.toast(e.text));
+      // meldingen uit de simulatie: alleen die van de eigen speler (de AI bouwt ook), tenzij voor iedereen (all)
+      const mine = e => { const g = VE.game; return !g || (e && e.all) || g.cur === g.me; };
+      VE.bus.on('toast', e => { if (mine(e)) this.toast(e.text); });
       VE.bus.on('float', e => this.floater(e));
-      VE.bus.on('promote', e => this.onPromote(e.rank));
-      VE.bus.on('territory', () => this.toast('🗼 Your borders grow — new land to settle!'));
+      VE.bus.on('promote', e => { if (mine(e)) this.onPromote(e.rank); });
+      VE.bus.on('territory', e => { if (mine(e)) this.toast('🗼 Your borders grow — new land to settle!'); });
+      VE.bus.on('gameOver', e => this.onGameOver(e));
     }
     get game() { return VE.game; }
 
@@ -438,6 +441,7 @@
         case 'buyUpg': g.issue({ type: 'buyUpgrade', upgradeId: arg }, r => { if (r.ok) { VE.audio.play('coin'); this.toast('🔨 Upgrade purchased!'); VE.save(); } this.openUpgrades(); }); break;
         case 'trade': g.issue({ type: 'trade', res: arg, n: +el.dataset.n }, r => { VE.audio.play(r.ok ? 'coin' : 'error'); this.openTrade(); }); break;
         case 'closeModal': this.closeModal(); break;
+        case 'endToMenu': this.closeModal(); this._over = false; if (VE.endToMenu) VE.endToMenu(); break;
         case 'save': VE.save(); this.toast('💾 Game saved'); this.closeModal(); break;
         case 'music': VE.audio.setMusic(!VE.audio.musicOn); VE.saveSettings(); this.syncSoundBtn(); this.openMenu(); break;
         case 'sfx': VE.audio.setSfx(!VE.audio.sfxOn); VE.saveSettings(); this.syncSoundBtn(); this.openMenu(); break;
@@ -465,6 +469,12 @@
 
     /* ---------- selection & info panel ---------- */
     select(b) {
+      // gebouw van een tegenstander: alleen zeggen van wie het is (bedienen kan alleen de eigenaar)
+      if (b && b.owner !== this.game.me) {
+        const p = this.game.players[b.owner];
+        this.toast((p ? p.name : 'Someone') + ': ' + b.def.name + (b.hp !== undefined ? ' (' + Math.max(0, Math.round(b.hp)) + ' hp)' : ''));
+        b = null;
+      }
       this.sel = b;
       this.selRangeShown = false;
       if (b) {
@@ -736,6 +746,18 @@
       if (refresh) { const box = $('modalBox'); if (box) box.innerHTML = h; return; }
       this.openModal(h);
       this._foodOpen = true;
+    }
+    /* einde van een potje tegen de AI */
+    onGameOver(e) {
+      const g = this.game; if (!g || this._over || (e.game && e.game !== g)) return;   // alleen het spel op het scherm
+      this._over = true;
+      const me = g.players[g.me], win = !!e.victory;
+      const lines = g.players.filter(p => p.kind !== 'open').map(p => '<div class="ip-row"><b style="color:#' + p.color.toString(16).padStart(6, '0') + '">' + p.name + (p.isAI ? ' (' + VE.AI_LEVELS[p.ai.level].name + ')' : '') + '</b> ' +
+        (p.defeated ? 'Defeated' : 'Standing') + ' · ' + (p.stats.built ? Object.values(p.stats.built).reduce((a, b) => a + b, 0) : 0) + ' buildings · lost ' + (p.stats.lost || 0) + ' soldiers</div>').join('');
+      this.openModal('<div class="celebrate">' + (win ? '🏆' : '🏳️') + '</div><h2>' + (win ? 'Victory!' : 'Defeat') + '</h2>' +
+        '<p>' + (win ? 'Every rival has fallen. The island is yours, ' + me.name + '!' : 'Your Village Hall has fallen.') + '</p>' + lines +
+        '<div class="mbtns"><button class="btn good" data-act="endToMenu">Back to menu</button></div>');
+      VE.audio.play(win ? 'fanfare' : 'error');
     }
     openMenu() {
       const a = VE.audio;

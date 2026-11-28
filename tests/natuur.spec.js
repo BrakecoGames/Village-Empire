@@ -152,6 +152,7 @@ test.describe('Natuur', () => {
     await page.locator('#menuBtns').waitFor({ state: 'visible', timeout: 30_000 });
     await page.waitForFunction(() => window.VE && window.VE.game && window.VE.ui);
     await page.locator('#btnNew').click();
+    await page.locator('#spStart').click();
     if (await page.locator('#cnYes').isVisible().catch(() => false)) await page.locator('#cnYes').click();
     await page.waitForFunction(() => window.VE.playing === true);
     await page.waitForTimeout(2500);

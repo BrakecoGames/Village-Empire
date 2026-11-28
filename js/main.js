@@ -106,12 +106,23 @@
     $('hud').classList.add('hidden');
     $('startScreen').classList.remove('hidden');
     $('btnContinue').classList.remove('hidden');
-    $('btnNew').textContent = 'New Village';
   };
-  VE.newGame = function () {
+  /* nieuw spel; setup = { opponents: [{ level }], start } (js/sim.js applySetup). Zonder: vreedzaam dorp */
+  VE.newGame = function (setup) {
+    VE.sdk.del(SAVE_KEY);
+    createGame(setup && setup.opponents && setup.opponents.length ? { fresh: true, setup: setup } : null);
+    startPlaying();
+  };
+  /* na Victory/Defeat: terug naar het menu met een nieuw (vreedzaam) dorp op de achtergrond */
+  VE.endToMenu = function () {
+    VE.playing = false;
+    VE.sdk.gameplayStop();
     VE.sdk.del(SAVE_KEY);
     createGame(null);
-    startPlaying();
+    view.cam.orbit = true;
+    $('hud').classList.add('hidden');
+    $('startScreen').classList.remove('hidden');
+    $('btnContinue').classList.add('hidden');
   };
 
   function resize() {
@@ -197,19 +208,30 @@
     try { createGame(save); }
     catch (e) { console.error('Save could not be loaded, starting fresh', e); createGame(null); }
     view.cam.orbit = true;
-    if (VE.game.started) { $('btnContinue').classList.remove('hidden'); $('btnNew').textContent = 'New Village'; }
-    else { $('btnContinue').classList.add('hidden'); $('btnNew').textContent = 'Found your Village'; }
+    if (VE.game.started) $('btnContinue').classList.remove('hidden');
+    else $('btnContinue').classList.add('hidden');
     $('loadingText').classList.add('hidden');
     $('menuBtns').classList.remove('hidden');
     VE.sdk.loadingStop();
 
     $('btnContinue').addEventListener('click', () => { VE.audio.init(); VE.audio.play('open'); startPlaying(); });
-    $('btnNew').addEventListener('click', () => {
-      VE.audio.init();
-      if (VE.game.started) { $('confirmNew').classList.remove('hidden'); return; }
-      startPlaying();
+    // Single Player: instellingen (tegenstanders, moeilijkheid, startplek)
+    const SP = { opp: 0, lv1: 'normal', lv2: 'normal', start: -1 };
+    const spSync = () => {
+      document.querySelectorAll('#spSetup .seg').forEach(seg => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(SP[seg.dataset.set]) === b.dataset.v)));
+      document.querySelectorAll('#spSetup .sp-ai').forEach(r => r.classList.toggle('off', SP.opp < +r.dataset.n));
+      $('spHint').textContent = SP.opp ? 'Each player starts with a Village Hall, settlers and supplies. Destroy every rival Village Hall to win; lose yours and you are defeated.' : 'A peaceful village: build at your own pace.';
+    };
+    $('spSetup').addEventListener('click', e => { const b = e.target.closest('.seg button'); if (!b) return; const k = b.closest('.seg').dataset.set; SP[k] = k === 'lv1' || k === 'lv2' ? b.dataset.v : +b.dataset.v; VE.audio.play('click'); spSync(); });
+    const spSetup = () => SP.opp ? { opponents: [{ level: SP.lv1 }, { level: SP.lv2 }].slice(0, SP.opp), start: SP.start } : null;
+    $('btnNew').addEventListener('click', () => { VE.audio.init(); spSync(); $('menuBtns').classList.add('hidden'); $('spSetup').classList.remove('hidden'); });
+    $('spBack').addEventListener('click', () => { $('spSetup').classList.add('hidden'); $('menuBtns').classList.remove('hidden'); });
+    $('spStart').addEventListener('click', () => {
+      $('spSetup').classList.add('hidden'); $('menuBtns').classList.remove('hidden');
+      if (VE.game.started) { VE.pendingSetup = spSetup(); $('confirmNew').classList.remove('hidden'); return; }
+      if (SP.opp) VE.newGame(spSetup()); else startPlaying();
     });
-    $('cnYes').addEventListener('click', () => { $('confirmNew').classList.add('hidden'); VE.newGame(); });
+    $('cnYes').addEventListener('click', () => { $('confirmNew').classList.add('hidden'); VE.newGame(VE.pendingSetup); VE.pendingSetup = null; });
     $('cnNo').addEventListener('click', () => $('confirmNew').classList.add('hidden'));
     document.addEventListener('visibilitychange', () => { if (document.hidden && VE.playing) VE.save(); });
     window.addEventListener('beforeunload', () => { if (VE.playing) VE.save(); });

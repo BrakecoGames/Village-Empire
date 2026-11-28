@@ -170,7 +170,14 @@
     },
     /* aanvallen: { unitIds, targetId } (gebouw of soldaat). Gevechten komen in fase 2 (js/combat.js). */
     attack: {
-      check(g, c) { return g.orderAttack ? (units(g, c).length ? OK : no('Select your soldiers first')) : no('Combat is not available yet'); },
+      check(g, c) {
+        if (!g.orderAttack) return no('Combat is not available yet');
+        if (!units(g, c).length) return no('Select your soldiers first');
+        // doel: een vijandelijk gebouw of een vijandelijke soldaat
+        const b = g.bmap[c.targetId], s = !b && g.settlers.find(x => x.id === c.targetId && x.mode === 'soldier');
+        const owner = b && b.alive ? b.owner : s ? s.owner : -1;
+        return owner >= 0 && g.enemies(c.playerId, owner) ? OK : no('Choose an enemy building or soldier');
+      },
       run(g, c) { return g.orderAttack(units(g, c), c.targetId); }
     },
     /* spelsnelheid (single player; online beslist straks de host) */

@@ -103,8 +103,8 @@
 
     init(save) {
       // nieuw spel met een vaste seed (tests, later: de lobby kiest de seed voor iedereen)
-      let fixedSeed = null;
-      if (save && save.fresh) { fixedSeed = save.seed >>> 0; save = null; }
+      let fixedSeed = null, setup = null;
+      if (save && save.fresh) { fixedSeed = save.seed !== undefined ? save.seed >>> 0 : null; setup = save.setup || null; save = null; }
       // wereldgrootte: oude saves 64 × 64; nieuwe werelden groot (VE.BIG_N), tenzij ?small in de URL (tests/oud)
       const small = typeof location !== 'undefined' && /[?&]small(&|$|=)/.test(location.search);
       VE.setWorldSize(save ? (save.n || 64) : (small ? 64 : VE.BIG_N));
@@ -133,6 +133,7 @@
       });
       this.me = 0;                 // de speler achter dit scherm
       this.cur = 0;                // uitvoerende speler (js/players.js)
+      if (!save) this.applySetup(setup);
       this.buildings = []; this.bmap = {}; this.settlers = [];
       this.bid = 0; this.sid = 0; this.time = 0; this.tickN = 0;
       /* Voorraad ligt altijd ergens: in een Storehouse, op de startstapel, in het dorpshuis (beloningen en
@@ -174,9 +175,15 @@
       // startvoorraad: ligt zichtbaar op de grond naast het dorpshuis en wordt nooit aangevuld.
       // Oude saves (v1): de hele oude voorraad komt op die stapel te liggen, er gaat niets verloren.
       const legacy = !save || (!snap && (save.v || 1) < 2);
-      if (legacy && !this.buildings.some(b => b.type === 'yard')) this.placeYard();
-      if (!save) this.fillPile(VE.START_STOCK);
-      else if (legacy) this.fillPile(save.stock || {});
+      // startvoorraad per speler (tegen de AI: wat ijzer erbij voor de smid en de kazerne)
+      for (const p of this.players) {
+        if (p.kind === 'open' || !this.hqOf(p.id)) continue;
+        this.cur = p.id;
+        if (legacy && !this.buildings.some(b => b.type === 'yard' && b.owner === p.id)) this.placeYard();
+        if (!save) this.fillPile(this.skirmish ? Object.assign({}, VE.START_STOCK, { ironbar: 4 }) : VE.START_STOCK);
+      }
+      this.cur = this.me;
+      if (save && legacy) this.fillPile(save.stock || {});
       this.checkPiles(true);
       w.rebuildRoads();
       this.nature.update(0, 1);
@@ -186,13 +193,42 @@
     }
     dispose() { this.scene.remove(this.root); }
 
-    newVillage(rand) {
-      this.nature.populate(rand);
-      const s = this.world.start;
-      this.placeBuilding('hq', s.i, s.j, true);
-      this.gold = 40;
-      for (let n = 0; n < 10; n++) this.spawnSettler();
+    /* Spelersopzet van een nieuw spel. setup: { start: startplek van de mens (of -1 = willekeurig),
+       opponents: [{ level: 'easy' | 'normal' | 'hard' }] }. Zonder setup: één speler, vreedzaam (zoals altijd). */
+    applySetup(setup) {
+      const P = this.players, n = P.length;
+      const opp = setup && Array.isArray(setup.opponents) ? setup.opponents.slice(0, n - 1) : [];
+      let me = setup && setup.start >= 0 && setup.start < n ? setup.start : 0;
+      if (setup && setup.start === -1) me = Math.floor(this.rand() * n);
+      this.me = this.cur = me;
+      this.skirmish = opp.length > 0;
+      const order = [me]; for (let k = 1; k < n; k++) order.push((me + k) % n);
+      const AI_NAMES = ['Baron Redmoor', 'Lady Greenhall', 'Duke Ashford'];
+      order.forEach((id, k) => {
+        const p = P[id];
+        p.color = VE.PLAYER_COLORS[k]; p.team = id;
+        if (k === 0) { p.kind = 'human'; p.name = 'You'; }
+        else if (opp[k - 1]) { p.kind = 'ai'; p.isAI = true; p.ai = { level: VE.AI_LEVELS && VE.AI_LEVELS[opp[k - 1].level] ? opp[k - 1].level : 'normal' }; p.name = AI_NAMES[k - 1]; }
+        else { p.kind = 'open'; p.isAI = false; p.name = 'Free land'; }
+      });
     }
+    newVillage(rand) {
+      const active = this.players.filter(p => p.kind !== 'open');
+      this.nature.populate(rand, active.map(p => p.start));
+      for (const p of active) {
+        this.cur = p.id;
+        this.placeBuilding('hq', p.start.i, p.start.j, true);
+        this.gold = 40;
+        if (this.skirmish) {
+          // tegen de AI: iedereen begint als Market Town (kazerne en smid bereikbaar) met wat extra
+          this.rank = 2; this.gold = 150 + (p.isAI && VE.AI_LEVELS ? (VE.AI_LEVELS[p.ai.level] || {}).gold || 0 : 0);
+        }
+        for (let n = 0; n < 10; n++) this.spawnSettler();
+      }
+      this.cur = this.me;
+    }
+    /* productiebonus van een gebouw (AI op Hard) */
+    bonusOf(b) { const p = this.players[b.owner]; return p && p.isAI && p.ai && VE.AI_LEVELS && VE.AI_LEVELS[p.ai.level] ? VE.AI_LEVELS[p.ai.level].bonus : 1; }
 
     /* Startstapel naast het dorpshuis, zonder de ruimte voor de deur van het dorpshuis te blokkeren */
     placeYard() {
@@ -247,8 +283,8 @@
       return true;
     }
     // werktempo: level, upgrades en de werker zelf (honger en tevredenheid, js/food.js)
-    gatherMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.tools) * (this.workEff ? this.workEff(b) : 1); }
-    craftMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.craft) * (this.workEff ? this.workEff(b) : 1); }
+    gatherMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.tools) * (this.workEff ? this.workEff(b) : 1) * this.bonusOf(b); }
+    craftMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.craft) * (this.workEff ? this.workEff(b) : 1) * this.bonusOf(b); }
     tradeMult() { return 1 + 0.15 * this.upg.trade; }
     growMult() { return 1 + 0.2 * this.upg.soil; }
     walkSpeed() { return 1.15 * (1 + 0.12 * this.upg.boots); }
@@ -498,6 +534,7 @@
       });
       b.chimneys = md.chimneys;
       b.group = g; b.mesh = mesh; g.userData.b = b;
+      if (this.skirmish && !b.def.pile) g.add(VE.ownerBanner(this.players[b.owner] ? this.players[b.owner].color : 0xffffff, b.size, md));
       if (!b.built) {
         const key = b.size;
         if (!this.scaffolds[key]) this.scaffolds[key] = VE.scaffoldGeo(b.size);
@@ -527,6 +564,7 @@
     }
     updateTerritory(initial) {
       const c = [];
+      this.world.ownerColors = this.skirmish ? this.players.map(p => p.color) : null;
       for (const b of this.buildings) if (b.alive && b.built && b.def.territory) c.push({ x: b.cx, z: b.cz, o: b.owner, r: b.def.territory + (b.level - 1) * 1.5, view: b.type === 'tower' ? this.towerView(b.cx, b.cz) : 0 });
       this.world.setTerritory(c);
       for (const t of c) if (t.o === this.me) this.world.reveal(t.x, t.z, t.r + 2.5 + t.view);   // eigen land (en iets verder) is bekend   // your own land (and a little beyond) is known
@@ -1533,6 +1571,7 @@
         s.y = w.heightAt(s.x, s.z);
       }
       if (this.hungerTick) this.hungerTick(dt);                         // honger en tevredenheid (js/food.js)
+      if (this.combatTick) this.combatTick(dt);                         // gevechten, torens, verslagen (js/combat.js)
       for (const b of this.buildings) { this.cur = b.owner; this.updateBuilding(b, dt); }
       this.cur = this.me;
       this.nature.update(dt, this.growMult());
@@ -1547,6 +1586,7 @@
       w.updateFog();
       this.dispT -= dt;
       if (this.dispT <= 0) { this.dispT = 0.25; this.dispatch(); }
+      if (this.aiTick) { this.aiTick(dt); this.cur = this.me; }          // AI-tegenstanders: alleen commando's (js/ai/)
       // newcomers (per speler)
       for (const p of this.players) { if (p.active) { this.cur = p.id; this.arrivals(p, dt); } }
       this.cur = this.me;
@@ -1664,12 +1704,17 @@
         ore: VE.Mining ? VE.Mining.serialize(w) : undefined, wild: this.wild ? this.wild.serialize() : undefined,
         sol: this.serializeSoldiers ? this.serializeSoldiers() : undefined,
         hun: this.serializeHunger ? this.serializeHunger() : undefined,
+        sk: this.skirmish ? 1 : undefined, win: this.winner === undefined ? undefined : this.winner,
+        hp: this.buildings.filter(b => b.alive && b.hp !== undefined).map(b => [b.id, Math.round(b.hp)]),
         trail: w.paths.serialize(), nature: this.nature.serialize(), fog: w.serializeFog(), cam: cam || null, saved: Date.now()
       };
     }
     load(sv, rand) {
       const w = this.world;
+      if (sv.me !== undefined && this.players[sv.me]) this.me = this.cur = sv.me;
+      this.skirmish = !!sv.sk;
       this.gold = sv.gold || 0; this.rank = sv.rank || 0; this.claimed = sv.claimed || {}; this.time = sv.time || 0;
+      if (sv.win !== undefined) this.winner = sv.win;
       // voorraad: v2 per gebouw (st); oude saves (v1) leggen hun totale voorraad op de startstapel (init)
       Object.assign(this.stats, sv.stats || {});
       Object.assign(this.upg, sv.upg || {});
@@ -1695,6 +1740,7 @@
         }
         if (this.loadBarracks) this.loadBarracks(b, bs);                    // wachtrij van een kazerne
       }
+      for (const e of sv.hp || []) if (idmap[e[0]]) idmap[e[0]].hp = e[1];   // levenspunten (tegen de AI)
       // stats.built was re-incremented by instant completes; restore the saved values
       if (sv.stats && sv.stats.built) this.stats.built = Object.assign({}, sv.stats.built);
       // voetpaden: nieuw formaat (slijtageraster); oude saves: [tegel, slijtage] of kale tegelnummers (zelf aangelegde wegen)

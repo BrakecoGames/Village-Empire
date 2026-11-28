@@ -58,7 +58,17 @@
     <div id="loadingText">Loading…</div>
     <div id="menuBtns" class="hidden">
       <button id="btnContinue" class="big hidden">Continue</button>
-      <button id="btnNew" class="big alt">Found your Village</button>
+      <button id="btnNew" class="big alt">Single Player</button>
+      <button id="btnMulti" class="big alt" disabled title="Play against friends online: coming soon">Multiplayer <small>Coming soon</small></button>
+    </div>
+    <div id="spSetup" class="panel hidden">
+      <h2>Single Player</h2>
+      <div class="sp-row"><b>Opponents</b><div class="seg" data-set="opp"><button data-v="0" class="on">None</button><button data-v="1">1</button><button data-v="2">2</button></div></div>
+      <div class="sp-row sp-ai" data-n="1"><b>Opponent 1</b><div class="seg" data-set="lv1"><button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button></div></div>
+      <div class="sp-row sp-ai" data-n="2"><b>Opponent 2</b><div class="seg" data-set="lv2"><button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button></div></div>
+      <div class="sp-row sp-ai" data-n="1"><b>Your start</b><div class="seg" data-set="start"><button data-v="-1" class="on">Random</button><button data-v="0">I</button><button data-v="1">II</button><button data-v="2">III</button></div></div>
+      <p id="spHint" class="dim small">A peaceful village: build at your own pace.</p>
+      <div class="mbtns"><button id="spBack" class="btn">Back</button><button id="spStart" class="btn good">Start</button></div>
     </div>
     <div id="confirmNew" class="panel hidden">
       <p>Start over? Your current village will be lost.</p>
@@ -84,9 +94,14 @@
 <script src="js/players.js?v=1.13.0"></script>
 <script src="js/sim.js?v=1.13.0"></script>
 <script src="js/military.js?v=1.13.0"></script>
+<script src="js/combat.js?v=1.13.0"></script>
 <script src="js/food.js?v=1.13.0"></script>
 <script src="js/commands.js?v=1.13.0"></script>
 <script src="js/snapshot.js?v=1.13.0"></script>
+<script src="js/ai/difficulty.js?v=1.13.0"></script>
+<script src="js/ai/planner.js?v=1.13.0"></script>
+<script src="js/ai/army.js?v=1.13.0"></script>
+<script src="js/ai/ai.js?v=1.13.0"></script>
 <script src="js/landmarks.js?v=1.13.0"></script>
 <script src="js/landmarks.js?v=1.13.0"></script>
 <script src="js/fx.js?v=1.13.0"></script>

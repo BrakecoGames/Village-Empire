@@ -171,6 +171,7 @@ test.describe('Zwavel en buskruit', () => {
     await page.goto('/index.html?small');
     await page.locator('#menuBtns').waitFor({ state: 'visible' });
     await page.locator('#btnNew').click();
+    await page.locator('#spStart').click();
     await page.waitForTimeout(500);
     if (await page.locator('#cnYes').isVisible()) await page.locator('#cnYes').click();   // er staat al een save: opnieuw beginnen
     await page.waitForFunction(() => window.VE.playing === true && window.VE.N === 64);

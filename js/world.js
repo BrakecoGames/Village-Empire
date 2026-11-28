@@ -522,10 +522,13 @@
         const x = i + 0.5, z = j + 0.5;
         _e.set(0, (i * 7 + j * 3) % 6, 0); _q.setFromEuler(_e);
         _m.compose(_p.set(x, this.heightAt(x, z), z), _q, _s.set(1, 1, 1));
+        // tegen de AI: grenspalen in de kleur van de eigenaar
+        if (this.ownerColors) this.border.setColorAt(n, _c.setHex(0xffffff).lerp(_c2.setHex(this.ownerColors[this.owned[k] - 1] || 0xffffff), 0.75));
         this.border.setMatrixAt(n++, _m);
       }
       this.border.count = n;
       this.border.instanceMatrix.needsUpdate = true;
+      if (this.border.instanceColor) this.border.instanceColor.needsUpdate = true;
     }
 
     /* ---------------- decorations ---------------- */
@@ -952,12 +955,14 @@
         this.fieldDirty = false;
       }
     }
-    populate(rand) {
-      const w = this.w, N = VE.N, cx = w.start.i + 1, cz = w.start.j + 1;
+    /* starts: startplekken van de spelers die meedoen (elk een gegarandeerd bosje en rotsblokken); standaard de eerste */
+    populate(rand, starts) {
+      const w = this.w, N = VE.N, S = (starts && starts.length ? starts : [w.start]).map(s => ({ cx: s.i + 1, cz: s.j + 1 })), cx = S[0].cx, cz = S[0].cz;
+      const nearStart = (i, j) => S.some(s => Math.hypot(i + 0.5 - s.cx, j + 0.5 - s.cz) < 3.6);
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
         const k = j * N + i; const ty = w.type[k];
         if (ty === 1) continue;
-        const d = Math.hypot(i + 0.5 - cx, j + 0.5 - cz);
+        const d = Math.min(...S.map(s => Math.hypot(i + 0.5 - s.cx, j + 0.5 - s.cz)));
         if (d < 3.6) continue;
         if (ty === 2 || (w.mount[k] > 0.35 && ty !== 3)) {
           if (rand() < 0.16 && w.slope(i, j) < 1.6) { this.addRock(i, j, 8, rand); continue; }
@@ -974,16 +979,18 @@
         }
       }
       // guaranteed groves and boulders near the start
-      const groves = [[cx - 6, cz - 3], [cx + 4, cz - 6], [cx - 3, cz - 7]];
-      for (const g of groves) for (let q = 0; q < 9; q++) {
-        const i = Math.round(g[0] + (rand() - 0.5) * 4), j = Math.round(g[1] + (rand() - 0.5) * 4);
-        if (w.inb(i, j) && w.type[j * N + i] !== 1 && Math.hypot(i + 0.5 - cx, j + 0.5 - cz) > 3.6) this.addTree(i, j, rand() < 0.3 ? 2 : 0, 1, rand);
-      }
-      const quarries = [[cx + 6, cz + 2], [cx + 1, cz + 7], [cx - 6, cz - 6]];
-      for (const g of quarries) for (let q = 0; q < 9; q++) {
-        const i = Math.round(g[0] + (rand() - 0.5) * 3), j = Math.round(g[1] + (rand() - 0.5) * 3);
-        const k = j * N + i;
-        if (w.inb(i, j) && w.type[k] !== 1 && !w.tree[k] && Math.hypot(i + 0.5 - cx, j + 0.5 - cz) > 3.6) this.addRock(i, j, 8, rand);
+      for (const { cx, cz } of S) {
+        const groves = [[cx - 6, cz - 3], [cx + 4, cz - 6], [cx - 3, cz - 7]];
+        for (const g of groves) for (let q = 0; q < 9; q++) {
+          const i = Math.round(g[0] + (rand() - 0.5) * 4), j = Math.round(g[1] + (rand() - 0.5) * 4);
+          if (w.inb(i, j) && w.type[j * N + i] !== 1 && !nearStart(i, j)) this.addTree(i, j, rand() < 0.3 ? 2 : 0, 1, rand);
+        }
+        const quarries = [[cx + 6, cz + 2], [cx + 1, cz + 7], [cx - 6, cz - 6]];
+        for (const g of quarries) for (let q = 0; q < 9; q++) {
+          const i = Math.round(g[0] + (rand() - 0.5) * 3), j = Math.round(g[1] + (rand() - 0.5) * 3);
+          const k = j * N + i;
+          if (w.inb(i, j) && w.type[k] !== 1 && !w.tree[k] && !nearStart(i, j)) this.addRock(i, j, 8, rand);
+        }
       }
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const k = j * N + i; if (w.tree[k] || w.rock[k]) { if (w.rock[k]) w.clearDeco(k); } }
     }

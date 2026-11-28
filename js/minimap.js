@@ -67,6 +67,8 @@
         else c = (i * 7 + j * 13) % 5 < 2 ? COL.grass2 : COL.grass;
         if (w.bld[k]) c = COL.bld;
         if (!w.owned[k] && !w.bld[k]) c = mix(c, [60, 70, 64], 0.18);
+        // tegen de AI: land en gebouwen van anderen in hun kleur
+        if (w.ownerColors && w.owned[k] && w.owned[k] !== VE.game.me + 1) { const h = w.ownerColors[w.owned[k] - 1] || 0; c = mix(c, [h >> 16 & 255, h >> 8 & 255, h & 255], w.bld[k] ? 0.8 : 0.3); }
         const e = w.explored[k];
         // onontdekt: helemaal mist (geen kustlijn, rivieren of canyon); alleen de vulkaantop is altijd te zien
         const peak = w.peak && w.volc && v === 2;

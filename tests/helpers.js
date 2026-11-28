@@ -46,6 +46,8 @@ async function openGame(page) {
 /** Start een nieuw dorp vanuit het hoofdmenu. */
 async function startNewVillage(page) {
   await page.locator('#btnNew').click();
+  // Single Player: standaard 'None' (vreedzaam dorp) → Start
+  await page.locator('#spStart').click();
   await page.locator('#hud').waitFor({ state: 'visible' });
   await page.waitForFunction(() => window.VE.playing === true);
   // camera-animatie laten uitlopen

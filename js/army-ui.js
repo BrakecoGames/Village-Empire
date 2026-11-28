@@ -107,6 +107,10 @@
   U.tapArmy = function (cx, cy, p, ptype, ev) {
     this.armyInit();
     const hit = this.soldierAtScreen(cx, cy, ptype === 'mouse' ? 22 : 34);
+    if (hit && hit.owner !== this.game.me) {                     // vijandelijke soldaat: aanvallen (als er soldaten gekozen zijn)
+      if (this.army.size && this.game.enemies(this.game.me, hit.owner)) this.attackWith(hit.id, hit.x, hit.z);
+      return true;
+    }
     if (hit) {
       const now = ev && ev.timeStamp ? ev.timeStamp : performance.now(), dbl = this.lastSolTap && this.lastSolTap.s === hit && now - this.lastSolTap.t < 400;
       this.lastSolTap = { s: hit, t: now };
@@ -120,13 +124,27 @@
       return true;
     }
     if (!this.army.size) return false;
+    if (p.b && !p.b.def.pile && this.game.enemies(this.game.me, p.b.owner)) { this.attackWith(p.b.id, p.b.cx, p.b.cz); return true; }   // vijandelijk gebouw: aanvallen
     if (p.b && !p.b.def.pile) { this.clearArmy(); return false; }        // een gebouw: dat selecteren
     if (p.i >= 0) { this.orderArmy(p.x, p.z); return true; }
     return false;
   };
   U.orderArmyAt = function (cx, cy) {
+    const g = this.game, foe = this.soldierAtScreen(cx, cy, 26);
+    if (foe && g.enemies(g.me, foe.owner)) { this.attackWith(foe.id, foe.x, foe.z); return; }
     const p = this.pick(cx, cy);
+    if (p && p.b && g.enemies(g.me, p.b.owner)) { this.attackWith(p.b.id, p.b.cx, p.b.cz); return; }
     if (p && p.i >= 0) this.orderArmy(p.x, p.z);
+  };
+  /* aanvallen: commando 'attack' met de gekozen soldaten */
+  U.attackWith = function (targetId, x, z) {
+    const g = this.game, ids = [...this.army].map(s => s.id);
+    g.issue({ type: 'attack', unitIds: ids, targetId: targetId }, r => {
+      if (!r.ok) { this.toast('🚫 ' + (r.why || 'Cannot attack that')); VE.audio.play('error'); return; }
+      this.toast('⚔️ Attack!');
+      this.armyMark.visible = true; this.armyMark.userData.t = 0; this.armyMark.position.set(x, g.world.heightAt(x, z) + 0.05, z);
+      this.renderArmy(true);
+    });
   };
   U.orderArmy = function (x, z) {
     const g = this.game, list = [...this.army], mode = this.armyMode;

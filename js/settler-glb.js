@@ -188,6 +188,8 @@
       this.weapons = {};
       for (const r of VE.WEAPONS || []) this.weapons[r] = { mesh: mk(VE.itemGeo(r), r === 'dagger' ? cap * 2 : cap, true), n: 0 };
       this.gv = VE.itemGeoVer || 0; this.grips = {};
+      this._oc = {};
+      this.ownerCol = pid => this._oc[pid] || (this._oc[pid] = new THREE.Color(VE.game && VE.game.players[pid] ? VE.game.players[pid].color : 0xffffff));
       this.roleCol = {};
       for (const r in VE.ROLES) this.roleCol[r] = [C(VE.ROLES[r][0]), C(VE.ROLES[r][1])];
       const N = A.nodes.length;
@@ -303,7 +305,10 @@
         const look = this.look(s);
         const role = s.mode === 'build' ? 'builder' : (s.mode === 'work' || s.mode === 'goWork' || s.mode === 'train' || s.mode === 'soldier') ? s.role : 'carrier';
         const kit = s.mode === 'soldier' && s.sol ? KIT[s.sol.t] : null;
-        const rc = kit ? [kit.c, kit.c] : this.roleCol[role] || this.roleCol.carrier;
+        // tegenstanders: soldaten in hun spelerskleur, dorpelingen met een hoed in die kleur (eigen volk: zoals altijd)
+        const g0 = VE.game, oc = g0 && g0.skirmish && s.owner !== g0.me ? this.ownerCol(s.owner) : null;
+        const base = this.roleCol[role] || this.roleCol.carrier;
+        const rc = kit ? (oc ? [oc, oc] : [kit.c, kit.c]) : oc ? [base[0], oc] : base;
         const far = cam ? (s.x - _cam.x) ** 2 + (s.z - _cam.z) ** 2 > LOD_FAR * LOD_FAR : false;
         // ---- pose: clip kiezen, sampelen, overvloeien
         if (!s._pose) { s._pose = new Float32Array(N * 7); s._from = new Float32Array(N * 7); s._blend = 0; s._clip = null; }
