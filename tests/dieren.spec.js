@@ -115,8 +115,9 @@ test('landdieren: modellen, clips, gedrag, botsingen, helling en prestaties', as
   expect(r.leap, 'schriksprong bij vluchten uit stilstand').toBe(true);
   expect(r.herdFled, 'de hele groep reageert').toBe(r.herd);
   expect(r.farN).toBeGreaterThan(5);
-  expect(r.farRate, 'ver weg: ~1× per 1,5 s').toBeLessThan(0.9);
-  expect(r.nearRate, 'dichtbij buiten beeld: ~2× per s').toBeGreaterThan(1.4);
+  // sinds de vaste ticks (fase 1): elk dier elke tick, los van de camera (deterministisch, nodig voor online spelen)
+  expect(r.farRate, 'ver weg: elke tick').toBeGreaterThan(15);
+  expect(r.nearRate, 'dichtbij: elke tick').toBeGreaterThan(15);
   expect(r.msPerStep).toBeLessThan(12);
   expect(errs(errors)).toEqual([]);
 });

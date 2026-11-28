@@ -55,7 +55,8 @@ test.describe('Zwavel en buskruit', () => {
       let walkVis = 0, carrySulfur = 0, digAt = 0, maxOut = 0, maxPmOut = 0, carriedSulfur = 0, carriedPowder = 0;
       const amt0 = S.reduce((a, d) => a + d.amount, 0);
       for (let t = 0; t < 900; t += 0.1) {
-        g.arriveT = 1e9; g.update(0.1);
+        g.arriveT = 1e9; for (const s of g.settlers) s.food = 1;   // deze test gaat over de zwavelketen, niet over honger
+        g.update(0.1);
         const s = mine.worker;
         if (s && !s.hidden && s.wstate === 'walk') walkVis++;
         if (s && !s.hidden && s.carry === 'sulfur') carrySulfur++;
