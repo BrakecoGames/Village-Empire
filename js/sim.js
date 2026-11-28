@@ -212,8 +212,9 @@
       if (!b.working) b.status = '';
       return true;
     }
-    gatherMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.tools); }
-    craftMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.craft); }
+    // werktempo: level, upgrades en de werker zelf (honger en tevredenheid, js/food.js)
+    gatherMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.tools) * (this.workEff ? this.workEff(b) : 1); }
+    craftMult(b) { return this.lvlMult(b) * (1 + 0.15 * this.upg.craft) * (this.workEff ? this.workEff(b) : 1); }
     tradeMult() { return 1 + 0.15 * this.upg.trade; }
     growMult() { return 1 + 0.2 * this.upg.soil; }
     walkSpeed() { return 1.15 * (1 + 0.12 * this.upg.boots); }
@@ -606,6 +607,7 @@
       if (this.settlers.length >= (this.maxPop || MAX_POP)) return null;   // maxPop: per spel instelbaar (tests: drie volle dorpen)
       const hq = near || this.hq;
       const s = new Settler(++this.sid, hq.dx + (Math.random() - 0.5) * 0.8, hq.dz + 0.3 + Math.random() * 0.6);
+      if (this.initHunger) this.initHunger(s);                         // honger en tevredenheid (js/food.js)
       this.settlers.push(s);
       return s;
     }
@@ -628,7 +630,7 @@
       const p = s.path[s.pi];
       const dx = p[0] - s.x, dz = p[1] - s.z, d = Math.hypot(dx, dz);
       const k = this.tileOf(s.x, s.z), w = this.world;
-      const sp = this.walkSpeed() * (w.road[k] === 2 ? 1.6 : w.road[k] === 1 ? 1.25 : 1) * (w.type[k] === 2 ? 0.8 : 1) * (s.carry ? 0.92 : 1) * (s.spd || 1);
+      const sp = this.walkSpeed() * (w.road[k] === 2 ? 1.6 : w.road[k] === 1 ? 1.25 : 1) * (w.type[k] === 2 ? 0.8 : 1) * (s.carry ? 0.92 : 1) * (s.spd || 1) * (s.walkEff || 1);
       const step = sp * dt;
       if (d <= step) {
         s.x = p[0]; s.z = p[1]; s.pi++;
@@ -719,7 +721,7 @@
         if (!b.alive || b === from || b.unreach > this.time) continue;
         let want = 0;
         if (!b.built) { if (b.def.cost && b.def.cost[res]) want = b.def.cost[res] - (b.delivered[res] || 0) - (b.incoming[res] || 0); }
-        else if (b.def.inp && !b.def.market) { const R = this.rcp(b); if (R.inp[res]) want = this.cap(b) - (b.input[res] || 0) - (b.incoming[res] || 0); }
+        else if (b.def.inp && !b.def.market) { const R = this.rcp(b); if (R.inp[res] && (!this.foodSpare || this.foodSpare(res))) want = this.cap(b) - (b.input[res] || 0) - (b.incoming[res] || 0); }
         else if (b.def.barracks && this.barracksWant) want = this.barracksWant(b, res);       // wapens en uitrusting voor de wachtrij
         if (want <= 0) continue;
         const d = (b.dx - from.dx) ** 2 + (b.dz - from.dz) ** 2;
@@ -730,6 +732,7 @@
     dispatch() {
       const idle = [];
       for (const s of this.settlers) if (s.mode === 'idle' || s.mode === 'wander') idle.push(s);
+      if (this.feedIdle) this.feedIdle(idle);                          // eerst eten (js/food.js)
       if (!idle.length) return;
       const take = (x, z) => {
         let bi = -1, bd = 1e9;
@@ -787,6 +790,7 @@
             if (!alive(b) || !b.built || !b.def.inp) continue;
             const R = this.rcp(b);
             for (const r in R.inp) {
+              if (this.foodSpare && !this.foodSpare(r)) continue;          // voedsel: eerst het dorp
               let want = this.cap(b) - (b.input[r] || 0) - (b.incoming[r] || 0);
               while (want > 0 && n < cap && idle.length && this.avail(r) > 0) {
                 const src = this.sourceFor(r, b.dx, b.dz); if (!src) break;
@@ -808,7 +812,7 @@
             let pending = 0; for (const r in b.input) pending += b.input[r]; for (const r in b.incoming) pending += b.incoming[r];
             for (const r of VE.RES_ORDER) {
               if (!b.sell[r]) continue;
-              while (pending < 6 && n < cap && idle.length && this.avail(r) > b.keep) {
+              while (pending < 6 && n < cap && idle.length && this.avail(r) > b.keep && (!this.foodSpare || this.foodSpare(r, b))) {
                 const src = this.sourceFor(r, b.dx, b.dz, true); if (!src) break;
                 const s = take(src.dx, src.dz); if (!s) break;
                 this.startTransport(s, r, src, b); pending++; n++;
@@ -871,6 +875,7 @@
     updateBuilder(s, dt) {
       const b = s.work, S = b && this.site(b);
       if (!S || b.builder !== s) { if (b && b.builder === s) b.builder = null; s.mode = 'idle'; s.tool = null; s.act = null; s.work = null; return; }
+      if (s.bstate === 'at' && s.wt <= 0 && this.builderMeal && this.builderMeal(s, b)) return;
       if (s.bstate !== 'at') return;
       let has = 0; for (const r in S.delivered) has += S.delivered[r];
       if (has - S.used > 0) {
@@ -916,6 +921,7 @@
     }
     freeWorker(s) {
       const b = s.work;
+      if (s.meal && this.dropMeal) this.dropMeal(s);
       if (b && b.worker === s) b.worker = null;
       if (s.resv) {
         const f = s.resv; f.reserved = false; s.resv = null;
@@ -1304,7 +1310,8 @@
     updateWorker(s, dt) {
       const b = s.work;
       if (!b || !b.alive) { this.freeWorker(s); return; }
-      if (s.wstate === 'inside') { s.wt -= dt; if (s.wt <= 0) this.think(s, b); }
+      if (s.wstate === 'eat') { this.updateMeal(s, dt); return; }
+      if (s.wstate === 'inside') { s.wt -= dt; if (s.wt <= 0 && !(this.workerMeal && this.workerMeal(s, b))) this.think(s, b); }
       else if (s.wstate === 'act') {
         s.wt -= dt; s.ap += dt;
         // maaien: het graan zakt mee weg met de voortgang
@@ -1354,7 +1361,7 @@
         let total = 0; for (const r in b.input) total += b.input[r];
         if (!total) { b.status = 'Waiting for goods to sell'; b.working = false; return; }
         b.working = true; b.status = 'Trading';
-        b.wt -= dt * this.lvlMult(b);
+        b.wt -= dt * this.lvlMult(b) * (this.workEff ? this.workEff(b) : 1);
         if (b.wt <= 0) {
           b.wt = 2.4;
           const keys = VE.RES_ORDER.filter(r => b.input[r] > 0);
@@ -1366,7 +1373,8 @@
       }
       if (d.barracks) { b.stT = (b.stT || 0) - dt; if (b.stT <= 0) { b.stT = 0.5; b.status = this.barracksStatus(b); } b.working = !!(b.queue && b.queue.some(e => e.st === 'train')); return; }
       if (!d.inp) return;
-      if (!present) { b.status = s ? 'Worker is on the way' : 'Needs a worker'; b.working = false; return; }
+      if (!present) { b.status = s ? (s.wstate === 'eat' ? 'Worker is having a meal' : 'Worker is on the way') : 'Needs a worker'; if (!(s && s.wstate === 'eat')) b.working = false; return; }
+      if (this.tooHungry && this.tooHungry(s)) { b.status = 'Too hungry to work: needs food'; return; }
       if (d.recipes) this.smithAtOven(b, s, dt);
       const R = this.rcp(b);
       if (!b.working) {
@@ -1428,8 +1436,10 @@
         else if (s.mode === 'train') this.updateTrainee(s, dt);
         else if (s.mode === 'soldier') this.updateSoldier(s, dt);
         else if (s.mode === 'idle' || s.mode === 'wander') this.updateIdle(s, dt);
+        else if (s.mode === 'eat') this.updateMeal(s, dt);
         s.y = w.heightAt(s.x, s.z);
       }
+      if (this.hungerTick) this.hungerTick(dt);                         // honger en tevredenheid (js/food.js)
       for (const b of this.buildings) this.updateBuilding(b, dt);
       this.nature.update(dt, this.growMult());
       if (this.wild) this.wild.update(dt);
@@ -1451,9 +1461,10 @@
           const food = (VE.FOOD || ['bread', 'fish']).find(r => this.avail(r) > 0) || null;
           if (food) this.takeGoods(food, 1);
           const s = this.spawnSettler();
-          if (s) emit('arrive', { x: s.x, z: s.z });
+          if (s) { emit('arrive', { x: s.x, z: s.z }); s.food = food ? 0.9 : 0.55; }
           const tav = this.countBuilt('tavern');
-          this.arriveT = (food ? 6.5 : 20) * Math.max(0.45, 1 - tav * 0.15);
+          const mood = this.foodSummary ? this.foodSummary().mood : 0.65;   // tevreden dorp: sneller nieuwkomers
+          this.arriveT = (food ? 6.5 : 20) * Math.max(0.45, 1 - tav * 0.15) * VE.clamp(1.45 - mood * 0.75, 0.75, 1.4);
         } else this.arriveT = 3;
       }
       this.wearT -= dt; if (this.wearT <= 0) { this.wearT = 5; this.wearDecay(); }
@@ -1514,7 +1525,7 @@
       const w = this.world;
       const bl = this.buildings.filter(b => b.alive).map(b => ({
         id: b.id, t: b.type, i: b.i, j: b.j, l: b.level, b: b.built ? 1 : 0, u: b.used,
-        d: b.built ? {} : Object.assign({}, b.delivered), inp: Object.assign({}, b.input), out: Object.assign({}, b.output), sell: b.sell, keep: b.keep, rc: b.recipe || undefined,
+        d: b.built ? {} : Object.assign({}, b.delivered), inp: Object.assign({}, b.input), out: Object.assign({}, b.output), sell: b.sell, keep: b.keep, feed: b.feed === false ? 0 : undefined, rc: b.recipe || undefined,
         st: b.store ? Object.assign({}, b.store) : undefined, ac: b.accept ? VE.RES_ORDER.filter(r => b.accept[r]) : undefined,
         up: b.up ? { l: b.up.lvl, c: Object.assign({}, b.up.cost), g: b.up.gold, d: Object.assign({}, b.up.delivered), u: b.up.used } : undefined
       }));
@@ -1552,6 +1563,7 @@
         buildings: bl,
         ore: VE.Mining ? VE.Mining.serialize(w) : undefined, wild: this.wild ? this.wild.serialize() : undefined,
         sol: this.serializeSoldiers ? this.serializeSoldiers() : undefined,
+        hun: this.serializeHunger ? this.serializeHunger() : undefined,
         trail: w.paths.serialize(), nature: this.nature.serialize(), fog: w.serializeFog(), cam: cam || null, saved: Date.now()
       };
     }
@@ -1570,7 +1582,7 @@
         idmap[bs.id] = b;
         if (bs.l > 1) { b.level = bs.l; this.makeMesh(b); }
         if (!b.built) { b.delivered = bs.d || {}; b.used = bs.u || 0; b.mesh.scale.y = 0.03 + 0.97 * (b.total ? b.used / b.total : 0); }
-        b.input = bs.inp || {}; b.output = bs.out || {}; if (bs.sell) b.sell = bs.sell; if (bs.keep !== undefined) b.keep = bs.keep;
+        b.input = bs.inp || {}; b.output = bs.out || {}; if (bs.sell) b.sell = bs.sell; if (bs.keep !== undefined) b.keep = bs.keep; if (bs.feed === 0) b.feed = false;
         if (bs.rc && b.def.recipes && b.def.recipes[bs.rc]) b.recipe = bs.rc;
         if (b.store && bs.st && (sv.v || 1) >= 2) for (const r in bs.st) if (VE.RES[r] && bs.st[r] > 0) b.store[r] = bs.st[r];
         if (b.accept && !bs.ac) for (const r of VE.RES_ORDER) b.accept[r] = true;      // oude save: alles
@@ -1613,6 +1625,7 @@
       const n = Math.max(4, (sv.pop || 10) - sol.length);
       for (let i = 0; i < n; i++) this.spawnSettler();
       for (const s of this.settlers) { s.x += (Math.random() - 0.5) * 2; s.z += Math.random() * 1.2; }
+      if (this.loadHunger) this.loadHunger(sv.hun);                     // oude saves: iedereen verzadigd
       if (this.loadSoldiers) this.loadSoldiers(sol);
     }
   }

@@ -42,6 +42,20 @@ button { font-family: inherit; color: inherit; cursor: pointer; border: none; }
 #rankBox .crest { font-size: 26px; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .4)); }
 #rankName { font-family: 'Cinzel Decorative', serif; font-weight: 900; font-size: 15px; letter-spacing: .5px; color: #ffe39a; text-shadow: 0 1px 0 #3a2210; }
 .popline { font-weight: 800; font-size: 14px; display: flex; align-items: center; gap: 4px; }
+/* voedsel en tevredenheid naast de bevolking (js/food.js); rood bij tekort */
+.foodchip { font: inherit; color: inherit; background: rgba(0, 0, 0, .2); border: 0; border-radius: 8px; padding: 0 6px; margin-left: 4px;
+  display: inline-flex; align-items: center; gap: 3px; cursor: pointer; line-height: 1.35; }
+.foodchip svg { width: 15px; height: 15px; }
+.foodchip.warn { background: #b8452a; animation: foodpulse 1.2s ease-in-out infinite; }
+.foodchip.low { background: #a8781e; }
+@keyframes foodpulse { 50% { background: #e0572f; } }
+.foodtab { width: 100%; border-collapse: collapse; margin: 6px 0 10px; }
+.foodtab td { padding: 4px 6px; border-bottom: 1px solid rgba(0, 0, 0, .12); }
+.foodtab td:first-child { text-align: left; }
+.foodtab td:last-child { text-align: right; font-weight: 800; white-space: nowrap; }
+.meter { height: 10px; border-radius: 6px; background: rgba(0, 0, 0, .2); overflow: hidden; margin: 3px 0 8px; }
+.meter i { display: block; height: 100%; border-radius: 6px; }
+.foodwarn { background: #b8452a; color: #fff; border-radius: 10px; padding: 6px 10px; font-weight: 700; margin: 4px 0 8px; }
 #resBar { padding: 3px 8px; gap: 4px; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; }
 #resBar::-webkit-scrollbar { display: none; }
 .res { display: flex; align-items: center; gap: 3px; padding: 2px 6px; border-radius: 9px; background: rgba(0, 0, 0, .18); font-weight: 800; font-size: 14px; flex: none; transition: opacity .3s; }

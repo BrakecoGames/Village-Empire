@@ -390,6 +390,7 @@
       $('btnQuests').addEventListener('click', () => { this.qOpen = !this.qOpen; VE.audio.play('click'); this.renderQuests(true); });
       $('btnUpgrades').addEventListener('click', () => this.openUpgrades());
       $('btnTrade').addEventListener('click', () => this.openTrade());
+      $('foodBtn').addEventListener('click', () => this.openFood());
       $('btnMenu').addEventListener('click', () => this.openMenu());
       $('btnSound').addEventListener('click', () => {
         const on = !(VE.audio.sfxOn || VE.audio.musicOn);
@@ -427,6 +428,7 @@
         case 'pacceptAll': { const m = this.placeAcceptMap(); for (const r of VE.RES_ORDER) m[r] = arg === '1'; if (this.tool) this.showInfoDef(this.tool); break; }
         case 'recipe': if (this.sel && g.setRecipe(this.sel, arg)) { const d = this.sel.def; this.toast(d.icon + ' The ' + d.name.toLowerCase() + ' now makes ' + d.recipes[arg].name.toLowerCase()); VE.save(); } this.renderInfo(true); break;
         case 'keep': if (this.sel && e.type === 'change') { this.sel.keep = +el.value; } break;
+        case 'feed': if (this.sel) { this.sel.feed = this.sel.feed === false; this.renderInfo(true); VE.save(); } break;
         case 'goto': if (this.sel) this.view.cam.focus(this.sel.cx, this.sel.cz); break;
         case 'buyUpg': if (g.buyUpgrade(arg)) { VE.audio.play('coin'); this.toast('🔨 Upgrade purchased!'); VE.save(); } this.openUpgrades(); break;
         case 'trade': { const n = +el.dataset.n; if (g.trade(arg, n)) VE.audio.play('coin'); else VE.audio.play('error'); this.openTrade(); break; }
@@ -579,6 +581,9 @@
           h += '</div><div class="ip-row"><b>Keep in store</b> <select data-act="keep">' + [0, 5, 10, 20, 40].map(v => '<option value="' + v + '"' + (b.keep === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></div>';
           let pend = 0; for (const r in b.input) pend += b.input[r];
           h += '<div class="ip-row"><b>On the stalls</b> ' + pend + ' goods</div>';
+          // voedsel: eerst het dorp, alleen het overschot naar de kraam
+          h += '<div class="ip-row"><b>Feed the village first</b> <button class="btn small ' + (b.feed === false ? '' : 'good') + '" data-act="feed">' + (b.feed === false ? 'Off' : 'On') + '</button></div>' +
+            '<div class="ip-desc small">' + (b.feed === false ? 'Food is sold even when your settlers need it.' : 'Bread, fish and meat are only sold above ' + g.foodReserve() + ' (enough for your settlers).') + '</div>';
         }
         if (d.territory) h += '<div class="ip-row"><b>Border</b> radius ' + (d.territory + (b.level - 1) * 1.5) + '</div>';
       }
@@ -646,8 +651,8 @@
     }
 
     /* ---------- modals ---------- */
-    openModal(html) { $('modalBox').innerHTML = html; $('modal').classList.remove('hidden'); VE.audio.play('open'); }
-    closeModal() { $('modal').classList.add('hidden'); }
+    openModal(html) { this._foodOpen = false; $('modalBox').innerHTML = html; $('modal').classList.remove('hidden'); VE.audio.play('open'); }
+    closeModal() { $('modal').classList.add('hidden'); this._foodOpen = false; }
     openUpgrades() {
       const g = this.game;
       let h = '<h2>🔨 Village Upgrades</h2>';
@@ -686,6 +691,46 @@
       }
       h += '<div class="mbtns"><button class="btn" data-act="closeModal">Close</button></div>';
       this.openModal(h);
+    }
+    /* voedsel in de HUD: voorraad, tevredenheid; waarschuwing bij tekort */
+    foodHud() {
+      const g = this.game, el = $('foodBtn'); if (!el || !g.foodSummary) return;
+      const f = g.foodSummary(), face = f.mood >= 0.66 ? '😊' : f.mood >= 0.45 ? '🙂' : f.mood >= 0.28 ? '😟' : '😫';
+      const txt = VE.icon('bread', 15) + '<span>' + VE.fmt(f.stock) + '</span><span>' + face + Math.round(f.mood * 100) + '%</span>';
+      if (this._foodTxt !== txt) { this._foodTxt = txt; el.innerHTML = txt; }
+      el.classList.toggle('warn', f.warn === 'starving' || f.warn === 'empty' || f.warn === 'hungry');
+      el.classList.toggle('low', f.warn === 'low');
+      el.title = 'Food ' + f.stock + ' · uses ≈' + f.rate.toFixed(1) + '/min · happiness ' + Math.round(f.mood * 100) + '%';
+      // één melding per tekort (pas opnieuw als het weer goed ging)
+      const bad = f.warn === 'starving' || f.warn === 'empty' || f.warn === 'low';
+      if (bad && !this._foodWarned && g.time > 5) { this._foodWarned = true; this.toast(f.stock <= 0 ? '🍞 Your food is gone! Hungry settlers work slower and may leave.' : '🍞 Food is running low: build a Fisher, Hunter or Bakery.'); }
+      if (!bad && f.stock > f.rate * 5) this._foodWarned = false;
+      if (this._foodOpen && $('foodBox') && Math.floor(g.time) !== this._foodT) this.openFood(true);
+    }
+    openFood(refresh) {
+      const g = this.game, f = g.foodSummary(), H = VE.HUNGER;
+      this._foodT = Math.floor(g.time);
+      const pct = v => Math.round(v * 100) + '%';
+      const col = v => v >= 0.6 ? '#5aa83c' : v >= 0.35 ? '#d9a93a' : '#c8452a';
+      let h = '<div id="foodBox"><h2>🍞 Food &amp; Happiness</h2>';
+      if (f.warn === 'empty' || f.warn === 'starving') h += '<div class="foodwarn">Your food is gone! ' + (f.starving ? f.starving + ' settler' + (f.starving > 1 ? 's are' : ' is') + ' starving. ' : '') + 'Build a Fisher, Hunter\'s Lodge or a Bakery.</div>';
+      else if (f.warn === 'low') h += '<div class="foodwarn">Food runs out in about ' + Math.max(1, Math.round(f.minutes)) + ' min. Make more food!</div>';
+      h += '<table class="foodtab">';
+      for (const r of VE.FOOD) h += '<tr><td>' + VE.icon(r, 18) + ' ' + VE.RES[r].name + '</td><td>' + VE.fmt(f.per[r]) + '</td></tr>';
+      h += '<tr><td><b>Total food</b></td><td>' + VE.fmt(f.stock) + '</td></tr>';
+      h += '<tr><td>Eaten per minute</td><td>≈ ' + f.rate.toFixed(1) + '</td></tr>';
+      h += '<tr><td>Lasts</td><td>' + (f.minutes === Infinity ? '—' : f.minutes >= 60 ? '60+ min' : Math.floor(f.minutes) + ' min') + '</td></tr>';
+      h += '<tr><td>Kept for the village (markets, tavern)</td><td>' + f.reserve + '</td></tr></table>';
+      h += '<div>Fed on average: <b>' + pct(f.food) + '</b></div><div class="meter"><i style="width:' + pct(f.food) + ';background:' + col(f.food) + '"></i></div>';
+      h += '<div>Happiness: <b>' + pct(f.mood) + '</b></div><div class="meter"><i style="width:' + pct(f.mood) + ';background:' + col(f.mood) + '"></i></div>';
+      h += '<p class="dim">' + f.n + ' settlers' + (f.hungry ? ' · <b>' + f.hungry + ' hungry</b> (work slower)' : ' · nobody is hungry') + (f.idle ? ' · <b>' + f.idle + ' too hungry to work</b>' : '') + (g.stats.left ? ' · ' + g.stats.left + ' left the village' : '') + '</p>';
+      h += '<p class="dim small">Every settler eats about every ' + Math.round((1 - H.hungry) / H.decay / 60 * 10) / 10 + ' min: they walk to the nearest bread, fish or meat and eat it. ' +
+        'Well-fed settlers are happier and work a little faster; eating different kinds of food makes them happier still. ' +
+        'Hungry settlers work slower, stop working when starving and in the end leave. Happy villages attract newcomers faster.</p>';
+      h += '<div class="mbtns"><button class="btn" data-act="closeModal">Close</button></div></div>';
+      if (refresh) { const box = $('modalBox'); if (box) box.innerHTML = h; return; }
+      this.openModal(h);
+      this._foodOpen = true;
     }
     openMenu() {
       const a = VE.audio;
@@ -761,6 +806,7 @@
       }
       $('gold').textContent = VE.fmt(g.gold);
       $('pop').textContent = g.settlers.length + '/' + g.popCap();
+      this.foodHud();
       $('rankName').textContent = VE.RANKS[g.rank].name;
       const sig = g.rank + '|' + Math.floor(g.gold / 5) + '|' + VE.RES_ORDER.map(r => Math.min(99, g.avail(r))).join(',') + '|' + this.cat + '|' + this.tool;
       if (force || sig !== this.lastSig.bar) {

@@ -46,6 +46,7 @@ async function setup(page) {
           if (!b.built) { let u = b.used; for (const r of Object.keys(b.def.cost || {})) { const d = b.delivered[r] || 0, k = Math.min(d, u); u -= k; add(r, d - k); } }
         }
         for (const s of g.settlers) if (s.task && s.task.picked && s.carry) add(s.carry, 1);
+        for (const r in g.stats.eaten || {}) add(r, g.stats.eaten[r]);     // opgegeten door de dorpelingen (js/food.js)
         return C;
       },
       produced() { return Object.assign({}, VE.game.stats.produced); },
@@ -73,7 +74,7 @@ test.describe('Opslag en productie', () => {
         dist: Math.hypot(pile.cx - g.hq.cx, pile.cz - g.hq.cz), itemSrc: VE.itemSource, pileSrc: VE.modelSource.yard,
         slots: VE.buildModel('yard', 1).slots.length };
     });
-    expect(r.start).toEqual({ log: 6, stone: 14, plank: 28, bread: 8, fish: 4 });
+    expect(r.start).toEqual({ log: 6, stone: 14, plank: 28, bread: 16, fish: 8 });
     for (const k in r.start) expect(r.total[k]).toBe(r.start[k]);
     expect(r.shown).toEqual(r.start);               // elk stuk ligt zichtbaar op de stapel
     expect(r.vault).toBe(0);

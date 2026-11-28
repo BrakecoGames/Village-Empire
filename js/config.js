@@ -59,7 +59,7 @@
   /* Een nieuw Storehouse neemt standaard alleen hout (stammen en planken) en steen aan; de speler vinkt de rest
      aan bij het plaatsen, tijdens de bouw of daarna. */
   VE.DEFAULT_ACCEPT = ['log', 'plank', 'stone'];
-  VE.START_STOCK = { log: 6, stone: 14, plank: 28, bread: 8, fish: 4 };
+  VE.START_STOCK = { log: 6, stone: 14, plank: 28, bread: 16, fish: 8 };   // genoeg eten voor ~15 min (js/food.js)
 
   /* Smelterij: recepten (configureerbaar). De speler kiest het metaal per smelterij. */
   VE.RECIPES = {

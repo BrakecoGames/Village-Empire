@@ -21,6 +21,7 @@
   const QUEUE_MAX = 30;
   const KEEP_FREE = 3;          // zoveel vrije dorpelingen blijven altijd over voor het dragen
   const STOCK_CAP = 12;         // max. per goed in de kazerne (2 rekken × 6 wapens; uitrusting op de stapel)
+  const RACK_TOTAL = 12, RESERVE_W = 6, RESERVE_GEAR = 6;   // voorraad zonder wachtrij: wapens in de rekken, uitrusting
   /* oefening per type: animatieclip (settler.glb) en ritme (s) — zie ACT_PERIOD in settler-glb.js */
   VE.DRILL_ACT = { swordsman: 'slash', axeman: 'cleave', dagger: 'stab', spearman: 'thrust', archer: 'shoot', crossbowman: 'xbow' };
   VE.DRILL_PERIOD = { slash: 0.9, cleave: 1.35, stab: 0.5, thrust: 1.05, shoot: 1.9, xbow: 2.6 };
@@ -57,10 +58,19 @@
   };
   /* hoeveel van r de kazerne nog wil hebben (wachtrij min wat er ligt en onderweg is) */
   P.barracksWant = function (b, r) {
-    if (!b.built || !b.alive) return 0;
+    if (!b.built || !b.alive || !VE.RES[r]) return 0;
     let need = 0;
     for (const e of this.queueOf(b)) if (e.st !== 'train') need += this.trainNeeds(e.t)[r] || 0;
-    return Math.min(need, STOCK_CAP) - (b.input[r] || 0) - (b.incoming[r] || 0);
+    const have = (b.input[r] || 0) + (b.incoming[r] || 0);
+    // vaste voorraad, ook zonder wachtrij: wapens in de rekken (max. RESERVE_W per soort, samen niet meer dan
+    // in de rekken past) en een stapel trainingsuitrusting. Zo heeft wat de wapensmederij maakt altijd een
+    // bestemming en raakt zijn eigen opslag niet vol.
+    let keep = 0;
+    if (VE.RES[r].weapon) {
+      let all = 0; for (const w of VE.WEAPONS) all += (b.input[w] || 0) + (b.incoming[w] || 0);
+      keep = Math.min(RESERVE_W, have + Math.max(0, RACK_TOTAL - all));
+    } else if (r === 'gear') keep = RESERVE_GEAR;
+    return Math.max(Math.min(need, STOCK_CAP), keep) - have;
   };
   /* in de wachtrij zetten: n soldaten van type t (goud direct betaald) */
   P.queueTraining = function (b, t, n) {
@@ -110,6 +120,8 @@
   P.dispatchBarracks = function (take, idle, cap) {
     let n = 0;
     for (const b of this.buildings) {
+      // zonder wachtrij vult de kazerne haar voorraad alleen aan met wat de wapensmederij net maakt
+      // (moveOutputs → findConsumer); de Storehouses worden dan niet leeggehaald
       if (!b.alive || !b.built || !b.def.barracks || b.unreach > this.time || !b.queue || !b.queue.length) continue;
       for (const r of VE.RES_ORDER) {
         let want = this.barracksWant(b, r);
