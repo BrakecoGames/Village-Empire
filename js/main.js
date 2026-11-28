@@ -224,10 +224,10 @@
     };
     $('spSetup').addEventListener('click', e => { const b = e.target.closest('.seg button'); if (!b) return; const k = b.closest('.seg').dataset.set; SP[k] = k === 'lv1' || k === 'lv2' ? b.dataset.v : +b.dataset.v; VE.audio.play('click'); spSync(); });
     const spSetup = () => SP.opp ? { opponents: [{ level: SP.lv1 }, { level: SP.lv2 }].slice(0, SP.opp), start: SP.start } : null;
-    $('btnNew').addEventListener('click', () => { VE.audio.init(); spSync(); $('menuBtns').classList.add('hidden'); $('spSetup').classList.remove('hidden'); });
-    $('spBack').addEventListener('click', () => { $('spSetup').classList.add('hidden'); $('menuBtns').classList.remove('hidden'); });
+    $('btnNew').addEventListener('click', () => { VE.audio.init(); spSync(); $('menuBtns').classList.add('hidden'); $('spSetup').classList.remove('hidden'); $('startScreen').classList.add('setup'); });
+    $('spBack').addEventListener('click', () => { $('spSetup').classList.add('hidden'); $('menuBtns').classList.remove('hidden'); $('startScreen').classList.remove('setup'); });
     $('spStart').addEventListener('click', () => {
-      $('spSetup').classList.add('hidden'); $('menuBtns').classList.remove('hidden');
+      $('spSetup').classList.add('hidden'); $('menuBtns').classList.remove('hidden'); $('startScreen').classList.remove('setup');
       if (VE.game.started) { VE.pendingSetup = spSetup(); $('confirmNew').classList.remove('hidden'); return; }
       if (SP.opp) VE.newGame(spSetup()); else startPlaying();
     });

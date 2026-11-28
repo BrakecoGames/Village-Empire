@@ -38,6 +38,9 @@ button { font-family: inherit; color: inherit; cursor: pointer; border: none; }
 .seg button + button { border-left: 1px solid #b08a5a; }
 .seg button.on { background: #6a4122; color: #fff4dc; }
 .sp-ai.off { display: none; }
+/* lage schermen (telefoon liggend): titel weg zolang de instellingen open zijn, paneel kan scrollen */
+#startScreen.setup .title-wrap { max-height: 100vh; overflow-y: auto; }
+@media (max-height: 560px) { #startScreen.setup .banner { display: none; } #spSetup { margin-top: 6px; padding: 10px 14px; } .sp-row { margin: 5px 0; } }
 
 /* ---------- top bar ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; }

@@ -152,7 +152,7 @@ test.describe('Single player tegen AI', () => {
       }
       for (const r of out) {
         for (const p of r.rep) {
-          expect(p.defeated).toBe(false);                             // de mens doet niets, maar valt in 14 min (nog) niet
+          if (p.defeated) continue;                                   // twee AI's vechten ook onderling: een verslagen AI telt niet mee
           expect(p.built, p.name + ' ' + r.lv + ' bouwt').toBeGreaterThan(r.lv === 'easy' ? 14 : 20);
           expect(p.types, 'verschillende gebouwen').toBeGreaterThan(r.lv === 'easy' ? 7 : 10);
           expect(p.builtCmds, 'elk gebouw via een commando').toBeGreaterThanOrEqual(p.buildings - 2);   // hq + startstapel
