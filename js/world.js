@@ -506,7 +506,8 @@
         const r2 = c.r * c.r;
         for (let j = Math.max(0, Math.floor(c.z - c.r)); j <= Math.min(N - 1, Math.ceil(c.z + c.r)); j++)
           for (let i = Math.max(0, Math.floor(c.x - c.r)); i <= Math.min(N - 1, Math.ceil(c.x + c.r)); i++) {
-            const dx = i + 0.5 - c.x, dz = j + 0.5 - c.z; if (dx * dx + dz * dz <= r2) this.owned[j * N + i] = 1;
+            // owned = eigenaar + 1 (0 = van niemand); wie er het eerst was, houdt de grond
+            const dx = i + 0.5 - c.x, dz = j + 0.5 - c.z, k = j * N + i; if (dx * dx + dz * dz <= r2 && !this.owned[k]) this.owned[k] = (c.o || 0) + 1;
           }
       }
       this.recolor();
@@ -515,7 +516,7 @@
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
         const k = j * N + i; if (!this.owned[k] || this.type[k] === 1) continue;
         let edge = false;
-        for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = i + d[0], b = j + d[1]; if (!this.inb(a, b) || !this.owned[b * N + a]) edge = true; }
+        for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = i + d[0], b = j + d[1]; if (!this.inb(a, b) || this.owned[b * N + a] !== this.owned[k]) edge = true; }
         if (!edge || (i + j) % 2) continue;
         if (n >= this.borderCap) break;
         const x = i + 0.5, z = j + 0.5;

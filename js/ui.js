@@ -291,11 +291,15 @@
         this.pending = null;
         const chk = g.canPlace(this.tool, ga.i, ga.j);
         if (!chk.ok) { this.toast(chk.why); VE.audio.play('error'); return; }
-        if (VE.DEFS[this.tool].gold) g.gold -= VE.DEFS[this.tool].gold;
-        const b = g.placeBuilding(this.tool, ga.i, ga.j);
-        if (b.accept) Object.assign(b.accept, this.placeAcceptMap());          // Storehouse: de gekozen goederen
-        VE.audio.play('place', b.cx, b.cz);
-        VE.bus.emit('dust', { x: b.cx, y: b.y, z: b.cz, n: 6 });
+        // commando (js/commands.js); Storehouse: de gekozen goederen gaan mee
+        const pa = VE.DEFS[this.tool].depot ? this.placeAcceptMap() : null;
+        g.issue({ type: 'build', buildingType: this.tool, i: ga.i, j: ga.j, accept: pa ? VE.RES_ORDER.filter(r => pa[r]) : undefined }, res => {
+          if (!res.ok) { this.toast(res.why); VE.audio.play('error'); return; }
+          const b = g.bmap[res.buildingId];
+          VE.audio.play('place', b.cx, b.cz);
+          VE.bus.emit('dust', { x: b.cx, y: b.y, z: b.cz, n: 6 });
+          this.refreshHud(true);
+        });
         if (this.tool !== 'house') this.setTool(null);
         this.updateGhost(p);
         this.refreshHud(true);
@@ -404,8 +408,8 @@
     }
     syncSoundBtn() { $('btnSound').textContent = (VE.audio.sfxOn || VE.audio.musicOn) ? '🔊' : '🔇'; }
     cycleSpeed() {
-      const g = this.game; g.speed = g.speed >= 3 ? 1 : g.speed + 1;
-      $('speedBtn').innerHTML = '⏩<small>' + g.speed + '×</small>';
+      const g = this.game, sp = g.speed >= 3 ? 1 : g.speed + 1;
+      g.issue({ type: 'setSpeed', speed: sp }, () => { $('speedBtn').innerHTML = '⏩<small>' + g.speed + '×</small>'; });
     }
     onAct(e) {
       const el = e.target.closest('[data-act]'); if (!el) return;
@@ -415,23 +419,24 @@
       switch (a) {
         case 'close': this.select(null); this.hideInfo(); break;
         case 'qtoggle': this.qOpen = !this.qOpen; this.renderQuests(true); break;
-        case 'claim': { const q = VE.RANKS[g.rank].quests.find(x => x.id === arg); if (q && g.claim(q)) { this.toast('🎁 Reward collected!'); VE.save(); } this.renderQuests(true); this.refreshHud(true); break; }
-        case 'promote': if (g.promote()) { this.renderQuests(true); this.renderBuildBar(); VE.save(); } break;
-        case 'upgrade': if (this.sel && g.upgrade(this.sel)) { if (this.sel.up) this.toast('🏗️ Upgrade started: carriers bring the materials, then a builder arrives'); VE.save(); } this.renderInfo(true); break;
-        case 'cancelUpg': if (this.sel && g.cancelUpgrade(this.sel)) { this.toast('Upgrade cancelled: materials and gold returned'); VE.save(); } this.renderInfo(true); break;
+        // alles wat de spelstatus verandert gaat als commando (js/commands.js); de interface leest alleen
+        case 'claim': g.issue({ type: 'claimQuest', questId: arg }, r => { if (r.ok) { this.toast('🎁 Reward collected!'); VE.save(); } this.renderQuests(true); this.refreshHud(true); }); break;
+        case 'promote': g.issue({ type: 'promote' }, r => { if (r.ok) { this.renderQuests(true); this.renderBuildBar(); VE.save(); } }); break;
+        case 'upgrade': if (this.sel) { const b = this.sel; g.issue({ type: 'upgrade', buildingId: b.id }, r => { if (r.ok) { if (b.up) this.toast('🏗️ Upgrade started: carriers bring the materials, then a builder arrives'); VE.save(); } this.renderInfo(true); }); } break;
+        case 'cancelUpg': if (this.sel) g.issue({ type: 'cancelUpgrade', buildingId: this.sel.id }, r => { if (r.ok) { this.toast('Upgrade cancelled: materials and gold returned'); VE.save(); } this.renderInfo(true); }); break;
         case 'demolish': if (this.sel) this.confirmDemolish(this.sel); break;
-        case 'doDemolish': { const b = g.bmap[arg]; if (b) g.demolish(b); this.closeModal(); this.select(null); break; }
-        case 'sell': if (this.sel) { this.sel.sell[arg] = !this.sel.sell[arg]; this.renderInfo(true); } break;
-        case 'accept': if (this.sel) { g.setAccept(this.sel, arg); this.renderInfo(true); } break;
-        case 'acceptAll': if (this.sel) { g.setAccept(this.sel, '*', arg === '1'); this.renderInfo(true); } break;
+        case 'doDemolish': g.issue({ type: 'demolish', buildingId: +arg }); this.closeModal(); this.select(null); break;
+        case 'sell': if (this.sel) g.issue({ type: 'setMarketTrade', buildingId: this.sel.id, res: arg }, () => this.renderInfo(true)); break;
+        case 'accept': if (this.sel) g.issue({ type: 'setAccept', buildingId: this.sel.id, res: arg }, () => this.renderInfo(true)); break;
+        case 'acceptAll': if (this.sel) g.issue({ type: 'setAccept', buildingId: this.sel.id, res: '*', on: arg === '1' }, () => this.renderInfo(true)); break;
         case 'paccept': { const m = this.placeAcceptMap(); m[arg] = !m[arg]; if (this.tool) this.showInfoDef(this.tool); break; }
         case 'pacceptAll': { const m = this.placeAcceptMap(); for (const r of VE.RES_ORDER) m[r] = arg === '1'; if (this.tool) this.showInfoDef(this.tool); break; }
-        case 'recipe': if (this.sel && g.setRecipe(this.sel, arg)) { const d = this.sel.def; this.toast(d.icon + ' The ' + d.name.toLowerCase() + ' now makes ' + d.recipes[arg].name.toLowerCase()); VE.save(); } this.renderInfo(true); break;
-        case 'keep': if (this.sel && e.type === 'change') { this.sel.keep = +el.value; } break;
-        case 'feed': if (this.sel) { this.sel.feed = this.sel.feed === false; this.renderInfo(true); VE.save(); } break;
+        case 'recipe': if (this.sel) { const b = this.sel; if (b.recipe === arg) break; g.issue({ type: 'setRecipe', buildingId: b.id, recipe: arg }, r => { if (r.ok) { const d = b.def; this.toast(d.icon + ' The ' + d.name.toLowerCase() + ' now makes ' + d.recipes[arg].name.toLowerCase()); VE.save(); } this.renderInfo(true); }); } break;
+        case 'keep': if (this.sel && e.type === 'change') g.issue({ type: 'setMarketTrade', buildingId: this.sel.id, keep: +el.value }); break;
+        case 'feed': if (this.sel) g.issue({ type: 'setMarketTrade', buildingId: this.sel.id, feed: this.sel.feed === false }, () => { this.renderInfo(true); VE.save(); }); break;
         case 'goto': if (this.sel) this.view.cam.focus(this.sel.cx, this.sel.cz); break;
-        case 'buyUpg': if (g.buyUpgrade(arg)) { VE.audio.play('coin'); this.toast('🔨 Upgrade purchased!'); VE.save(); } this.openUpgrades(); break;
-        case 'trade': { const n = +el.dataset.n; if (g.trade(arg, n)) VE.audio.play('coin'); else VE.audio.play('error'); this.openTrade(); break; }
+        case 'buyUpg': g.issue({ type: 'buyUpgrade', upgradeId: arg }, r => { if (r.ok) { VE.audio.play('coin'); this.toast('🔨 Upgrade purchased!'); VE.save(); } this.openUpgrades(); }); break;
+        case 'trade': g.issue({ type: 'trade', res: arg, n: +el.dataset.n }, r => { VE.audio.play(r.ok ? 'coin' : 'error'); this.openTrade(); }); break;
         case 'closeModal': this.closeModal(); break;
         case 'save': VE.save(); this.toast('💾 Game saved'); this.closeModal(); break;
         case 'music': VE.audio.setMusic(!VE.audio.musicOn); VE.saveSettings(); this.syncSoundBtn(); this.openMenu(); break;
@@ -805,7 +810,7 @@
         el.classList.toggle('zero', g.stock[r] <= 0);
       }
       $('gold').textContent = VE.fmt(g.gold);
-      $('pop').textContent = g.settlers.length + '/' + g.popCap();
+      $('pop').textContent = g.popOf(g.me) + '/' + g.popCap();
       this.foodHud();
       $('rankName').textContent = VE.RANKS[g.rank].name;
       const sig = g.rank + '|' + Math.floor(g.gold / 5) + '|' + VE.RES_ORDER.map(r => Math.min(99, g.avail(r))).join(',') + '|' + this.cat + '|' + this.tool;

@@ -72,11 +72,11 @@
         if (s.hidden || n >= this.cap) continue;
         let bob = s.moving ? Math.abs(Math.sin(s.wp)) * 0.02 : 0;
         if (s.act === 'sow' || s.act === 'dig') bob = Math.abs(Math.sin(s.ap * 5)) * 0.012;
-        _q.setFromAxisAngle(UP, s.rot);
+        _q.setFromAxisAngle(UP, VE.irot(s));
         let lean = 0;
         if (s.act === 'sow') lean = 0.35;
         if (lean) { const q2 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), lean); _q.multiply(q2); }
-        _m.compose(_p.set(s.x, s.y + bob, s.z), _q, _s.set(S, S, S));
+        _m.compose(_p.set(VE.ipos(s, 'x'), VE.ipos(s, 'y') + bob, VE.ipos(s, 'z')), _q, _s.set(S, S, S));
         // stable per-settler looks: hair, skin tone, trousers, mustache/beard/feather
         const h = Math.imul(s.id + 1, 2654435761) >>> 0;
         const hair = HAIR[h % HAIR.length], skin = SKIN[(h >>> 6) % SKIN.length], pants = PANTS[(h >>> 3) % PANTS.length];

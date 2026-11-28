@@ -111,9 +111,9 @@
     /* zwavel komt langzaam terug (de vulkaan blijft dampen): elke 45 s één eenheid per afzetting, tot het maximum */
     regen(game, dt) {
       const w = game.world; if (!w.deposits) return;
-      this.regT = (this.regT || 0) + dt;
-      if (this.regT < 45) return;
-      this.regT -= 45;
+      game.regT = (game.regT || 0) + dt;                             // per spel (niet op de module: meerdere spellen)
+      if (game.regT < 45) return;
+      game.regT -= 45;
       for (const d of w.deposits) if (d.type === 6 && d.amount < d.max) { d.amount++; d.dead = false; w.ore[d.k] = d; this.sulfurDirty = true; this.surveyDirty = true; }
     },
     generate(w) {

@@ -59,12 +59,14 @@
     constructor(game, saved) {
       this.g = game; this.w = game.world;
       this.list = []; this.id = 0; this.herd = 0;
-      this.rnd = VE.rng((game.seed ^ 0x77a11fe5) >>> 0);
+      this.rng = new VE.SimRng((game.seed ^ 0x77a11fe5) >>> 0);   // toestand gaat mee in de snapshot
+      this.rnd = () => this.rng.next();
       this.busy = new Float32Array(N * N);
       this.hab = {};
       this.busyT = 0; this.habT = 0; this.breedT = 8; this.time = 0;
       this.updateBusy(); this.updateHabitat();
-      if (Array.isArray(saved) && saved.length) this.load(saved);
+      if (saved === 'snapshot') { /* de dieren komen uit de snapshot (Game.restoreWild) */ }
+      else if (Array.isArray(saved) && saved.length) this.load(saved);
       else this.populate();
     }
     /* tegels waar een dier kan staan: land (geen berg/water), geen gebouw, rotsblok of ingang */
@@ -139,7 +141,7 @@
         tx: x, tz: z, sp0: 0, herd: herd || 0, y: 0, pitch: 0, age: baby ? 0 : 1, sc: 0.85 + this.rnd() * 0.3, dead: false, reserved: false,
         acc: 0, chk: this.rnd() * 0.3, vis: false, clip: 'idle', ct: this.rnd() * 3, var: Math.floor(this.rnd() * 4),
         stag: (sp.key === 'deer' || sp.key === 'roe') && this.rnd() < 0.45 };        // bok / hert met gewei
-      a.onRelease = () => { if (a.state === 'held') { a.state = 'alert'; a.t = 0.6; } };
+      a.prey = true;                                                // jager laat los (Game.freeWorker): niet meer vastgehouden
       this.list.push(a);
       return a;
     }
@@ -581,20 +583,16 @@
         const c = Math.floor(a.z / 2) * HW + Math.floor(a.x / 2);
         let L = H.get(c); if (!L) H.set(c, L = []); L.push(a);
       }
-      const cx = this.camX, cz = this.camZ;
+      // elk dier elke tick (vaste ticks): de uitkomst hangt niet af van de camera (deterministisch, lockstep)
       let dead = false;
       for (const a of this.list) {
         if (a.dead) { dead = true; continue; }
+        a.px = a.x; a.pz = a.z; a.pr = a.rot;                       // weergave tekent tussen twee ticks in
         if (a.age < 1) a.age = Math.min(1, a.age + dt / 90);
-        // buiten beeld: twee keer per seconde; ver weg (> 40 tegels van de camera) eens per 1,5 s, met de opgetelde tijd
-        a.acc += dt;
-        // staat het dier ineens in een gebouw (net neergezet)? dan meteen verplaatsen, ook buiten beeld
-        const blocked = a.state !== 'fly' && a.y < 0.05 && a.state !== 'held' && !this.passXZ(a.x, a.z);
-        const far = !a.vis && cx !== undefined && (a.x - cx) ** 2 + (a.z - cz) ** 2 > 1600;
-        if (!a.vis && a.acc < (far ? 1.5 : 0.5) && !blocked) continue;
-        const st = Math.min(a.acc, far ? 1.6 : 0.6); a.acc = 0;
-        this.think(a, st);
-        if (!a.dead && (a.vis || !far)) this.resolve(a);
+        if (a.key === 'squirrel' && a.state === 'up' && !a.q && a.y < 0.45) a.y = Math.min(0.45, a.y + dt * 0.7);   // eenvoudige eekhoorn klimt
+        a.acc = 0;
+        this.think(a, dt);
+        if (!a.dead) this.resolve(a);
       }
       if (dead && this.list.length > 40) this.list = this.list.filter(a => !a.dead);
     }
@@ -787,14 +785,14 @@
       for (const key in this.sp) for (const p of this.sp[key].parts) p.n = 0;
       if (camera) { _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _fr.setFromProjectionMatrix(_pv); }
       const cx = camera ? camera.position.x : 0, cz = camera ? camera.position.z : 0;
-      if (camera) { wild.camX = cx; wild.camZ = cz; }                // voor de simulatie: ver weg minder vaak bijwerken
       let count = 0;
       for (const a of wild.list) {
         if (a.dead) continue;
         const S = this.sp[a.key]; if (!S) { a.vis = false; continue; }
-        const gy = w.heightAt(a.x, a.z);
-        _sph.center.set(a.x, gy + 0.2 + (a.y || 0), a.z); _sph.radius = 0.6;
-        a.vis = camera ? _fr.intersectsSphere(_sph) : true;
+        const ax = VE.ipos(a, 'x'), az = VE.ipos(a, 'z'), arot = a.tree && a.key === 'squirrel' && (a.state === 'up' || a.state === 'down') ? Math.atan2(a.tree.x - a.x, a.tree.z - a.z) : VE.irot(a);
+        const gy = w.heightAt(ax, az);
+        _sph.center.set(ax, gy + 0.2 + (a.y || 0), az); _sph.radius = 0.6;
+        a.vis = camera ? _fr.intersectsSphere(_sph) : true;            // alleen weergave (niet in de snapshot)
         // onder de wolken (onontdekt land): niet tekenen
         const k = Math.floor(a.z) * N + Math.floor(a.x);
         if (!a.vis || (w.explored && w.explored[k] < 0.35)) continue;
@@ -833,28 +831,26 @@
           const sc = a.sc * a.sp.size * (0.55 + 0.45 * a.age);
           _m.compose(_p.set(a.wx, a.wy, a.wz), a.q, _s.set(sc, sc, sc));
         } else if (a.key === 'squirrel' && (a.state === 'up' || a.state === 'down')) {
-          if (a.state === 'up' && a.y < 0.45) a.y = Math.min(0.45, a.y + dt * 0.7);
           y += a.y; pitch = a.y > 0.02 && a.y < 0.44 ? -1.25 : 0;
-          if (a.tree) a.rot = Math.atan2(a.tree.x - a.x, a.tree.z - a.z);
           if (a.state === 'down') pitch = 1.25;
         } else if (a.sp.fly) y += a.y;                                       // vogels: in de lucht of in een boomkruin
         if (!(a.q && a.wy !== undefined)) {
           const sc = a.sc * a.sp.size * (0.55 + 0.45 * a.age);        // kleine dieren iets groter: leesbaar van boven
           // op de helling: lijf volgt de grond (voor- en achterpoten, linker- en rechterkant op de grond)
           if (!a.sp.fly && a.key !== 'squirrel' && !pitch) {
-            const L = a.sp.len * sc, Wd = L * 0.6, s = Math.sin(a.rot), c = Math.cos(a.rot);
-            const hf = w.heightAt(a.x + s * L, a.z + c * L), hk = w.heightAt(a.x - s * L, a.z - c * L);
-            const hr = w.heightAt(a.x + c * Wd, a.z - s * Wd), hl = w.heightAt(a.x - c * Wd, a.z + s * Wd);
+            const L = a.sp.len * sc, Wd = L * 0.6, s = Math.sin(arot), c = Math.cos(arot);
+            const hf = w.heightAt(ax + s * L, az + c * L), hk = w.heightAt(ax - s * L, az - c * L);
+            const hr = w.heightAt(ax + c * Wd, az - s * Wd), hl = w.heightAt(ax - c * Wd, az + s * Wd);
             const tp = VE.clamp(-Math.atan2(hf - hk, 2 * L), -0.5, 0.5), tr = VE.clamp(Math.atan2(hr - hl, 2 * Wd), -0.4, 0.4);
             const f = a.tp === undefined ? 1 : Math.min(1, dt * 8);
             a.tp = (a.tp || 0) + (tp - (a.tp || 0)) * f; a.tr = (a.tr || 0) + (tr - (a.tr || 0)) * f;
             y = Math.max(gy, (hf + hk) * 0.5);
           }
-          _q.setFromAxisAngle(UP, a.rot);
+          _q.setFromAxisAngle(UP, arot);
           if (pitch) { _q2.setFromAxisAngle(_x, pitch); _q.multiply(_q2); }
           else if (a.tp || a.tr) { _q2.setFromAxisAngle(_x, a.tp); _q.multiply(_q2); _q2.setFromAxisAngle(_zf, a.tr); _q.multiply(_q2); }
           if (a.state === 'fly' && a.bank) { _q2.setFromAxisAngle(_zf, a.bank); _q.multiply(_q2); }   // hellen in de bocht
-          _m.compose(_p.set(a.x, y, a.z), _q, _s.set(sc, sc, sc));
+          _m.compose(_p.set(ax, y, az), _q, _s.set(sc, sc, sc));
         }
         const P = a._pose, W = S.world;
         for (let i = 0; i < nodes.length; i++) {

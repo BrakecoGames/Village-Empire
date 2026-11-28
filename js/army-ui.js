@@ -86,7 +86,7 @@
   U.selectArmy = function (list, add) {
     this.armyInit();
     if (!add) this.army.clear();
-    for (const s of list) if (s && s.mode === 'soldier') this.army.add(s);
+    for (const s of list) if (s && s.mode === 'soldier' && s.owner === this.game.me) this.army.add(s);
     if (!this.army.size) { this.clearArmy(); return; }
     if (this.sel) this.select(null);
     this.armyMode = 'move';
@@ -130,11 +130,14 @@
   };
   U.orderArmy = function (x, z) {
     const g = this.game, list = [...this.army], mode = this.armyMode;
-    const n = g.orderSoldiers(list, x, z, mode);
-    if (!n) { this.toast('🚫 Your soldiers cannot get there'); VE.audio.play('error'); return; }
-    this.armyMark.visible = true; this.armyMark.userData.t = 0; this.armyMark.position.set(x, g.world.heightAt(x, z) + 0.05, z);
-    if (mode === 'patrol') { this.toast('🔁 ' + (n > 1 ? n + ' soldiers patrol' : 'Patrolling') + ' between here and there'); this.armyMode = 'move'; }
-    this.renderArmy(true);
+    if (mode === 'patrol') this.armyMode = 'move';
+    g.issue({ type: 'moveUnits', unitIds: list.map(s => s.id), targetX: x, targetZ: z, mode: mode === 'patrol' ? 'patrol' : 'hold' }, r => {
+      if (!r.ok) { this.toast('🚫 Your soldiers cannot get there'); VE.audio.play('error'); return; }
+      const n = r.moved;
+      this.armyMark.visible = true; this.armyMark.userData.t = 0; this.armyMark.position.set(x, g.world.heightAt(x, z) + 0.05, z);
+      if (mode === 'patrol') this.toast('🔁 ' + (n > 1 ? n + ' soldiers patrol' : 'Patrolling') + ' between here and there');
+      this.renderArmy(true);
+    });
   };
 
   /* ---------- kader trekken ---------- */
@@ -245,17 +248,18 @@
     switch (a) {
       case 'trainQ': {
         const b = this.sel; if (!b || !b.def.barracks) return;
-        const n = g.queueTraining(b, arg, +el.dataset.n || 1);
-        if (!n) { this.toast(g.gold < SOL[arg].gold ? '💰 Not enough gold' : 'The training queue is full'); VE.audio.play('error'); }
-        else { VE.audio.play('coin'); VE.save(); }
-        this.renderInfo(true);
+        g.issue({ type: 'trainUnit', buildingId: b.id, unitType: arg, count: +el.dataset.n || 1 }, r => {
+          if (!r.ok) { this.toast(g.gold < SOL[arg].gold ? '💰 Not enough gold' : 'The training queue is full'); VE.audio.play('error'); }
+          else { VE.audio.play('coin'); VE.save(); }
+          this.renderInfo(true);
+        });
         break;
       }
-      case 'trainCancel': if (this.sel && this.sel.queue && g.cancelTraining(this.sel, this.sel.queue.find(q => q.id === +arg))) { this.toast('Training cancelled: gold returned'); VE.save(); } this.renderInfo(true); break;
+      case 'trainCancel': if (this.sel && this.sel.queue) g.issue({ type: 'cancelTraining', buildingId: this.sel.id, entryId: +arg }, r => { if (r.ok) { this.toast('Training cancelled: gold returned'); VE.save(); } this.renderInfo(true); }); break;
       case 'armyAll': { const all = g.soldiers(); if (all.length) { this.selectArmy(all); this.focusArmy(); } break; }
       case 'armyType': this.selectArmy([...this.army].filter(s => s.sol.t === arg)); break;
       case 'armyMode': this.armyMode = arg; this.renderArmy(true); break;
-      case 'armyHold': g.holdSoldiers([...this.army]); this.toast('✋ Holding position'); this.renderArmy(true); break;
+      case 'armyHold': g.issue({ type: 'holdUnits', unitIds: [...this.army].map(s => s.id) }, () => { this.toast('✋ Holding position'); this.renderArmy(true); }); break;
       case 'armyFocus': this.focusArmy(); break;
       case 'boxSel': this.boxArm = true; this.toast('⬚ Drag a box around your soldiers'); break;
       case 'armyClear': this.clearArmy(); break;
@@ -263,7 +267,7 @@
         this.openModal('<h2>Dismiss ' + (this.army.size > 1 ? this.army.size + ' soldiers' : 'this soldier') + '?</h2><p>They become ordinary settlers again. Their weapons go back to storage; the training gear is used up.</p>' +
           '<div class="mbtns"><button class="btn" data-act="closeModal">Keep them</button><button class="btn bad" data-act="armyDismissYes">Dismiss</button></div>');
         break;
-      case 'armyDismissYes': { let n = 0; for (const s of [...this.army]) if (g.dismissSoldier(s)) n++; this.closeModal(); this.clearArmy(); if (n) { this.toast('Dismissed ' + n + ' soldier' + (n > 1 ? 's' : '')); VE.save(); } break; }
+      case 'armyDismissYes': { const ids = [...this.army].map(s => s.id); this.closeModal(); this.clearArmy(); g.issue({ type: 'dismissUnits', unitIds: ids }, r => { const n = r.dismissed || 0; if (n) { this.toast('Dismissed ' + n + ' soldier' + (n > 1 ? 's' : '')); VE.save(); } }); break; }
     }
   };
 

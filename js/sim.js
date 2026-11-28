@@ -79,13 +79,19 @@
   VE.Pathfinder = Pathfinder;
 
   /* ---------------- Settler ---------------- */
+  /* Vervolg (continuation): wat een dorpeling doet als hij aankomt (s.cb) of klaar is met een handeling (s.onAct).
+     Data in plaats van een functie: { f: naam, a: [argumenten] } → Game.k_<naam>(s, ...a). Zo is de hele toestand
+     naar JSON te schrijven (js/snapshot.js) en loopt hij na het laden precies zo verder. */
+  const K = VE.K = (f, ...a) => ({ f: f, a: a });
+
   class Settler {
-    constructor(id, x, z) {
-      this.id = id; this.x = x; this.z = z; this.rot = Math.random() * 6.28;
+    constructor(id, x, z, rand) {
+      rand = rand || Math.random;
+      this.id = id; this.x = x; this.z = z; this.rot = rand() * 6.28;
       this.mode = 'idle'; this.role = 'carrier';
       this.path = null; this.pi = 0; this.cb = null;
-      this.carry = null; this.tool = null; this.act = null; this.ap = 0; this.wp = Math.random() * 6;
-      this.moving = false; this.hidden = false; this.wt = 0.5 + Math.random() * 2;
+      this.carry = null; this.tool = null; this.act = null; this.ap = 0; this.wp = rand() * 6;
+      this.moving = false; this.hidden = false; this.wt = 0.5 + rand() * 2;
       this.task = null; this.work = null; this.wstate = null; this.resv = null; this.onAct = null; this.actTick = 0;
       this.owner = 0;                                              // speler (multiplayer-voorbereiding)
     }
@@ -96,13 +102,19 @@
     constructor(scene) { this.scene = scene; }
 
     init(save) {
+      // nieuw spel met een vaste seed (tests, later: de lobby kiest de seed voor iedereen)
+      let fixedSeed = null;
+      if (save && save.fresh) { fixedSeed = save.seed >>> 0; save = null; }
       // wereldgrootte: oude saves 64 × 64; nieuwe werelden groot (VE.BIG_N), tenzij ?small in de URL (tests/oud)
       const small = typeof location !== 'undefined' && /[?&]small(&|$|=)/.test(location.search);
       VE.setWorldSize(save ? (save.n || 64) : (small ? 64 : VE.BIG_N));
       this.root = new THREE.Group();
       this.scene.add(this.root);
-      this.seed = save ? save.seed : ((Math.random() * 1e9) >>> 0);
+      this.seed = save ? save.seed : fixedSeed !== null ? fixedSeed : ((Math.random() * 1e9) >>> 0);
       const rand = VE.rng(this.seed ^ 0x5bd1e995);
+      // simulatie-random: alles wat de uitkomst beïnvloedt gebruikt this.rand() (deterministisch, toestand in de save)
+      this.rng = new VE.SimRng((this.seed ^ 0x2545f491) >>> 0);
+      this.rand = () => this.rng.next();
       const w = this.world = new VE.World(this.seed, this.root);
       w.gen = save ? (save.g || 1) : VE.GEN;                              // oude saves: hun eigen (oude) terrein
       w.generate();
@@ -114,28 +126,34 @@
          bewoners hebben een eigenaar (owner, nu altijd 0). AI en online spelen bestaan nog niet. */
       const starts = w.starts || [w.start];
       const SP = save && Array.isArray(save.players) ? save.players : null;
-      this.players = starts.map((st, id) => Object.assign({ id: id, kind: id === 0 ? 'human' : 'open', name: id === 0 ? 'You' : 'Free land',
-        color: [0x3d63b0, 0xb0503a, 0x4f7d34][id], start: { i: st.i, j: st.j } }, SP && SP[id] ? { kind: SP[id].kind, name: SP[id].name } : {}));
+      this.players = starts.map((st, id) => {
+        const p = new VE.Player({ id: id, kind: id === 0 ? 'human' : 'open', name: id === 0 ? 'You' : 'Free land', start: { i: st.i, j: st.j } });
+        if (SP && SP[id]) p.load(SP[id]);
+        return p;
+      });
+      this.me = 0;                 // de speler achter dit scherm
+      this.cur = 0;                // uitvoerende speler (js/players.js)
       this.buildings = []; this.bmap = {}; this.settlers = [];
-      this.bid = 0; this.sid = 0; this.time = 0;
+      this.bid = 0; this.sid = 0; this.time = 0; this.tickN = 0;
       /* Voorraad ligt altijd ergens: in een Storehouse, op de startstapel, in het dorpshuis (beloningen en
          ingekochte waar) of bij een producent (max. VE.LOCAL_CAP). this.stock is het totaal daarvan
          (alleen-lezen overzicht, wordt bij elke wijziging opnieuw geteld). Schrijven naar this.stock[r]
          (tests, oude code) legt het verschil netjes in een opslag of haalt het eruit: nooit iets dubbel. */
-      this._stock = {}; this._res = {}; this.sd = true;
+      // voorraad per speler: this.stock / this.stockRes gaan over de uitvoerende speler (this.cur)
+      this._stock = {}; this._res = {}; this._by = {}; this.sd = true;
       for (const r of VE.RES_ORDER) { this._stock[r] = 0; this._res[r] = 0; }
       const self = this;
+      const by = () => { if (self.sd) self.recount(); return self._by[self.cur] || self._by[0]; };
       this.stock = new Proxy(this._stock, {
-        get(t, r) { if (self.sd) self.recount(); return t[r]; },
+        get(t, r) { if (!VE.RES[r]) return t[r]; return by().S[r]; },
         set(t, r, v) {
           if (!VE.RES[r]) { t[r] = v; return true; }
-          if (self.sd) self.recount();
-          const d = Math.round((+v || 0) - (t[r] || 0));
+          const d = Math.round((+v || 0) - (by().S[r] || 0));
           if (d > 0) self.addGoods(r, d); else if (d < 0) self.takeGoods(r, -d);
           return true;
         }
       });
-      this.stockRes = new Proxy(this._res, { get(t, r) { if (self.sd) self.recount(); return t[r]; }, set() { return true; } });
+      this.stockRes = new Proxy(this._res, { get(t, r) { if (!VE.RES[r]) return t[r]; return by().R[r]; }, set() { return true; } });
       this.gold = 0; this.rank = 0; this.claimed = {};
       this.stats = { produced: {}, goldEarned: 0, roads: 0, built: {}, upgrades: 0 };
       this.upg = {}; for (const u of VE.UPGRADES) this.upg[u.id] = 0;
@@ -145,15 +163,17 @@
         building: new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 6, specular: 0x161616 })
       };
       this.scaffolds = {};
-      if (save) this.load(save, rand);
+      const snap = !!(save && save.snap);                                // volledige snapshot (js/snapshot.js)
+      if (snap) this.restoreSnapshot(save);
+      else if (save) this.load(save, rand);
       else this.newVillage(rand);
       // ertsaders in de bergen: uit de save, of (nieuw dorp / oude save) deterministisch uit de seed
-      if (VE.Mining) VE.Mining.init(this, save ? save.ore : null);
+      if (VE.Mining && !snap) VE.Mining.init(this, save ? save.ore : null);
       if (w.veg) w.veg.settle();             // geen struiken door stammen; easter eggs op een vrije plek
       this.updateTerritory(true);
       // startvoorraad: ligt zichtbaar op de grond naast het dorpshuis en wordt nooit aangevuld.
       // Oude saves (v1): de hele oude voorraad komt op die stapel te liggen, er gaat niets verloren.
-      const legacy = !save || (save.v || 1) < 2;
+      const legacy = !save || (!snap && (save.v || 1) < 2);
       if (legacy && !this.buildings.some(b => b.type === 'yard')) this.placeYard();
       if (!save) this.fillPile(VE.START_STOCK);
       else if (legacy) this.fillPile(save.stock || {});
@@ -161,7 +181,8 @@
       w.rebuildRoads();
       this.nature.update(0, 1);
       // wilde dieren (na het dorp: ze mijden de drukke dorpskern)
-      this.wild = VE.Wildlife ? new VE.Wildlife(this, save ? save.wild : null) : null;
+      this.wild = VE.Wildlife ? new VE.Wildlife(this, snap ? 'snapshot' : save ? save.wild : null) : null;
+      if (snap) this.restoreWild();
     }
     dispose() { this.scene.remove(this.root); }
 
@@ -187,14 +208,27 @@
     }
 
     /* ---------- helpers ---------- */
-    get hq() { return this.buildings.find(b => b.type === 'hq'); }
+    // --- spelers (js/players.js): goud, rang enz. van de uitvoerende speler ---
+    get gold() { return this.players[this.cur].gold; } set gold(v) { this.players[this.cur].gold = v; }
+    get rank() { return this.players[this.cur].rank; } set rank(v) { this.players[this.cur].rank = v; }
+    get claimed() { return this.players[this.cur].claimed; } set claimed(v) { this.players[this.cur].claimed = v; }
+    get stats() { return this.players[this.cur].stats; } set stats(v) { this.players[this.cur].stats = v; }
+    get upg() { return this.players[this.cur].upg; } set upg(v) { this.players[this.cur].upg = v; }
+    get arriveT() { return this.players[this.cur].arriveT; } set arriveT(v) { if (this.players) this.players[this.cur].arriveT = v; }
+    get player() { return this.players[this.cur]; }
+    /* iets doen als speler pid (daarna weer de vorige uitvoerende speler) */
+    as(pid, fn) { const was = this.cur; this.cur = pid; try { return fn(); } finally { this.cur = was; } }
+    mine(o) { return o && o.owner === this.cur; }
+    hqOf(pid) { return this.buildings.find(b => b.alive && b.type === 'hq' && b.owner === pid) || null; }
+    popOf(pid) { let n = 0; for (const s of this.settlers) if (s.owner === pid) n++; return n; }
+    get hq() { return this.hqOf(this.cur); }
     avail(r) { return (this.stock[r] || 0) - (this.stockRes[r] || 0); }
     tileOf(x, z) { const i = VE.clamp(Math.floor(x), 0, N - 1), j = VE.clamp(Math.floor(z), 0, N - 1); return j * N + i; }
     unlocked(type) { const d = DEFS[type]; return d.buildable !== false && d.rank <= this.rank; }
     maxLevel() { return this.rank >= 3 ? 3 : this.rank >= 1 ? 2 : 1; }
     popCap() {
       let c = 0;
-      for (const b of this.buildings) if (b.alive && b.built && b.def.housing) c += b.def.housing + (b.def.levelHousing || 0) * (b.level - 1);
+      for (const b of this.buildings) if (b.alive && b.built && b.def.housing && b.owner === this.cur) c += b.def.housing + (b.def.levelHousing || 0) * (b.level - 1);
       return Math.min(MAX_POP, c);
     }
     lvlMult(b) { return 1 + 0.4 * (b.level - 1); }
@@ -232,19 +266,19 @@
     held(b) { return b.store || b.output; }
     recount() {
       this.sd = false;
-      const S = this._stock, R = this._res;
-      for (const r of VE.RES_ORDER) { S[r] = 0; R[r] = 0; }
+      const by = this._by = {};
+      for (const p of this.players) { const S = {}, R = {}; for (const r of VE.RES_ORDER) { S[r] = 0; R[r] = 0; } by[p.id] = { S: S, R: R }; }
       for (const b of this.buildings) {
         if (!b.alive || !b.built) continue;
-        const h = this.held(b);
+        const o = by[b.owner] || by[0], S = o.S, R = o.R, h = this.held(b);
         for (const r in h) if (h[r]) S[r] = (S[r] || 0) + h[r];
         for (const r in b.outRes) if (b.outRes[r]) R[r] = (R[r] || 0) + b.outRes[r];
       }
     }
-    storages() { return this.buildings.filter(b => b.alive && b.built && b.store); }
+    storages() { return this.buildings.filter(b => b.alive && b.built && b.store && b.owner === this.cur); }
     nearestStorage(x, z) {
       let best = null, bd = 1e9;
-      for (const b of this.buildings) if (b.alive && b.built && b.store) { const d = (b.dx - x) ** 2 + (b.dz - z) ** 2; if (d < bd) { bd = d; best = b; } }
+      for (const b of this.buildings) if (b.alive && b.built && b.store && b.owner === this.cur) { const d = (b.dx - x) ** 2 + (b.dz - z) ** 2; if (d < bd) { bd = d; best = b; } }
       return best;
     }
     storeTotal(b) { let n = 0; for (const r in b.store) n += b.store[r]; return n; }
@@ -254,7 +288,7 @@
     depotFor(r, x, z, not, any) {
       let best = null, bd = 1e9;
       for (const b of this.buildings) {
-        if (!b.alive || !b.built || !b.def.depot || b === not || !b.accept[r]) continue;
+        if (!b.alive || !b.built || !b.def.depot || b === not || !b.accept[r] || b.owner !== this.cur) continue;
         if (!any && (b.unreach > this.time || this.storeFree(b) <= 0)) continue;
         const d = (b.dx - x) ** 2 + (b.dz - z) ** 2;
         if (d < bd) { bd = d; best = b; }
@@ -265,7 +299,7 @@
     sourceFor(r, x, z, outputs) {
       let best = null, bd = 1e9;
       for (const b of this.buildings) {
-        if (!b.alive || !b.built || b.unreach > this.time) continue;
+        if (!b.alive || !b.built || b.unreach > this.time || b.owner !== this.cur) continue;
         if (!b.store && !outputs) continue;
         const h = this.held(b);
         if ((h[r] || 0) - (b.outRes[r] || 0) <= 0) continue;
@@ -293,7 +327,7 @@
       n = Math.round(n); if (!(n > 0)) return true;
       this.sd = true;
       const pr = b => b.def.pile ? 0 : b.type === 'hq' ? 1 : b.store ? 2 : 3;     // startvoorraad eerst
-      const list = this.buildings.filter(b => b.alive && b.built).sort((a, c) => pr(a) - pr(c));
+      const list = this.buildings.filter(b => b.alive && b.built && b.owner === this.cur).sort((a, c) => pr(a) - pr(c));
       for (const b of list) {
         const h = this.held(b), free = (h[r] || 0) - (b.outRes[r] || 0);
         if (free <= 0) continue;
@@ -304,7 +338,7 @@
       return n <= 0;
     }
     fillPile(goods) {
-      const pile = this.buildings.find(b => b.alive && b.def.pile) || this.hq;
+      const pile = this.buildings.find(b => b.alive && b.def.pile && b.owner === this.cur) || this.hq;
       for (const r in goods) if (VE.RES[r] && goods[r] > 0) pile.store[r] = (pile.store[r] || 0) + Math.round(goods[r]);
       this.sd = true;
     }
@@ -323,7 +357,7 @@
       if (r === '*') { for (const k of VE.RES_ORDER) b.accept[k] = !!on; }
       else if (VE.RES[r]) b.accept[r] = on === undefined ? !b.accept[r] : !!on;
     }
-    countBuilt(type) { let n = 0; for (const b of this.buildings) if (b.alive && b.built && b.type === type) n++; return n; }
+    countBuilt(type) { let n = 0; for (const b of this.buildings) if (b.alive && b.built && b.type === type && b.owner === this.cur) n++; return n; }
     canAfford(cost) {
       for (const r in cost) { if (r === 'gold') { if (this.gold < cost[r]) return false; } else if (this.avail(r) < cost[r]) return false; }
       return true;
@@ -341,7 +375,7 @@
         const a = i + di, b = j + dj;
         if (!w.inb(a, b)) return { ok: false, why: 'Outside the map' };
         const k = b * N + a;
-        if (!w.owned[k]) return { ok: false, why: 'Outside your borders' };
+        if (w.owned[k] !== this.cur + 1) return { ok: false, why: 'Outside your borders' };
         if (w.type[k] === 1) return { ok: false, why: 'Cannot build on water' };
         if (w.type[k] === 4) return { ok: false, why: 'Too steep: a cliff' };
         if (w.type[k] === 5) return { ok: false, why: 'Cannot build on the bridge' };
@@ -393,7 +427,7 @@
       const b = {
         id: ++this.bid, type: type, def: def, i: i, j: j, size: size, level: 1, built: false, alive: true, used: 0, total: 0,
         delivered: {}, incoming: {}, input: {}, output: {}, outRes: {}, worker: null, builder: null, wt: 0, working: false,
-        sell: {}, keep: 10, fields: [], status: '', sellIdx: 0, unreach: 0, owner: 0
+        sell: {}, keep: 10, fields: [], status: '', sellIdx: 0, unreach: 0, owner: this.cur
       };
       b.cx = i + size / 2; b.cz = j + size / 2;
       b.doorI = i + (size > 1 ? 1 : 0); b.doorJ = j + size; b.doorK = b.doorJ * N + b.doorI;
@@ -493,9 +527,9 @@
     }
     updateTerritory(initial) {
       const c = [];
-      for (const b of this.buildings) if (b.alive && b.built && b.def.territory) c.push({ x: b.cx, z: b.cz, r: b.def.territory + (b.level - 1) * 1.5, view: b.type === 'tower' ? this.towerView(b.cx, b.cz) : 0 });
+      for (const b of this.buildings) if (b.alive && b.built && b.def.territory) c.push({ x: b.cx, z: b.cz, o: b.owner, r: b.def.territory + (b.level - 1) * 1.5, view: b.type === 'tower' ? this.towerView(b.cx, b.cz) : 0 });
       this.world.setTerritory(c);
-      for (const t of c) this.world.reveal(t.x, t.z, t.r + 2.5 + t.view);   // your own land (and a little beyond) is known
+      for (const t of c) if (t.o === this.me) this.world.reveal(t.x, t.z, t.r + 2.5 + t.view);   // eigen land (en iets verder) is bekend   // your own land (and a little beyond) is known
       if (!initial) emit('territory', {});
     }
     /* wachttoren op hoogte kijkt verder: extra ontdekkingsbereik (tegels) t.o.v. vlak land (hoogte ~0,9) */
@@ -604,9 +638,10 @@
 
     /* ---------- settlers ---------- */
     spawnSettler(near) {
-      if (this.settlers.length >= (this.maxPop || MAX_POP)) return null;   // maxPop: per spel instelbaar (tests: drie volle dorpen)
+      if (this.popOf(this.cur) >= (this.maxPop || MAX_POP)) return null;   // maxPop: per spel instelbaar (tests: drie volle dorpen)
       const hq = near || this.hq;
-      const s = new Settler(++this.sid, hq.dx + (Math.random() - 0.5) * 0.8, hq.dz + 0.3 + Math.random() * 0.6);
+      const s = new Settler(++this.sid, hq.dx + (this.rand() - 0.5) * 0.8, hq.dz + 0.3 + this.rand() * 0.6, this.rand);
+      s.owner = this.cur;
       if (this.initHunger) this.initHunger(s);                         // honger en tevredenheid (js/food.js)
       this.settlers.push(s);
       return s;
@@ -619,13 +654,13 @@
       for (let n = 1; n < path.length; n++) {
         const k = path[n], i = k % N, j = (k / N) | 0, last = n === path.length - 1;
         if (last && fx !== undefined) pts.push([fx, fz]);
-        else pts.push([i + 0.5 + (last ? 0 : (Math.random() - 0.5) * 0.3), j + 0.5 + (last ? 0 : (Math.random() - 0.5) * 0.3)]);
+        else pts.push([i + 0.5 + (last ? 0 : (this.rand() - 0.5) * 0.3), j + 0.5 + (last ? 0 : (this.rand() - 0.5) * 0.3)]);
       }
       if (!pts.length) pts.push([fx !== undefined ? fx : (tk % N) + 0.5, fz !== undefined ? fz : ((tk / N) | 0) + 0.5]);
       s.path = pts; s.pi = 0; s.cb = cb;
       return true;
     }
-    walkToB(s, b, cb) { return this.walkTo(s, b.doorK, cb, b.dx + (Math.random() - 0.5) * 0.12, b.dz - 0.06); }
+    walkToB(s, b, cb) { return this.walkTo(s, b.doorK, cb, b.dx + (this.rand() - 0.5) * 0.12, b.dz - 0.06); }
     moveSettler(s, dt) {
       const p = s.path[s.pi];
       const dx = p[0] - s.x, dz = p[1] - s.z, d = Math.hypot(dx, dz);
@@ -634,7 +669,7 @@
       const step = sp * dt;
       if (d <= step) {
         s.x = p[0]; s.z = p[1]; s.pi++;
-        if (s.pi >= s.path.length) { s.path = null; s.moving = false; const cb = s.cb; s.cb = null; if (cb) cb(); }
+        if (s.pi >= s.path.length) { s.path = null; s.moving = false; const cb = s.cb; s.cb = null; if (cb) this.runK(s, cb); }
       } else {
         s.x += dx / d * step; s.z += dz / d * step;
         // slijtage: alleen echte verplaatsing; rondslenteren telt een kwart, korte correctiestapjes nauwelijks
@@ -646,13 +681,25 @@
       }
     }
 
+    /* vervolg uitvoeren (data, of een functie: alleen nog voor tests en oude aanroepen) */
+    runK(s, k) {
+      if (!k) return;
+      if (typeof k === 'function') { k(); return; }
+      const fn = this['k_' + k.f];
+      if (!fn) throw new Error('Unknown continuation: ' + k.f);
+      fn.apply(this, [s].concat(k.a));
+    }
+    k_pickup(s) { this.pickup(s); }
+    k_deliver(s) { this.deliver(s); }
+    k_wandered(s) { s.mode = 'idle'; }
+
     /* ---------- transport ---------- */
     /* up: de upgrade-bouwplaats (dst.up) waar dit goed heen gaat, anders gewoon het gebouw */
     startTransport(s, res, src, dst, up) {
       s.mode = 'carry'; s.task = { res: res, src: src, dst: dst, picked: false, up: up || null }; s.tool = null; s.act = null;
       src.outRes[res] = (src.outRes[res] || 0) + 1; this.sd = true;
       const I = (up || dst).incoming; I[res] = (I[res] || 0) + 1;
-      if (!this.walkToB(s, src, () => this.pickup(s))) this.failTask(s, true);
+      if (!this.walkToB(s, src, K('pickup'))) this.failTask(s, true);
     }
     pickup(s) {
       const t = s.task; if (!t) return;
@@ -664,7 +711,7 @@
       t.picked = true; s.carry = t.res;
       if (t.src.def.pile) this.checkPiles();
       if (!t.dst.alive) { this.redirect(s); return; }
-      if (!this.walkToB(s, t.dst, () => this.deliver(s))) this.redirect(s);
+      if (!this.walkToB(s, t.dst, K('deliver'))) this.redirect(s);
     }
     /* bestemming weg of onbereikbaar: naar een Storehouse dat het aanneemt, anders terug naar de bron */
     redirect(s) {
@@ -675,7 +722,7 @@
       t.up = null;
       if (st) {
         t.dst = st; t.back = back; st.incoming[t.res] = (st.incoming[t.res] || 0) + 1;
-        if (this.walkToB(s, st, () => this.deliver(s))) return;
+        if (this.walkToB(s, st, K('deliver'))) return;
         st.incoming[t.res]--;
       }
       this.dropCarry(s);
@@ -718,7 +765,7 @@
     findConsumer(res, from) {
       let best = null, bd = 1e9;
       for (const b of this.buildings) {
-        if (!b.alive || b === from || b.unreach > this.time) continue;
+        if (!b.alive || b === from || b.unreach > this.time || b.owner !== from.owner) continue;
         let want = 0;
         if (!b.built) { if (b.def.cost && b.def.cost[res]) want = b.def.cost[res] - (b.delivered[res] || 0) - (b.incoming[res] || 0); }
         else if (b.def.inp && !b.def.market) { const R = this.rcp(b); if (R.inp[res] && (!this.foodSpare || this.foodSpare(res))) want = this.cap(b) - (b.input[res] || 0) - (b.incoming[res] || 0); }
@@ -729,9 +776,14 @@
       }
       return best;
     }
+    /* dragers en werkers verdelen: per speler, alleen met de eigen dorpelingen en gebouwen */
     dispatch() {
-      const idle = [];
-      for (const s of this.settlers) if (s.mode === 'idle' || s.mode === 'wander') idle.push(s);
+      for (const p of this.players) { if (!p.active) continue; this.cur = p.id; this.dispatchFor(); }
+      this.cur = this.me;
+    }
+    dispatchFor() {
+      const idle = [], pid = this.cur;
+      for (const s of this.settlers) if (s.owner === pid && (s.mode === 'idle' || s.mode === 'wander')) idle.push(s);
       if (this.feedIdle) this.feedIdle(idle);                          // eerst eten (js/food.js)
       if (!idle.length) return;
       const take = (x, z) => {
@@ -742,7 +794,7 @@
         s.path = null; s.cb = null; s.moving = false;
         return s;
       };
-      const T = this.time, B = this.buildings;
+      const T = this.time, B = this.buildings.filter(b => b.owner === pid);
       const alive = b => b.alive && b.unreach <= T;
       // each step assigns at most `cap` settlers and returns how many it used
       const steps = [
@@ -834,10 +886,10 @@
     moveOutputs(take, idle, cap, consumerOnly) {
       let n = 0;
       // ligt dit goed nog op de startstapel, dan bedient die stapel de werkplaatsen en bouwplaatsen eerst
-      const pile = this.buildings.find(b => b.alive && b.built && b.def.pile);
+      const pile = this.buildings.find(b => b.alive && b.built && b.def.pile && b.owner === this.cur);
       const onPile = r => pile && (pile.store[r] || 0) - (pile.outRes[r] || 0) > 0;
       for (const b of this.buildings) {
-        if (!b.alive || !b.built || b.store || b.unreach > this.time) continue;
+        if (!b.alive || !b.built || b.store || b.unreach > this.time || b.owner !== this.cur) continue;
         for (const r in b.output) {
           while (b.output[r] - (b.outRes[r] || 0) > 0 && n < cap && idle.length) {
             let dst = onPile(r) ? null : this.findConsumer(r, b);
@@ -853,7 +905,7 @@
       }
       // goederen die een Storehouse niet meer aanneemt (uitgevinkt): naar een Storehouse dat ze wel wil
       if (!consumerOnly) for (const b of this.buildings) {
-        if (!b.alive || !b.built || !b.def.depot || b.unreach > this.time) continue;
+        if (!b.alive || !b.built || !b.def.depot || b.unreach > this.time || b.owner !== this.cur) continue;
         for (const r in b.store) {
           if (b.accept[r]) continue;
           while (b.store[r] - (b.outRes[r] || 0) > 0 && n < cap && idle.length) {
@@ -869,9 +921,10 @@
     /* ---------- builders ---------- */
     assignBuilder(s, b) {
       b.builder = s; s.mode = 'build'; s.work = b; s.tool = 'hammer'; s.act = null; s.bstate = 'go';
-      const ok = this.walkTo(s, b.doorK, () => { s.bstate = 'at'; s.wt = 1.1; s.rot = Math.atan2(b.cx - s.x, b.cz - s.z); }, b.dx + (Math.random() - 0.5) * 0.3, b.dz + 0.05);
+      const ok = this.walkTo(s, b.doorK, K('atSite', b), b.dx + (this.rand() - 0.5) * 0.3, b.dz + 0.05);
       if (!ok) { b.builder = null; b.unreach = this.time + 6; s.mode = 'idle'; s.tool = null; }
     }
+    k_atSite(s, b) { s.bstate = 'at'; s.wt = 1.1; s.rot = Math.atan2(b.cx - s.x, b.cz - s.z); }
     updateBuilder(s, dt) {
       const b = s.work, S = b && this.site(b);
       if (!S || b.builder !== s) { if (b && b.builder === s) b.builder = null; s.mode = 'idle'; s.tool = null; s.act = null; s.work = null; return; }
@@ -913,11 +966,12 @@
     /* ---------- workers ---------- */
     assignWorker(s, b) {
       b.worker = s; s.mode = 'goWork'; s.work = b; s.role = b.def.worker; s.tool = b.def.tool || null;
-      const ok = this.walkToB(s, b, () => {
-        if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
-        s.mode = 'work'; s.wstate = 'inside'; s.hidden = true; s.wt = 0.6; s.x = b.dx; s.z = b.dz;
-      });
+      const ok = this.walkToB(s, b, K('atWork', b));
       if (!ok) { b.worker = null; b.unreach = this.time + 6; s.mode = 'idle'; s.role = 'carrier'; s.tool = null; s.work = null; }
+    }
+    k_atWork(s, b) {
+      if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
+      s.mode = 'work'; s.wstate = 'inside'; s.hidden = true; s.wt = 0.6; s.x = b.dx; s.z = b.dz;
     }
     freeWorker(s) {
       const b = s.work;
@@ -925,7 +979,7 @@
       if (b && b.worker === s) b.worker = null;
       if (s.resv) {
         const f = s.resv; f.reserved = false; s.resv = null;
-        if (f.onRelease) f.onRelease(s);
+        if (f.prey && f.state === 'held') { f.state = 'alert'; f.t = 0.6; }   // dier: de jager laat los
         // half gemaaid of hok nog niet opgepakt: het veld staat er weer zoals voor het maaien
         if (f.mow || f.state === 'cut') { f.mow = 0; if (f.state === 'cut') f.state = 'grown'; if (!f.dead && this.nature.setFieldM) this.nature.setFieldM(f); }
       }
@@ -937,21 +991,22 @@
     goAct(s, b, tk, fx, fz, face, act, time, done) {
       if (s.hidden) { s.x = b.dx; s.z = b.dz; }        // vanuit de hut: vertrek bij de deur
       s.hidden = false; s.wstate = 'walk'; s.act = null;
-      return this.walkTo(s, tk, () => {
-        if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
-        s.wstate = 'act'; s.act = act; s.ap = 0; s.actTick = 0; s.wt = time;
-        if (face) s.rot = Math.atan2(face[0] - s.x, face[1] - s.z);
-        s.onAct = done;
-      }, fx, fz);
+      return this.walkTo(s, tk, K('acting', b, act, time, face || null, done), fx, fz);
+    }
+    k_acting(s, b, act, time, face, done) {
+      if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
+      s.wstate = 'act'; s.act = act; s.ap = 0; s.actTick = 0; s.wt = time;
+      if (face) s.rot = Math.atan2(face[0] - s.x, face[1] - s.z);
+      s.onAct = done;
     }
     goHome(s, b, carry, done) {
       s.carry = carry; s.wstate = 'walk'; s.act = null;
-      const arrive = () => {
-        if (!b.alive || b.worker !== s) { if (carry) { this.addGoods(carry, 1, s.x, s.z); s.carry = null; } this.freeWorker(s); return; }
-        s.carry = null; s.hidden = true; s.wstate = 'inside'; s.wt = 1.0; s.x = b.dx; s.z = b.dz;
-        if (done) done();
-      };
-      if (!this.walkToB(s, b, arrive)) arrive();
+      if (!this.walkToB(s, b, K('home', b, carry, done || null))) this.k_home(s, b, carry, done || null);
+    }
+    k_home(s, b, carry, done) {
+      if (!b.alive || b.worker !== s) { if (carry) { this.addGoods(carry, 1, s.x, s.z); s.carry = null; } this.freeWorker(s); return; }
+      s.carry = null; s.hidden = true; s.wstate = 'inside'; s.wt = 1.0; s.x = b.dx; s.z = b.dz;
+      if (done) this.runK(s, done);
     }
     produce(b, res, n) {
       b.output[res] = (b.output[res] || 0) + n; this.sd = true;
@@ -1003,24 +1058,7 @@
           if (!best) { b.status = 'No mature trees in range'; s.wt = 3; return; }
           const t = best; t.reserved = true; s.resv = t; b.status = 'Felling a tree';
           const sp = this.standPoint(b, t.x, t.z, 0.3);
-          const ok = this.goAct(s, b, t.k, sp[0], sp[1], [t.x, t.z], 'chop', d.time / gm, () => {
-            if (t.dead || t.falling) { s.resv = null; t.reserved = false; this.goHome(s, b, null); return; }
-            // de boom valt weg van de houthakker, op een vrije plek
-            this.nature.fellTree(t, this.nature.fallDir(t, s.x, s.z));
-            sfx('creak', t.x, t.z);
-            emit('leaves', { x: t.x, y: w.heightAt(t.x, t.z) + 0.6, z: t.z });
-            b.lumber = { tree: t, pieces: [], cut: 0 };
-            b.status = 'Timber!';
-            this.stats.felled = (this.stats.felled || 0) + 1;
-            s.act = null; s.tool = 'axe';
-            // wachten (bijl in de hand) tot de boom stil ligt
-            const wait = () => {
-              if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
-              if (!t.landed && !t.dead) { s.wstate = 'act'; s.act = null; s.wt = 0.15; s.onAct = wait; return; }
-              this.buckLog(s, b, b.lumber);
-            };
-            wait();
-          });
+          const ok = this.goAct(s, b, t.k, sp[0], sp[1], [t.x, t.z], 'chop', d.time / gm, K('felled', b, t));
           if (!ok) { t.reserved = false; s.resv = null; s.hidden = true; s.wstate = 'inside'; s.wt = 3; b.status = 'Cannot reach the trees'; }
         } else if (d.gather === 'plant') {
           let cnt = 0;
@@ -1028,13 +1066,10 @@
           if (cnt >= 12) { b.status = 'Young trees are growing'; s.wt = 3; return; }
           const cand = this.tilesInRange(b, d.radius).filter(k => this.freeTile(k) && w.tileH(k % N, (k / N) | 0) > 0.15 && Math.hypot((k % N) + 0.5 - b.cx, ((k / N) | 0) + 0.5 - b.cz) > 1.6);
           if (!cand.length) { b.status = 'No free soil to plant'; s.wt = 4; return; }
-          const k = cand[Math.floor(Math.random() * cand.length)];
+          const k = cand[Math.floor(this.rand() * cand.length)];
           const i = k % N, j = (k / N) | 0;
           b.status = 'Planting trees';
-          const ok = this.goAct(s, b, k, i + 0.5 + 0.25, j + 0.5 + 0.2, [i + 0.5, j + 0.5], 'dig', d.time / gm, () => {
-            if (this.freeTile(k)) { this.nature.addTree(i, j, w.mount[k] > 0.15 ? 1 : (Math.random() < 0.25 ? 2 : 0), 0.04); w.clearDeco(k); sfx('plant', i, j); }
-            this.goHome(s, b, null);
-          });
+          const ok = this.goAct(s, b, k, i + 0.5 + 0.25, j + 0.5 + 0.2, [i + 0.5, j + 0.5], 'dig', d.time / gm, K('planted', b, k));
           if (!ok) { s.hidden = true; s.wstate = 'inside'; s.wt = 3; }
         } else if (d.gather === 'rock') {
           let best = null, bd = 1e9;
@@ -1059,23 +1094,16 @@
               const q = (a + 0.5 - b.dx) ** 2 + (c + 0.5 - b.dz) ** 2;
               if (q < sd) { sd = q; sp = [ri + 0.5 + dd[0] * 0.46, rj + 0.5 + dd[1] * 0.46]; }
             } }
-          const ok = this.goAct(s, b, r.k, sp[0], sp[1], [r.x, r.z], 'pick', d.time / gm, () => {
-            s.resv = null; r.reserved = false;
-            if (r.dead) { this.goHome(s, b, null); return; }
-            this.nature.mineRock(r);
-            emit('dust', { x: r.x, y: w.heightAt(r.x, r.z) + 0.2, z: r.z, n: 5, stone: true });
-            this.goHome(s, b, 'stone', () => this.produce(b, 'stone', 1));
-          });
+          const ok = this.goAct(s, b, r.k, sp[0], sp[1], [r.x, r.z], 'pick', d.time / gm, K('mined', b, r));
           if (!ok) { r.reserved = false; s.resv = null; s.hidden = true; s.wstate = 'inside'; s.wt = 3; b.status = 'Cannot reach the stone'; }
         } else if (d.gather === 'field') {
           b.fields = b.fields.filter(f => !f.dead);
-          const res = d.out;
           let f = b.fields.find(x => x.state === 'grown' && !x.reserved);
           let act = 'harvest';
           if (!f) { f = b.fields.find(x => x.state === 'empty' && !x.reserved); act = 'sow'; }
           let newK = -1;
           if (!f && b.fields.length < d.maxFields + 2 * (b.level - 1)) {
-            const cand = this.tilesInRange(b, d.radius + (b.level - 1) * 0.5).filter(k => this.freeTile(k) && w.owned[k] && w.type[k] === 0 && w.slope(k % N, (k / N) | 0) < 0.5);
+            const cand = this.tilesInRange(b, d.radius + (b.level - 1) * 0.5).filter(k => this.freeTile(k) && w.owned[k] === b.owner + 1 && w.type[k] === 0 && w.slope(k % N, (k / N) | 0) < 0.5);
             if (cand.length) {
               cand.sort((a, c) => ((a % N) + 0.5 - b.cx) ** 2 + (((a / N) | 0) + 0.5 - b.cz) ** 2 - (((c % N) + 0.5 - b.cx) ** 2 + (((c / N) | 0) + 0.5 - b.cz) ** 2));
               newK = cand[0]; act = 'sow';
@@ -1095,45 +1123,8 @@
           const grain = act === 'harvest' && d.fieldKind === 0;
           const tAct = (act === 'harvest' ? d.time * (grain ? 0.6 : 1) : 1.8) / gm;
           if (grain) s.mowField = f;
-          const hoed = () => {
-            if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
-            if (!f && this.freeTile(k)) {                    // nieuwe akker: de geschoffelde grond ligt er nu
-              const nf = this.nature.addField(i, j, d.fieldKind, b);
-              if (nf) { nf.state = 'empty'; nf.growth = 0; nf.reserved = true; s.resv = nf; this.nature.setFieldM(nf); b.fields.push(nf); }
-            }
-            b.status = 'Sowing';
-            s.wstate = 'act'; s.act = 'sow'; s.tool = null; s.ap = 0; s.actTick = 0; s.wt = 1.1 / gm; s.onAct = sowDone;
-          };
-          const sowDone = () => {
-            s.mowField = null;
-            if (act === 'harvest' && grain && !f.dead && b.alive && b.worker === s) {
-              // gemaaid: hok van schoven op het stoppelveld; de boer bindt en pakt een schoof op
-              f.mow = 0; f.state = 'cut'; this.nature.setFieldM(f);
-              s.wstate = 'act'; s.act = 'sow'; s.ap = 0; s.actTick = 0; s.wt = d.time * 0.4 / gm; s.tool = null;
-              s.onAct = () => {
-                s.resv = null; f.reserved = false;
-                if (!f.dead) { f.state = 'empty'; f.growth = 0; this.nature.setFieldM(f); }
-                this.goHome(s, b, res, () => this.produce(b, res, 1));
-              };
-              return;
-            }
-            s.resv = null; if (f) { f.reserved = false; f.mow = 0; }
-            if (act === 'harvest') {
-              if (f.dead) { this.goHome(s, b, null); return; }
-              f.state = 'empty'; f.growth = 0; this.nature.setFieldM(f);
-              this.goHome(s, b, res, () => this.produce(b, res, 1));
-            } else {
-              if (f && !f.dead) { f.state = 'growing'; f.growth = 0; this.nature.setFieldM(f); }
-              else if (!f && this.freeTile(k)) { const nf = this.nature.addField(i, j, d.fieldKind, b); if (nf) b.fields.push(nf); }
-              else if (!f && this.world.field[k] && this.world.field[k].owner === b) {   // tijdens het schoffelen aangelegd
-                const nf = this.world.field[k]; nf.reserved = false; if (s.resv === nf) s.resv = null;
-                nf.state = 'growing'; nf.growth = 0; this.nature.setFieldM(nf);
-              }
-              this.goHome(s, b, null);
-            }
-          };
-          const ok = this.goAct(s, b, k, i + 0.5 + (Math.random() - 0.5) * 0.4, j + 0.5 + 0.3, [i + 0.5, j + 0.5],
-            hoeFirst ? 'hoe' : act, hoeFirst ? 1.3 / gm : tAct, hoeFirst ? hoed : sowDone);
+          const ok = this.goAct(s, b, k, i + 0.5 + (this.rand() - 0.5) * 0.4, j + 0.5 + 0.3, [i + 0.5, j + 0.5],
+            hoeFirst ? 'hoe' : act, hoeFirst ? 1.3 / gm : tAct, K(hoeFirst ? 'hoed' : 'sowDone', b, f || null, k, act, grain));
           if (!ok) { if (f) f.reserved = false; s.resv = null; s.hidden = true; s.wstate = 'inside'; s.wt = 3; }
         } else if (d.gather === 'fish') {
           const spots = [];
@@ -1147,14 +1138,10 @@
           }
           if (!spots.length) { b.status = 'No water in range'; s.wt = 4; return; }
           spots.sort((a, c) => a.d - c.d);
-          const sp = spots[Math.floor(Math.random() * Math.min(6, spots.length))];
+          const sp = spots[Math.floor(this.rand() * Math.min(6, spots.length))];
           const fx = VE.lerp(sp.i + 0.5, sp.wx, 0.42), fz = VE.lerp(sp.j + 0.5, sp.wz, 0.42);
           b.status = 'Fishing';
-          const ok = this.goAct(s, b, sp.k, fx, fz, [sp.wx, sp.wz], 'fish', d.time / gm, () => {
-            emit('splash', { x: VE.lerp(fx, sp.wx, 0.9), z: VE.lerp(fz, sp.wz, 0.9) });
-            if (Math.random() < 0.85) this.goHome(s, b, 'fish', () => this.produce(b, 'fish', 1));
-            else this.goHome(s, b, null);
-          });
+          const ok = this.goAct(s, b, sp.k, fx, fz, [sp.wx, sp.wz], 'fish', d.time / gm, K('fished', b, fx, fz, sp.wx, sp.wz));
           if (!ok) { s.hidden = true; s.wstate = 'inside'; s.wt = 3; }
         }
       }
@@ -1163,37 +1150,125 @@
       // indoor workers just stay inside; the building does the work
       if (!d.gather) { s.wt = 0.5; }
     }
+    /* ---- vervolgen van de werkers (aangeroepen via runK, met de dorpeling als eerste argument) ---- */
+    k_felled(s, b, t) {
+      const w = this.world;
+      if (t.dead || t.falling) { s.resv = null; t.reserved = false; this.goHome(s, b, null); return; }
+      // de boom valt weg van de houthakker, op een vrije plek
+      this.nature.fellTree(t, this.nature.fallDir(t, s.x, s.z));
+      sfx('creak', t.x, t.z);
+      emit('leaves', { x: t.x, y: w.heightAt(t.x, t.z) + 0.6, z: t.z });
+      b.lumber = { tree: t, pieces: [], cut: 0 };
+      b.status = 'Timber!';
+      this.stats.felled = (this.stats.felled || 0) + 1;
+      s.act = null; s.tool = 'axe';
+      this.k_waitFall(s, b, t);
+    }
+    /* wachten (bijl in de hand) tot de boom stil ligt */
+    k_waitFall(s, b, t) {
+      if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
+      if (!t.landed && !t.dead) { s.wstate = 'act'; s.act = null; s.wt = 0.15; s.onAct = K('waitFall', b, t); return; }
+      this.buckLog(s, b, b.lumber);
+    }
+    k_planted(s, b, k) {
+      const w = this.world, i = k % N, j = (k / N) | 0;
+      if (this.freeTile(k)) { this.nature.addTree(i, j, w.mount[k] > 0.15 ? 1 : (this.rand() < 0.25 ? 2 : 0), 0.04, this.rand); w.clearDeco(k); sfx('plant', i, j); }
+      this.goHome(s, b, null);
+    }
+    k_mined(s, b, r) {
+      const w = this.world;
+      s.resv = null; r.reserved = false;
+      if (r.dead) { this.goHome(s, b, null); return; }
+      this.nature.mineRock(r);
+      emit('dust', { x: r.x, y: w.heightAt(r.x, r.z) + 0.2, z: r.z, n: 5, stone: true });
+      this.goHome(s, b, 'stone', K('produce', b, 'stone', 1));
+    }
+    /* akker geschoffeld: een nieuwe akker ligt er nu; zaaien */
+    k_hoed(s, b, f, k, act, grain) {
+      const d = b.def, gm = this.gatherMult(b), i = k % N, j = (k / N) | 0;
+      if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
+      if (!f && this.freeTile(k)) {
+        const nf = this.nature.addField(i, j, d.fieldKind, b);
+        if (nf) { nf.state = 'empty'; nf.growth = 0; nf.reserved = true; s.resv = nf; this.nature.setFieldM(nf); b.fields.push(nf); }
+      }
+      b.status = 'Sowing';
+      s.wstate = 'act'; s.act = 'sow'; s.tool = null; s.ap = 0; s.actTick = 0; s.wt = 1.1 / gm; s.onAct = K('sowDone', b, f, k, act, grain);
+    }
+    k_sowDone(s, b, f, k, act, grain) {
+      const d = b.def, res = d.out, gm = this.gatherMult(b), i = k % N, j = (k / N) | 0;
+      s.mowField = null;
+      if (act === 'harvest' && grain && !f.dead && b.alive && b.worker === s) {
+        // gemaaid: hok van schoven op het stoppelveld; de boer bindt en pakt een schoof op
+        f.mow = 0; f.state = 'cut'; this.nature.setFieldM(f);
+        s.wstate = 'act'; s.act = 'sow'; s.ap = 0; s.actTick = 0; s.wt = d.time * 0.4 / gm; s.tool = null;
+        s.onAct = K('bound', b, f);
+        return;
+      }
+      s.resv = null; if (f) { f.reserved = false; f.mow = 0; }
+      if (act === 'harvest') {
+        if (f.dead) { this.goHome(s, b, null); return; }
+        f.state = 'empty'; f.growth = 0; this.nature.setFieldM(f);
+        this.goHome(s, b, res, K('produce', b, res, 1));
+      } else {
+        if (f && !f.dead) { f.state = 'growing'; f.growth = 0; this.nature.setFieldM(f); }
+        else if (!f && this.freeTile(k)) { const nf = this.nature.addField(i, j, d.fieldKind, b); if (nf) b.fields.push(nf); }
+        else if (!f && this.world.field[k] && this.world.field[k].owner === b) {   // tijdens het schoffelen aangelegd
+          const nf = this.world.field[k]; nf.reserved = false; if (s.resv === nf) s.resv = null;
+          nf.state = 'growing'; nf.growth = 0; this.nature.setFieldM(nf);
+        }
+        this.goHome(s, b, null);
+      }
+    }
+    k_bound(s, b, f) {
+      s.resv = null; f.reserved = false;
+      if (!f.dead) { f.state = 'empty'; f.growth = 0; this.nature.setFieldM(f); }
+      this.goHome(s, b, b.def.out, K('produce', b, b.def.out, 1));
+    }
+    k_fished(s, b, fx, fz, wx, wz) {
+      emit('splash', { x: VE.lerp(fx, wx, 0.9), z: VE.lerp(fz, wz, 0.9) });
+      if (this.rand() < 0.85) this.goHome(s, b, 'fish', K('produce', b, 'fish', 1));
+      else this.goHome(s, b, null);
+    }
+    /* thuis afgeleverd: in de lokale voorraad (stop: het gebouw werkt niet meer, bijv. zwavelmijn) */
+    k_produce(s, b, res, n, stop) { if (stop) b.working = false; this.produce(b, res, n); }
     /* houthakker: de omgevallen boom in stukken hakken (eerst de kroon eraf, dan de stam doormidden) */
     buckLog(s, b, L) {
-      const d = b.def, w = this.world, gm = this.gatherMult(b), t = L.tree;
-      const dir = t.fallDir || [0, 1], len = t.trunkLen || 0.5;
+      if (!L.long) this.cutLog(s, b, L, 1.02, K('buckCrown', b));    // bij de kroon: kroon eraf, de stam blijft liggen
+      else this.cutLog(s, b, L, 0.5, K('buckMid', b));
+    }
+    cutLog(s, b, L, f, then) {
+      const gm = this.gatherMult(b), t = L.tree || L.long;
+      const dir = t.fallDir || t.dir || [0, 1], len = t.trunkLen || t.len || 0.5;
       const side = [dir[1], -dir[0]];
-      const cutAt = f => [t.x + dir[0] * len * f, t.z + dir[1] * len * f];
-      const go = (f, then) => {
-        const c = cutAt(f), sx = c[0] + side[0] * 0.2, sz = c[1] + side[1] * 0.2;
-        const tk = this.tileOf(sx, sz);
-        b.status = 'Cutting the tree into logs';
-        const ok = this.goAct(s, b, tk, sx, sz, c, 'chop', 1.3 / gm, then);
-        if (!ok) { // onbereikbaar: de stammen toch opleveren (niets kwijt), het hout ligt dan bij de hut
-          if (!t.dead) this.nature.removeTree(t);
-          for (const p of L.pieces) this.nature.removeLog(p);
-          b.lumber = null; s.resv = null;
-          this.goHome(s, b, 'log', () => this.produce(b, 'log', 2));
-        }
-      };
-      if (!L.long) {
-        go(1.02, () => {                                   // bij de kroon: kroon eraf, de stam blijft liggen
-          s.resv = null;
-          L.long = this.nature.buckTree(t);
-          L.tree = null;
-          go(0.5, () => {                                  // in het midden: twee losse stammen
-            L.pieces = this.nature.splitLog(L.long); L.long = null;
-            this.carryLog(s, b, L);
-          });
-        });
-      } else {
-        go(0.5, () => { L.pieces = this.nature.splitLog(L.long); L.long = null; this.carryLog(s, b, L); });
+      const c = [t.x + dir[0] * len * f, t.z + dir[1] * len * f], sx = c[0] + side[0] * 0.2, sz = c[1] + side[1] * 0.2;
+      const tk = this.tileOf(sx, sz);
+      b.status = 'Cutting the tree into logs';
+      const ok = this.goAct(s, b, tk, sx, sz, c, 'chop', 1.3 / gm, then);
+      if (!ok) { // onbereikbaar: de stammen toch opleveren (niets kwijt), het hout ligt dan bij de hut
+        if (L.tree && !L.tree.dead) this.nature.removeTree(L.tree);
+        if (L.long) this.nature.removeLog(L.long);
+        for (const p of L.pieces) this.nature.removeLog(p);
+        b.lumber = null; s.resv = null;
+        this.goHome(s, b, 'log', K('produce', b, 'log', 2));
       }
+    }
+    k_buckCrown(s, b) {
+      const L = b.lumber; if (!L || !L.tree) { this.goHome(s, b, null); return; }
+      s.resv = null;
+      L.cutFrom = { x: L.tree.x, z: L.tree.z, fallDir: L.tree.fallDir, trunkLen: L.tree.trunkLen };
+      L.long = this.nature.buckTree(L.tree);
+      L.tree = null;
+      // in het midden: twee losse stammen (zelfde plek als de boom lag)
+      const C = L.cutFrom, gm = this.gatherMult(b), dir = C.fallDir || [0, 1], len = C.trunkLen || 0.5, side = [dir[1], -dir[0]];
+      const c = [C.x + dir[0] * len * 0.5, C.z + dir[1] * len * 0.5], sx = c[0] + side[0] * 0.2, sz = c[1] + side[1] * 0.2;
+      b.status = 'Cutting the tree into logs';
+      const ok = this.goAct(s, b, this.tileOf(sx, sz), sx, sz, c, 'chop', 1.3 / gm, K('buckMid', b));
+      if (!ok) { if (L.long) this.nature.removeLog(L.long); L.long = null; b.lumber = null; this.goHome(s, b, 'log', K('produce', b, 'log', 2)); }
+    }
+    k_buckMid(s, b) {
+      const L = b.lumber; if (!L || !L.long) { this.goHome(s, b, null); return; }
+      L.pieces = this.nature.splitLog(L.long); L.long = null;
+      this.carryLog(s, b, L);
     }
     /* houthakker: een gehakte stam oppakken en naar de hut dragen; op de stapel = in de lokale voorraad */
     carryLog(s, b, L) {
@@ -1202,12 +1277,13 @@
       const p = L.pieces[0], side = [p.dir[1], -p.dir[0]];
       const sx = p.x + side[0] * 0.16, sz = p.z + side[1] * 0.16;
       b.status = 'Carrying logs home';
-      const ok = this.goAct(s, b, this.tileOf(sx, sz), sx, sz, [p.x, p.z], 'sow', 0.55, () => {   // bukken en optillen
-        this.nature.removeLog(p); L.pieces.shift();
-        if (!L.pieces.length) b.lumber = null;
-        this.goHome(s, b, 'log', () => this.produce(b, 'log', 1));
-      });
-      if (!ok) { this.nature.removeLog(p); L.pieces.shift(); if (!L.pieces.length) b.lumber = null; this.goHome(s, b, 'log', () => this.produce(b, 'log', 1)); }
+      const ok = this.goAct(s, b, this.tileOf(sx, sz), sx, sz, [p.x, p.z], 'sow', 0.55, K('pickLog', b));   // bukken en optillen
+      if (!ok) this.k_pickLog(s, b);
+    }
+    k_pickLog(s, b) {
+      const L = b.lumber;
+      if (L && L.pieces.length) { this.nature.removeLog(L.pieces[0]); L.pieces.shift(); if (!L.pieces.length) b.lumber = null; }
+      this.goHome(s, b, 'log', K('produce', b, 'log', 1));
     }
     /* weggevallen werk van een houthakker (sloop, werker weg): liggende boom en stammen opruimen, hout niet kwijt */
     dropLumber(b) {
@@ -1236,7 +1312,7 @@
       if (!dep) {
         const empty = !(M && M.near(w, b.cx, b.cz, d.ore, r));
         b.status = d.ore === 5 ? 'No solid rock in reach' : empty ? 'The ' + VE.ORES[d.ore].name + ' below this mine is used up' : 'Waiting for a free tunnel';
-        if (empty && d.ore !== 5 && !b.emptyTold) { b.emptyTold = true; emit('toast', { text: '⛏️ ' + b.def.name + ': the ' + VE.ORES[d.ore].name + ' is used up. Build a new mine above another deposit.' }); }
+        if (empty && d.ore !== 5 && !b.emptyTold) { b.emptyTold = true; if (b.owner === this.me) emit('toast', { text: '⛏️ ' + b.def.name + ': the ' + VE.ORES[d.ore].name + ' is used up. Build a new mine above another deposit.' }); }
         s.wt = 4; return;
       }
       // ondergronds hakken: de mijnwerker blijft binnen, het karretje rijdt
@@ -1256,18 +1332,20 @@
       dep.reserved = true; s.resv = dep; b.working = true; b.status = 'Digging sulfur';
       // naast de afzetting staan, aan de kant van de mijn
       const ang = Math.atan2(b.dz - dep.z, b.dx - dep.x), fx = dep.x + Math.cos(ang) * 0.32, fz = dep.z + Math.sin(ang) * 0.32;
-      const ok = this.goAct(s, b, dep.k, fx, fz, [dep.x, dep.z], 'pick', d.time / gm, () => {
-        s.resv = null; dep.reserved = false;
-        if (dep.amount <= 0) { b.working = false; this.goHome(s, b, null); return; }
-        M.take(w, dep);
-        emit('dust', { x: dep.x, y: w.heightAt(dep.x, dep.z) + 0.12, z: dep.z, n: 4, color: 0xf2d73a });
-        this.goHome(s, b, d.out, () => { b.working = false; this.produce(b, d.out, 1); });
-      });
+      const ok = this.goAct(s, b, dep.k, fx, fz, [dep.x, dep.z], 'pick', d.time / gm, K('dugSulfur', b, dep));
       if (!ok) { dep.reserved = false; s.resv = null; b.working = false; b.status = 'Cannot reach the sulfur'; s.hidden = true; s.wstate = 'inside'; s.wt = 3; }
+    }
+    k_dugSulfur(s, b, dep) {
+      const w = this.world, d = b.def;
+      s.resv = null; dep.reserved = false;
+      if (dep.amount <= 0) { b.working = false; this.goHome(s, b, null); return; }
+      VE.Mining.take(w, dep);
+      emit('dust', { x: dep.x, y: w.heightAt(dep.x, dep.z) + 0.12, z: dep.z, n: 4, color: 0xf2d73a });
+      this.goHome(s, b, d.out, K('produce', b, d.out, 1, true));
     }
     /* jager: sluipt naar een dier, gooit een net; lukt het, dan brengt hij het vlees thuis */
     thinkHunt(s, b, d) {
-      const wl = this.wild, gm = this.gatherMult(b);
+      const wl = this.wild;
       if (!wl) { b.status = 'No game in range'; s.wt = 4; return; }
       if (this.outFull(b)) { b.status = this.fullStatus(b, d.out); s.wt = 1; return; }
       const r = d.radius + (b.level - 1);
@@ -1279,33 +1357,37 @@
       if (!st) { s.wt = 2; return; }
       a.reserved = true; s.resv = a; b.status = 'Stalking a ' + SP.name.toLowerCase();
       s.hidden = false; s.x = b.dx; s.z = b.dz; s.wstate = 'walk'; s.act = null;
-      const ok = this.walkTo(s, st.k, () => {
-        if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
-        const dist = Math.hypot(a.x - s.x, a.z - s.z);
-        if (a.dead || a.state === 'flee' || dist > 2.6) {          // weggesprongen voor de jager er was
-          if (s.resv === a) { a.reserved = false; s.resv = null; }
-          b.status = 'The ' + SP.name.toLowerCase() + ' got away';
-          this.goHome(s, b, null); return;
-        }
-        wl.hold(a, s);
-        s.wstate = 'act'; s.act = 'hunt'; s.ap = 0; s.actTick = 0; s.wt = d.time * SP.effort / gm;
-        s.rot = Math.atan2(a.x - s.x, a.z - s.z);
-        s.onAct = () => {
-          if (s.resv === a) s.resv = null;
-          a.reserved = false;
-          if (a.dead) { this.goHome(s, b, null); return; }
-          if (Math.random() < SP.catch * (1 + 0.1 * (b.level - 1))) {
-            wl.caught(a);
-            sfx('plant', a.x, a.z);
-            this.goHome(s, b, 'meat', () => this.produce(b, 'meat', SP.meat));
-          } else {
-            wl.scare(a, s.x, s.z);
-            b.status = 'The ' + SP.name.toLowerCase() + ' escaped the net';
-            this.goHome(s, b, null);
-          }
-        };
-      }, st.x, st.z);
+      const ok = this.walkTo(s, st.k, K('stalked', b, a), st.x, st.z);
       if (!ok) { a.reserved = false; s.resv = null; s.hidden = true; s.wstate = 'inside'; s.wt = 3; b.status = 'Cannot reach the game'; }
+    }
+    k_stalked(s, b, a) {
+      const wl = this.wild, SP = a.sp, d = b.def, gm = this.gatherMult(b);
+      if (!b.alive || b.worker !== s) { this.freeWorker(s); return; }
+      const dist = Math.hypot(a.x - s.x, a.z - s.z);
+      if (a.dead || a.state === 'flee' || dist > 2.6) {          // weggesprongen voor de jager er was
+        if (s.resv === a) { a.reserved = false; s.resv = null; }
+        b.status = 'The ' + SP.name.toLowerCase() + ' got away';
+        this.goHome(s, b, null); return;
+      }
+      wl.hold(a, s);
+      s.wstate = 'act'; s.act = 'hunt'; s.ap = 0; s.actTick = 0; s.wt = d.time * SP.effort / gm;
+      s.rot = Math.atan2(a.x - s.x, a.z - s.z);
+      s.onAct = K('netThrown', b, a);
+    }
+    k_netThrown(s, b, a) {
+      const wl = this.wild, SP = a.sp;
+      if (s.resv === a) s.resv = null;
+      a.reserved = false;
+      if (a.dead) { this.goHome(s, b, null); return; }
+      if (this.rand() < SP.catch * (1 + 0.1 * (b.level - 1))) {
+        wl.caught(a);
+        sfx('plant', a.x, a.z);
+        this.goHome(s, b, 'meat', K('produce', b, 'meat', SP.meat));
+      } else {
+        wl.scare(a, s.x, s.z);
+        b.status = 'The ' + SP.name.toLowerCase() + ' escaped the net';
+        this.goHome(s, b, null);
+      }
     }
     updateWorker(s, dt) {
       const b = s.work;
@@ -1327,7 +1409,7 @@
           else if (s.act === 'pick') sfx('pick', s.x, s.z);
           else if (s.act === 'hoe') { sfx('plant', s.x, s.z); emit('dust', { x: s.x + Math.sin(s.rot) * 0.22, y: s.y + 0.02, z: s.z + Math.cos(s.rot) * 0.22, n: 3, small: true }); }   // kluitjes aarde
         }
-        if (s.wt <= 0) { s.act = null; const f = s.onAct; s.onAct = null; if (f) f(); }
+        if (s.wt <= 0) { s.act = null; const f = s.onAct; s.onAct = null; if (f) this.runK(s, f); }
       }
     }
     updateBuilding(b, dt) {
@@ -1373,7 +1455,8 @@
       }
       if (d.barracks) { b.stT = (b.stT || 0) - dt; if (b.stT <= 0) { b.stT = 0.5; b.status = this.barracksStatus(b); } b.working = !!(b.queue && b.queue.some(e => e.st === 'train')); return; }
       if (!d.inp) return;
-      if (!present) { b.status = s ? (s.wstate === 'eat' ? 'Worker is having a meal' : 'Worker is on the way') : 'Needs a worker'; if (!(s && s.wstate === 'eat')) b.working = false; return; }
+      // werker weg (onderweg, aan het eten): de lopende partij wacht en gaat verder als hij terug is (niets kwijt)
+      if (!present) { b.status = s ? (s.meal || s.wstate === 'eat' ? 'Worker is having a meal' : 'Worker is on the way') : 'Needs a worker'; return; }
       if (this.tooHungry && this.tooHungry(s)) { b.status = 'Too hungry to work: needs food'; return; }
       if (d.recipes) this.smithAtOven(b, s, dt);
       const R = this.rcp(b);
@@ -1409,27 +1492,37 @@
       if (s.path) return;
       s.wt -= dt;
       if (s.wt > 0) return;
-      s.wt = 2 + Math.random() * 5;
+      s.wt = 2 + this.rand() * 5;
       const w = this.world;
-      const hq = this.hq;
+      const hq = this.hq; if (!hq) return;
       const cx = (s.x * 2 + hq.dx) / 3, cz = (s.z * 2 + hq.dz + 1) / 3;
       for (let tries = 0; tries < 6; tries++) {
-        const i = Math.floor(cx + (Math.random() - 0.5) * 6), j = Math.floor(cz + (Math.random() - 0.5) * 6);
+        const i = Math.floor(cx + (this.rand() - 0.5) * 6), j = Math.floor(cz + (this.rand() - 0.5) * 6);
         if (!w.inb(i, j)) continue;
         const k = j * N + i;
-        if (!w.walkable(k) || !w.owned[k]) continue;
+        if (!w.walkable(k) || w.owned[k] !== s.owner + 1) continue;
         s.mode = 'wander';
-        if (this.walkTo(s, k, () => { s.mode = 'idle'; }, i + 0.2 + Math.random() * 0.6, j + 0.2 + Math.random() * 0.6)) return;
+        if (this.walkTo(s, k, K('wandered'), i + 0.2 + this.rand() * 0.6, j + 0.2 + this.rand() * 0.6)) return;
         s.mode = 'idle';
       }
     }
 
     /* ---------- main update ---------- */
+    /* één vaste simulatietick: eerst de commando's van die tick (js/commands.js), dan de simulatie */
+    tick() {
+      if (this.runCommands) this.runCommands();
+      this.inTick = true;
+      try { this.update(VE.TICK); } finally { this.inTick = false; }
+      this.tickN = (this.tickN || 0) + 1;
+    }
     update(dt) {
+      // begin van de tick: posities onthouden, de weergave tekent vloeiend tussen twee ticks (VE.ipos)
+      for (const s of this.settlers) { s.px = s.x; s.pz = s.z; s.py = s.y; s.pr = s.rot; }
       this.time += dt; this.sd = true;
       const w = this.world;
       // settlers
       for (const s of this.settlers) {
+        this.cur = s.owner;
         if (s.path) this.moveSettler(s, dt); else s.moving = false;
         if (s.mode === 'work') this.updateWorker(s, dt);
         else if (s.mode === 'build') this.updateBuilder(s, dt);
@@ -1440,7 +1533,8 @@
         s.y = w.heightAt(s.x, s.z);
       }
       if (this.hungerTick) this.hungerTick(dt);                         // honger en tevredenheid (js/food.js)
-      for (const b of this.buildings) this.updateBuilding(b, dt);
+      for (const b of this.buildings) { this.cur = b.owner; this.updateBuilding(b, dt); }
+      this.cur = this.me;
       this.nature.update(dt, this.growMult());
       if (this.wild) this.wild.update(dt);
       if (VE.Mining && VE.Mining.regen) VE.Mining.regen(this, dt);     // zwavel rond de vulkaan komt langzaam terug
@@ -1448,28 +1542,34 @@
       this.fogT = (this.fogT || 0) - dt;
       if (this.fogT <= 0) {
         this.fogT = 0.4;
-        for (const s of this.settlers) if (!s.hidden) w.reveal(s.x, s.z, 4.5);
+        for (const s of this.settlers) if (!s.hidden && s.owner === this.me) w.reveal(s.x, s.z, 4.5);
       }
       w.updateFog();
       this.dispT -= dt;
       if (this.dispT <= 0) { this.dispT = 0.25; this.dispatch(); }
-      // newcomers
-      this.arriveT -= dt;
-      if (this.arriveT <= 0) {
+      // newcomers (per speler)
+      for (const p of this.players) { if (p.active) { this.cur = p.id; this.arrivals(p, dt); } }
+      this.cur = this.me;
+      this.wearT -= dt; if (this.wearT <= 0) { this.wearT = 5; this.wearDecay(); }
+      w.paths.update(dt, this);
+      if (this.roadsDirty) { this.roadT -= dt; if (this.roadT <= 0) { this.roadT = 0.12; this.roadsDirty = false; w.rebuildRoads(); } }
+    }
+    /* nieuwkomers voor speler p (huisjes vrij): sneller met eten, een herberg en een tevreden dorp */
+    arrivals(p, dt) {
+      p.arriveT -= dt;
+      if (p.arriveT <= 0) {
+        if (!this.hq) { p.arriveT = 3; return; }
         const cap = this.popCap();
-        if (this.settlers.length < cap) {
+        if (this.popOf(p.id) < cap) {
           const food = (VE.FOOD || ['bread', 'fish']).find(r => this.avail(r) > 0) || null;
           if (food) this.takeGoods(food, 1);
           const s = this.spawnSettler();
           if (s) { emit('arrive', { x: s.x, z: s.z }); s.food = food ? 0.9 : 0.55; }
           const tav = this.countBuilt('tavern');
           const mood = this.foodSummary ? this.foodSummary().mood : 0.65;   // tevreden dorp: sneller nieuwkomers
-          this.arriveT = (food ? 6.5 : 20) * Math.max(0.45, 1 - tav * 0.15) * VE.clamp(1.45 - mood * 0.75, 0.75, 1.4);
-        } else this.arriveT = 3;
+          p.arriveT = (food ? 6.5 : 20) * Math.max(0.45, 1 - tav * 0.15) * VE.clamp(1.45 - mood * 0.75, 0.75, 1.4);
+        } else p.arriveT = 3;
       }
-      this.wearT -= dt; if (this.wearT <= 0) { this.wearT = 5; this.wearDecay(); }
-      w.paths.update(dt, this);
-      if (this.roadsDirty) { this.roadT -= dt; if (this.roadT <= 0) { this.roadT = 0.12; this.roadsDirty = false; w.rebuildRoads(); } }
     }
 
     /* ---------- quests ---------- */
@@ -1479,7 +1579,7 @@
         case 'build': return this.stats.built[q.b] || 0;
         case 'produce': return this.stats.produced[q.res] || 0;
         case 'gold': return this.stats.goldEarned;
-        case 'pop': return this.settlers.length;
+        case 'pop': return this.popOf(this.cur);
         case 'upgrade': return this.stats.upgrades;
         case 'weapons': { let n = 0; for (const r of VE.WEAPONS || []) n += this.stock[r] || 0; return n; }
       }
@@ -1524,7 +1624,7 @@
       this.sd = true;                                // altijd een verse telling
       const w = this.world;
       const bl = this.buildings.filter(b => b.alive).map(b => ({
-        id: b.id, t: b.type, i: b.i, j: b.j, l: b.level, b: b.built ? 1 : 0, u: b.used,
+        id: b.id, t: b.type, o: b.owner || undefined, i: b.i, j: b.j, l: b.level, b: b.built ? 1 : 0, u: b.used,
         d: b.built ? {} : Object.assign({}, b.delivered), inp: Object.assign({}, b.input), out: Object.assign({}, b.output), sell: b.sell, keep: b.keep, feed: b.feed === false ? 0 : undefined, rc: b.recipe || undefined,
         st: b.store ? Object.assign({}, b.store) : undefined, ac: b.accept ? VE.RES_ORDER.filter(r => b.accept[r]) : undefined,
         up: b.up ? { l: b.up.lvl, c: Object.assign({}, b.up.cost), g: b.up.gold, d: Object.assign({}, b.up.delivered), u: b.up.used } : undefined
@@ -1558,8 +1658,8 @@
       if (carried) for (const s of this.settlers) if (s.task && s.task.picked && s.carry) stock[s.carry] = (stock[s.carry] || 0) + 1;
       for (const r in inHand) stock[r] = (stock[r] || 0) + inHand[r];
       return {
-        v: 4, n: VE.N, g: w.gen || 1, seed: this.seed, players: this.players ? this.players.map(p => ({ id: p.id, kind: p.kind, name: p.name })) : undefined, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
-        stats: this.stats, upg: this.upg, pop: this.settlers.length, speed: this.speed,
+        v: 4, n: VE.N, g: w.gen || 1, seed: this.seed, players: this.players.map(p => p.toJSON()), me: this.me, tick: this.tickN || 0, rng: this.rng.s, time: Math.round(this.time), stock: stock, gold: this.gold, rank: this.rank, claimed: this.claimed,
+        stats: this.stats, upg: this.upg, pop: this.popOf(this.me), pops: this.players.map(p => this.settlers.filter(s => s.owner === p.id && s.mode !== 'soldier').length), speed: this.speed,
         buildings: bl,
         ore: VE.Mining ? VE.Mining.serialize(w) : undefined, wild: this.wild ? this.wild.serialize() : undefined,
         sol: this.serializeSoldiers ? this.serializeSoldiers() : undefined,
@@ -1578,6 +1678,7 @@
       const idmap = {};
       for (const bs of sv.buildings) {
         if (!DEFS[bs.t]) continue;
+        this.cur = this.players[bs.o] ? bs.o : 0;                      // eigenaar (oude saves: speler 0)
         const b = this.placeBuilding(bs.t, bs.i, bs.j, bs.b === 1);
         idmap[bs.id] = b;
         if (bs.l > 1) { b.level = bs.l; this.makeMesh(b); }
@@ -1622,9 +1723,17 @@
       for (const b of this.buildings) if (b.alive && !b.def.pile && !b.def.mountain) this.clearDoorway(b);
       this.sd = true;
       const sol = sv.sol || [];                                           // soldaten tellen mee in de bevolking
-      const n = Math.max(4, (sv.pop || 10) - sol.length);
-      for (let i = 0; i < n; i++) this.spawnSettler();
-      for (const s of this.settlers) { s.x += (Math.random() - 0.5) * 2; s.z += Math.random() * 1.2; }
+      if (sv.pops) {
+        for (const p of this.players) { this.cur = p.id; if (!this.hq) continue; for (let i = 0; i < (sv.pops[p.id] || 0); i++) this.spawnSettler(); }
+      } else {                                                            // oude save: één speler
+        this.cur = 0;
+        const n = Math.max(4, (sv.pop || 10) - sol.length);
+        for (let i = 0; i < n; i++) this.spawnSettler();
+      }
+      this.cur = this.me;
+      if (sv.rng !== undefined) this.rng.s = sv.rng >>> 0;
+      if (sv.tick) this.tickN = sv.tick;
+      for (const s of this.settlers) { s.x += (this.rand() - 0.5) * 2; s.z += this.rand() * 1.2; }
       if (this.loadHunger) this.loadHunger(sv.hun);                     // oude saves: iedereen verzadigd
       if (this.loadSoldiers) this.loadSoldiers(sol);
     }

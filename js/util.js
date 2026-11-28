@@ -2,6 +2,27 @@
 'use strict';
 window.VE = window.VE || {};
 (function (VE) {
+  /* Seeded random met een toestand die mee kan in de save (simulatie: VE.game.rand()). Zelfde algoritme als VE.rng. */
+  /* Vaste simulatieticks (VE.TICK s). De weergave tekent tussen twee ticks in: VE.alpha (0..1) is hoe ver de
+     huidige tick gevorderd is; px/pz/py/pr zijn de posities aan het begin van de tick (Game.update). Alleen lezen. */
+  VE.TICK = 0.05;
+  VE.alpha = 1;
+  VE.ipos = function (o, k) { const p = o['p' + k]; return p === undefined ? o[k] : p + (o[k] - p) * VE.alpha; };
+  VE.irot = function (o) {
+    if (o.pr === undefined) return o.rot;
+    let d = o.rot - o.pr; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+    return o.pr + d * VE.alpha;
+  };
+  VE.SimRng = class {
+    constructor(seed) { this.s = seed >>> 0; }
+    next() {
+      this.s = (this.s + 0x6D2B79F5) >>> 0;
+      let t = this.s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+  };
   VE.rng = function (seed) {
     let s = seed >>> 0;
     return function () {

@@ -36,14 +36,16 @@
 
   const fed = s => s.mode !== 'soldier';                     // soldaten: rantsoen, geen honger
   P.initHunger = function (s, full) {
-    if (s.food === undefined) s.food = full ? 1 : 0.75 + Math.random() * 0.25;
+    if (s.food === undefined) s.food = full ? 1 : 0.75 + (this.rand ? this.rand() : 0.5) * 0.25;
     if (s.mood === undefined) s.mood = 0.65;
-    s.starve = s.starve || 0; s.ate = s.ate || []; s.eff = 1; s.walkEff = 1;
+    s.starve = s.starve || 0; s.ate = s.ate || [];
+    if (s.eff === undefined) s.eff = 1;
+    if (s.walkEff === undefined) s.walkEff = 1;
   };
 
   /* ---------------- voorraad ---------------- */
   P.foodAvail = function () { let n = 0; for (const r of FOOD) n += Math.max(0, this.avail(r)); return n; };
-  P.foodReserve = function () { return Math.ceil(this.settlers.filter(fed).length * H.reserve); };
+  P.foodReserve = function () { return Math.ceil(this.settlers.filter(s => fed(s) && s.owner === this.cur).length * H.reserve); };
   /* mag r verkocht of in de herberg geschonken worden? Alleen voedsel boven de reserve van het dorp */
   P.foodSpare = function (r, market) {
     if (FOOD.indexOf(r) < 0) return true;
@@ -53,14 +55,14 @@
   /* verwacht verbruik per minuut: eten van de dorpelingen (nieuwkomers niet meegerekend) */
   P.foodRate = function () {
     let n = 0, val = 0; for (const r of FOOD) val += H.meal[r]; val /= FOOD.length;
-    for (const s of this.settlers) if (fed(s)) n++;
+    for (const s of this.settlers) if (fed(s) && s.owner === this.cur) n++;
     return n * H.decay * 60 / val;
   };
   /* samenvatting voor de interface */
   P.foodSummary = function () {
     let n = 0, food = 0, mood = 0, hungry = 0, starving = 0, idle = 0;
     for (const s of this.settlers) {
-      if (!fed(s)) continue;
+      if (!fed(s) || s.owner !== this.cur) continue;
       this.initHunger(s);
       n++; food += s.food; mood += s.mood;
       if (s.food < H.weak) hungry++;
@@ -79,7 +81,7 @@
 
   /* ---------------- tik: honger, tevredenheid, vertrekken ---------------- */
   P.hungerTick = function (dt) {
-    let left = null;
+    const left = {};
     for (const s of this.settlers) {
       if (!fed(s)) continue;
       if (s.food === undefined) this.initHunger(s);
@@ -93,11 +95,14 @@
       let tgt = s.food >= H.hungry ? 0.7 : s.food >= H.weak ? 0.5 : s.food > 0 ? 0.3 : 0.1;
       if (s.food >= H.weak) { const kinds = new Set(s.ate).size; tgt += kinds >= 3 ? 0.15 : kinds === 2 ? 0.08 : 0; }
       s.mood += (tgt - s.mood) * Math.min(1, dt * 0.02);
-      if (s.starve >= H.leaveAfter && !left && s.mode !== 'train') left = s;
+      if (s.starve >= H.leaveAfter && !left[s.owner] && s.mode !== 'train') left[s.owner] = s;
     }
     // vertrekken: hooguit één per 20 s (geen leegloop in één keer), nooit onder het minimum
-    this.leaveT = (this.leaveT || 0) - dt;
-    if (left && this.leaveT <= 0 && this.settlers.length > H.minPop) { this.leaveT = 20; this.leaveVillage(left); }
+    this.leaveT = this.leaveT || {};
+    for (const p of this.players) {
+      const t = this.leaveT[p.id] = (this.leaveT[p.id] || 0) - dt, s = left[p.id];
+      if (s && t <= 0 && this.popOf(p.id) > H.minPop) { this.leaveT[p.id] = 20; this.as(p.id, () => this.leaveVillage(s)); }
+    }
   };
   P.tooHungry = function (s) { return !!s && fed(s) && s.starve >= H.stopAfter; };
   /* werktempo van het gebouw (de werker): 0,5 .. ~1,06 */
@@ -113,7 +118,7 @@
     if (s.carry) { this.addGoods(s.carry, 1, s.x, s.z); s.carry = null; }
     this.settlers = this.settlers.filter(x => x !== s);
     this.stats.left = (this.stats.left || 0) + 1;
-    emit('toast', { text: '😞 A hungry settler left your village. Make more bread, fish or meat!' });
+    if (s.owner === this.me) emit('toast', { text: '😞 A hungry settler left your village. Make more bread, fish or meat!' });
   };
 
   /* ---------------- eten ---------------- */
@@ -123,7 +128,7 @@
     if (!have.length) return null;
     const fresh = have.filter(r => s.ate.indexOf(r) < 0);
     const list = fresh.length ? fresh : have;
-    return list[Math.floor(Math.random() * list.length)];
+    return list[Math.floor(this.rand() * list.length)];
   };
   /* op weg naar voedsel; back = gebouw van een werker (daarna terug naar zijn werk) */
   P.goEat = function (s, back) {
@@ -135,7 +140,7 @@
     if (back) { s.wstate = 'eat'; s.hidden = false; s.x = back.dx; s.z = back.dz; }
     else s.mode = 'eat';
     s.act = null; s.carry = null;
-    if (!this.walkToB(s, src, () => this.atFood(s))) {
+    if (!this.walkToB(s, src, VE.K('atFood'))) {
       // niet te bereiken: alles terug zoals het was (de aanroeper beslist wat hij verder doet)
       src.unreach = this.time + 6; this.dropMeal(s);
       if (back) { s.wstate = 'inside'; s.hidden = true; s.wt = 1; } else s.mode = 'idle';
@@ -175,13 +180,14 @@
     s.meal = null; s.path = null; s.cb = null;
     if (back) {
       if (!back.alive || back.worker !== s) { this.freeWorker(s); return; }
-      const home = () => {
-        if (!back.alive || back.worker !== s) { this.freeWorker(s); return; }
-        s.wstate = 'inside'; s.hidden = true; s.wt = failed ? 3 : 0.5; s.x = back.dx; s.z = back.dz;
-      };
       s.wstate = 'walk'; s.hidden = false;
-      if (!this.walkToB(s, back, home)) home();
+      if (!this.walkToB(s, back, VE.K('mealHome', back, !!failed))) this.k_mealHome(s, back, !!failed);
     } else { s.mode = 'idle'; s.wt = failed ? 2 : 0.4; }
+  };
+  P.k_atFood = function (s) { this.atFood(s); };
+  P.k_mealHome = function (s, back, failed) {
+    if (!back.alive || back.worker !== s) { this.freeWorker(s); return; }
+    s.wstate = 'inside'; s.hidden = true; s.wt = failed ? 3 : 0.5; s.x = back.dx; s.z = back.dz;
   };
   P.updateMeal = function (s, dt) {
     const m = s.meal; if (!m) { this.endMeal(s); return; }
@@ -217,12 +223,14 @@
 
   /* ---------------- opslaan / laden ---------------- */
   P.serializeHunger = function () {
-    return this.settlers.filter(fed).map(s => [Math.round((s.food === undefined ? 1 : s.food) * 100) / 100, Math.round((s.mood === undefined ? 0.65 : s.mood) * 100) / 100, (s.ate || []).join(',')]);
+    return this.settlers.filter(fed).map(s => [s.owner || 0, Math.round((s.food === undefined ? 1 : s.food) * 100) / 100, Math.round((s.mood === undefined ? 0.65 : s.mood) * 100) / 100, (s.ate || []).join(',')]);
   };
   P.loadHunger = function (list) {
-    const ss = this.settlers.filter(fed);
-    for (let i = 0; i < ss.length; i++) {
-      const e = list && list[i], s = ss[i];
+    // per eigenaar in volgorde (oude opmaak zonder eigenaar: [food, mood, ate] → speler 0)
+    const q = {};
+    for (const e of list || []) { const o = e.length >= 4 ? e[0] : 0, v = e.length >= 4 ? e.slice(1) : e; (q[o] = q[o] || []).push(v); }
+    for (const s of this.settlers.filter(fed)) {
+      const e = q[s.owner] && q[s.owner].shift();
       if (e) { s.food = +e[0]; s.mood = +e[1]; s.ate = e[2] ? String(e[2]).split(',').filter(r => FOOD.indexOf(r) >= 0) : []; }
       else { s.food = 1; s.mood = 0.65; s.ate = []; }    // oude save: iedereen begint verzadigd
       this.initHunger(s);

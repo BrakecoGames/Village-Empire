@@ -49,7 +49,7 @@
     }
   };
 
-  let renderer, scene, camera, sun, hemi, view, ui, last = 0, saveT = 20;
+  let renderer, scene, camera, sun, hemi, view, ui, last = 0, saveT = 20, tickAcc = 0;
   VE.playing = false;
 
   function readSave() { try { const s = VE.sdk.get(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
@@ -126,8 +126,12 @@
     VE.uTime.value += dt;
     const g = VE.game, c = view.cam;
     if (g) {
-      const steps = VE.playing ? g.speed : 1;
-      for (let i = 0; i < steps; i++) g.update(dt);
+      // vaste simulatieticks (VE.TICK), los van de framerate; snelheid 2×/3× = meer ticks per seconde
+      tickAcc += dt * (VE.playing ? g.speed : 1);
+      let n = 0;
+      while (tickAcc >= VE.TICK && n < 16) { g.tick(); tickAcc -= VE.TICK; n++; }
+      if (n >= 16) tickAcc = 0;                                   // te traag: niet inhalen (geen spiraal)
+      VE.alpha = VE.clamp(tickAcc / VE.TICK, 0, 1);
       g.fx.update(dt, VE.uTime.value);
       g.sr.render(g.settlers);
       g.piles.update(g);

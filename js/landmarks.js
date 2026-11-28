@@ -150,6 +150,9 @@
       const found = new Set(save && Array.isArray(save.disc) ? save.disc : []);
       for (const L of game.landmarks) { occupy(game, L); L.found = L.seen = found.has(L.id); }
       game.lmT = 0;
+      // volledige snapshot (js/snapshot.js): ook wat gezien maar nog niet gemeld is, en de timer
+      const S = save && save.snap && save.lmk;
+      if (S) { const seen = new Set(S.seen || []); for (const L of game.landmarks) if (seen.has(L.id)) L.seen = true; game.lmT = S.t || 0; }
       this.attach(game);
     },
     attach(game) {

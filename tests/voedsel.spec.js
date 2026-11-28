@@ -119,7 +119,7 @@ test.describe('Voedsel en zwaarden', () => {
       T.setFood(0);
       for (const s of g.settlers) { s.food = 0.1; s.mood = 0.65; }
       T.run(2);
-      const hungryMult = g.craftMult(saw), hungryWalk = g.settlers[0].walkEff;
+      const hungryMult = g.craftMult(saw), hungryWalk = Math.min(...g.settlers.map(s => s.walkEff));
       T.run(60);
       const moodHungry = g.foodSummary().mood;
       T.run(H.stopAfter + 10);

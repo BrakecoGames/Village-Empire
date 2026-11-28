@@ -328,8 +328,8 @@
         }
         // ---- wereldmatrices van de rig-nodes
         let lean = 0; if (s.act === 'sow') lean = 0.12;
-        _q.setFromAxisAngle(UP, s.rot);
-        _m.compose(_p.set(s.x, s.y, s.z), _q, _s.set(S * look.sx, S * look.sy, S * look.sx));
+        _q.setFromAxisAngle(UP, VE.irot(s));
+        _m.compose(_p.set(VE.ipos(s, 'x'), VE.ipos(s, 'y'), VE.ipos(s, 'z')), _q, _s.set(S * look.sx, S * look.sy, S * look.sx));
         if (lean) { _l.makeRotationX(lean); _m.multiply(_l); }
         const P = s._pose;
         for (let i = 0; i < N; i++) {

@@ -122,7 +122,7 @@
     for (const b of this.buildings) {
       // zonder wachtrij vult de kazerne haar voorraad alleen aan met wat de wapensmederij net maakt
       // (moveOutputs → findConsumer); de Storehouses worden dan niet leeggehaald
-      if (!b.alive || !b.built || !b.def.barracks || b.unreach > this.time || !b.queue || !b.queue.length) continue;
+      if (!b.alive || !b.built || !b.def.barracks || b.unreach > this.time || !b.queue || !b.queue.length || b.owner !== this.cur) continue;
       for (const r of VE.RES_ORDER) {
         let want = this.barracksWant(b, r);
         while (want > 0 && n < cap && idle.length && this.avail(r) > 0) {
@@ -138,7 +138,7 @@
   P.dispatchRecruits = function (take, idle, cap) {
     let n = 0;
     for (const b of this.buildings) {
-      if (!b.alive || !b.built || !b.def.barracks || b.unreach > this.time || !b.queue || !b.queue.length) continue;
+      if (!b.alive || !b.built || !b.def.barracks || b.unreach > this.time || !b.queue || !b.queue.length || b.owner !== this.cur) continue;
       // vrije oefenplekken per soort; wie al onderweg of bezig is, houdt de zijne
       const free = { dummy: 0, target: 0, drill: 0 };
       for (const d of this.drillSpots(b)) free[d.kind]++;
@@ -164,7 +164,7 @@
   }
   P.assignTrainee = function (s, b, e) {
     e.s = s; e.st = 'walk'; s.entry = e; s.work = b; s.mode = 'train'; s.role = 'recruit'; s.tool = null; s.act = null; s.carry = null;
-    const ok = this.walkToB(s, b, () => this.enterYard(s));
+    const ok = this.walkToB(s, b, VE.K('enterYard'));
     if (!ok) { this.releaseTrainee(s); b.unreach = this.time + 6; }
   };
   /* bij de poort: naar een vrije oefenplek die bij het type past */
@@ -185,9 +185,12 @@
     const sp = Object.assign({ i: pick }, spots[pick]);
     e.spot = sp; e.st = 'enter';
     s.path = [[s.x * 0.5 + sp.x * 0.5, s.z * 0.5 + sp.z * 0.5], [sp.x, sp.z]]; s.pi = 0;   // door de poort het oefenterrein op
-    s.cb = () => { e.st = 'wait'; s.rot = sp.rot; };
+    s.cb = VE.K('inYard', e, sp);
   };
 
+  P.k_enterYard = function (s) { this.enterYard(s); };
+  P.k_inYard = function (s, e, sp) { e.st = 'wait'; s.rot = sp.rot; };
+  P.k_soldierArrived = function (s) { this.soldierArrived(s); };
   /* ---------------- rekruut: wachten op spullen, oefenen, soldaat worden ---------------- */
   P.updateTrainee = function (s, dt) {
     const b = s.work, e = s.entry;
@@ -232,7 +235,7 @@
     // verzamelen vóór de kazerne
     const spot = this.freeSpotNear(b.dx, b.dz + 0.9, this.soldiers().filter(o => o !== s).map(o => o.sol.h));
     s.sol.h = spot; s.sol.face = 0;
-    if (!this.walkTo(s, this.tileOf(spot[0], spot[1]), () => this.soldierArrived(s), spot[0], spot[1])) { s.x = spot[0]; s.z = spot[1]; }
+    if (!this.walkTo(s, this.tileOf(spot[0], spot[1]), VE.K('soldierArrived'), spot[0], spot[1])) { s.x = spot[0]; s.z = spot[1]; }
     emit('poof', { x: s.x, y: s.y + 0.2, z: s.z });
     sfx('done', s.x, s.z);
     emit('toast', { text: SOL[e.t].icon + ' A new ' + SOL[e.t].name.toLowerCase() + ' has finished training!' });
@@ -245,8 +248,9 @@
   };
 
   /* ---------------- soldaten ---------------- */
-  P.soldiers = function (t) { return this.settlers.filter(s => s.mode === 'soldier' && (!t || s.sol.t === t)); };
-  P.soldierCount = function () { const c = { total: 0 }; for (const s of this.settlers) if (s.mode === 'soldier') { c.total++; c[s.sol.t] = (c[s.sol.t] || 0) + 1; } return c; };
+  /* soldaten van speler pid (standaard de uitvoerende speler) */
+  P.soldiers = function (t, pid) { if (pid === undefined) pid = this.cur; return this.settlers.filter(s => s.mode === 'soldier' && s.owner === pid && (!t || s.sol.t === t)); };
+  P.soldierCount = function () { const c = { total: 0 }; for (const s of this.settlers) if (s.mode === 'soldier' && s.owner === this.cur) { c.total++; c[s.sol.t] = (c[s.sol.t] || 0) + 1; } return c; };
   P.updateSoldier = function (s, dt) {
     const o = s.sol;
     if (s.path) { s.act = null; return; }
@@ -255,7 +259,7 @@
       if (o.wait <= 0) {
         o.pi = (o.pi + 1) % o.pts.length;
         const p = o.pts[o.pi];
-        if (!this.walkTo(s, this.tileOf(p[0], p[1]), () => this.soldierArrived(s), p[0], p[1])) { o.ord = 'hold'; o.h = [s.x, s.z]; }
+        if (!this.walkTo(s, this.tileOf(p[0], p[1]), VE.K('soldierArrived'), p[0], p[1])) { o.ord = 'hold'; o.h = [s.x, s.z]; }
       } else if (o.face !== undefined) s.rot = turn(s.rot, o.face, dt);
       return;
     }
@@ -266,7 +270,7 @@
   P.soldierArrived = function (s) {
     const o = s.sol; if (!o) return;
     o.face = s.rot;
-    if (o.ord === 'patrol') o.wait = 1.6 + Math.random() * 1.6;
+    if (o.ord === 'patrol') o.wait = 1.6 + this.rand() * 1.6;
     else o.h = [s.x, s.z];
   };
 
@@ -320,7 +324,7 @@
       if (mode === 'patrol') { o.ord = 'patrol'; o.pts = [[s.x, s.z], p]; o.pi = 1; o.wait = 0; }
       else { o.ord = 'hold'; o.pts = null; o.h = p; }
       s.path = null; s.cb = null;
-      if (this.walkTo(s, this.tileOf(p[0], p[1]), () => this.soldierArrived(s), p[0], p[1])) ok++;
+      if (this.walkTo(s, this.tileOf(p[0], p[1]), VE.K('soldierArrived'), p[0], p[1])) ok++;
       else { o.ord = 'hold'; o.pts = null; o.h = [s.x, s.z]; }
     }
     if (ok) sfx('march', x, z);
@@ -385,25 +389,27 @@
   };
   P.serializeSoldiers = function () {
     const r2 = v => Math.round(v * 100) / 100, ang = a => r2(Math.atan2(Math.sin(a), Math.cos(a)));
-    return this.soldiers().map(s => {
+    return this.settlers.filter(s => s.mode === 'soldier').map(s => {
       const o = s.sol, tgt = s.path && s.path.length ? s.path[s.path.length - 1] : null;
-      return { t: o.t, x: r2(s.x), z: r2(s.z), r: ang(s.rot), hp: o.hp, o: o.ord, h: o.h ? [r2(o.h[0]), r2(o.h[1])] : null,
+      return { t: o.t, ow: s.owner || undefined, x: r2(s.x), z: r2(s.z), r: ang(s.rot), hp: o.hp, o: o.ord, h: o.h ? [r2(o.h[0]), r2(o.h[1])] : null,
         p: o.pts ? o.pts.map(q => [r2(q[0]), r2(q[1])]) : null, pi: o.pi, f: o.face !== undefined ? ang(o.face) : null, g: tgt && o.ord === 'hold' ? [r2(tgt[0]), r2(tgt[1])] : null };
     });
   };
   P.loadSoldiers = function (list) {
     for (const d of list || []) {
       if (!SOL[d.t]) continue;
-      const s = this.spawnSettler(); if (!s) break;
+      this.cur = this.players[d.ow] ? d.ow : 0;
+      const s = this.spawnSettler(); if (!s) { this.cur = this.me; break; }
       s.x = d.x; s.z = d.z; s.rot = d.r || 0;
       this.makeSoldier(s, d.t);
       const o = s.sol;
       o.hp = d.hp || SOL[d.t].hp; o.ord = d.o === 'patrol' && d.p ? 'patrol' : 'hold'; o.h = d.h || [d.x, d.z]; o.pts = d.p || null; o.pi = d.pi || 0;
       if (d.f !== null && d.f !== undefined) o.face = d.f;
       const g = d.g || (o.ord === 'hold' && o.h && (o.h[0] - d.x) ** 2 + (o.h[1] - d.z) ** 2 > 0.04 ? o.h : null);
-      if (g) this.walkTo(s, this.tileOf(g[0], g[1]), () => this.soldierArrived(s), g[0], g[1]);
+      if (g) this.walkTo(s, this.tileOf(g[0], g[1]), VE.K('soldierArrived'), g[0], g[1]);
       else if (o.ord === 'patrol') o.wait = 0.5;
     }
+    this.cur = this.me;
   };
 
   /* ---------------- oefenpoppen: knikken bij elke klap (geanimeerde delen 'dummy0', 'dummy1' ...) ---------------- */

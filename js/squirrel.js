@@ -36,7 +36,7 @@
     const sp = t.sp && t.sp[0] !== 'L' ? t.sp : 'L';
     const s = t.sc * (0.18 + 0.82 * Math.min(1, t.growth)), vx = t.look ? t.look.vx : 1, vy = t.look ? t.look.vy : 1;
     const key = sp + ':' + s.toFixed(3) + (CLIMB ? 'j' : 'f');
-    if (t._cl && t._cl.key === key) return t._cl;
+    if (t.cl && t.cl.key === key) return t.cl;
     const D = (CLIMB && CLIMB[sp]) || FALLBACK;
     const rot = sp === 'tree_oak_bird' || sp === 'tree_beech_logo' ? Math.PI / 4 : t.rot;
     const c = Math.cos(rot), sn = Math.sin(rot), gy = w.heightAt(t.x, t.z) - 0.02, sh = s * vx;
@@ -65,7 +65,7 @@
       G.br.push(B);
     }
     G.top = L - 0.03;
-    t._cl = G;
+    t.cl = G;
     return G;
   }
   /* punt op de stamlijn op afstand d (vanaf de voet): positie, straal en raaklijn */
@@ -101,7 +101,7 @@
   /* houding op een tak: bovenop, in de looprichting */
   function branchPose(a, B, u, dir) {
     branchPose0(a, B, u, dir);
-    if (a.sq && a.sq.t && a.sq.t._cl) clearOf(a.sq.t._cl, a);
+    if (a.sq && a.sq.t && a.sq.t.cl) clearOf(a.sq.t.cl, a);
   }
   function branchPose0(a, B, u, dir) {
     const dx = B.b.x - B.a.x, dy = B.b.y - B.a.y, dz = B.b.z - B.a.z, l = B.len;
@@ -318,7 +318,7 @@
   }
   function onBranch(a, B, u, dir) {
     const S = a.sq;
-    S.mode = 'branch'; S.B = B; S.u = u; S.dirB = dir; S.speed = 0.35 + Math.random() * 0.25;
+    S.mode = 'branch'; S.B = B; S.u = u; S.dirB = dir; S.speed = 0.35 + (((a.id * 2654435761 + (S.u * 1000 | 0)) >>> 0) % 1000) / 1000 * 0.25;   // deterministisch (geen Math.random in de simulatie)
   }
   function branch(W, a, dt) {
     const S = a.sq, B = S.B, rnd = W.rnd;
@@ -364,7 +364,7 @@
     const p = J.p;
     a.wx = J.x0 + (J.x1 - J.x0) * p; a.wz = J.z0 + (J.z1 - J.z0) * p;
     a.wy = J.y0 + (J.y1 - J.y0) * p + Math.sin(p * Math.PI) * J.h;
-    if (S.t && S.t._cl) clearOf(S.t._cl, a);
+    if (S.t && S.t.cl) clearOf(S.t.cl, a);
     if (J.G) clearOf(J.G, a);
     a.x = a.wx; a.z = a.wz;
     // kop in de vliegrichting, licht omhoog bij het afzetten en omlaag bij het landen

@@ -52,7 +52,8 @@ async function setup(page) {
       produced() { return Object.assign({}, VE.game.stats.produced); },
       run(sec, each) {
         const g = VE.game;
-        for (let t = 0; t < sec; t += 0.1) { g.arriveT = 1e9; g.update(0.1); if (each) each(t); }
+        // deze tests gaan over opslag en transport, niet over honger: iedereen blijft verzadigd
+        for (let t = 0; t < sec; t += 0.1) { g.arriveT = 1e9; for (const s of g.settlers) s.food = 1; g.update(0.1); if (each) each(t); }
       }
     };
   });
@@ -107,6 +108,7 @@ test.describe('Opslag en productie', () => {
     const r3 = await page.evaluate(() => {
       const VE = window.VE, g = VE.game, pile = g.buildings.find(b => b.type === 'yard'), k = pile.j * VE.N + pile.i;
       const toasts = []; VE.bus.on('toast', e => toasts.push(e.text));
+      for (const s of g.settlers) if (s.meal) { g.dropMeal(s); s.mode = 'idle'; s.path = null; s.cb = null; }   // wie onderweg is om te eten, laat zijn stuk los
       for (const r in pile.store) g.takeGoods(r, pile.store[r]);
       return { alive: pile.alive, inList: g.buildings.includes(pile), tile: g.world.bld[k], toast: toasts.join('|') };
     });
@@ -226,6 +228,7 @@ test.describe('Opslag en productie', () => {
       T.run(120);
       return { fromPile, fromProducerWhilePile, pileLog: pile.alive ? pile.store.log || 0 : 0, bad: bad.slice(0, 6), planks: g.stats.produced.plank || 0, stPlank: st.store.plank || 0, built: site.built, used: site.used, total: site.total };
     });
+    console.log('zagerij', JSON.stringify(r));
     expect(r.bad).toEqual([]);
     expect(r.planks).toBeGreaterThan(4);
     expect(r.fromPile).toBe(6);                      // alle 6 stammen van de startstapel gingen naar de zagerij
